@@ -10,6 +10,13 @@ import { prisma } from "../db/client.js";
 import { SlotStatus, AppointmentStatus, PaymentType } from "../shared/enums.js";
 import { formatDateTime } from "../shared/datetime.js";
 import { normalizeCpf, isValidCpf } from "../shared/cpf.js";
+import { logger } from "../shared/logger.js";
+import {
+  isGoogleConfigured,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+} from "../integrations/googleCalendar.js";
 import type { ResolvedTenant } from "../db/tenantRepository.js";
 
 // ---------- Catálogo ----------
@@ -182,7 +189,8 @@ export async function bookAppointment(
   plano?: string,
 ) {
   const tenantId = tenant.id;
-  return prisma.$transaction(async (tx) => {
+
+  const outcome = await prisma.$transaction(async (tx) => {
     const slot = await tx.slot.findFirst({
       where: { id: slotId, tenantId },
       include: { doctor: true, unit: true, specialty: true },
@@ -216,16 +224,40 @@ export async function bookAppointment(
       },
     });
     await tx.slot.update({ where: { id: slot.id }, data: { status: SlotStatus.BOOKED } });
-
-    return {
-      appointmentId: appt.id,
-      medico: slot.doctor.name,
-      unidade: slot.unit.name,
-      especialidade: slot.specialty.name,
-      inicio: formatDateTime(slot.startsAt, tenant.timezone),
-      status: "AGENDADO",
-    };
+    return { appt, slot };
   });
+
+  if ("erro" in outcome) return outcome;
+  const { appt, slot } = outcome;
+
+  // Google Calendar (one-way, best-effort, FORA da transação).
+  const calendarId = slot.doctor.googleCalendarId;
+  if (calendarId && isGoogleConfigured()) {
+    try {
+      const patient = await prisma.patient.findUnique({ where: { id: patientId }, select: { name: true } });
+      const eventId = await createEvent(calendarId, {
+        summary: `Consulta: ${patient?.name ?? "Paciente"} (${slot.specialty.name})`,
+        description: `Dentista: ${slot.doctor.name}\nUnidade: ${slot.unit.name}`,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        timeZone: tenant.timezone,
+      });
+      if (eventId) {
+        await prisma.appointment.update({ where: { id: appt.id }, data: { googleEventId: eventId } });
+      }
+    } catch (err) {
+      logger.error({ err, appointmentId: appt.id }, "falha ao criar evento no Google Calendar");
+    }
+  }
+
+  return {
+    appointmentId: appt.id,
+    medico: slot.doctor.name,
+    unidade: slot.unit.name,
+    especialidade: slot.specialty.name,
+    inicio: formatDateTime(slot.startsAt, tenant.timezone),
+    status: "AGENDADO",
+  };
 }
 
 // ---------- Consultar / Cancelar / Remarcar ----------
@@ -257,15 +289,31 @@ export async function cancelAppointment(tenant: ResolvedTenant, appointmentId: s
   if (!tenant.config.booking.allowCancellation) {
     return { erro: "Cancelamento não permitido pelo assistente. Oriente a ligar para a recepção." };
   }
-  return prisma.$transaction(async (tx) => {
-    const appt = await tx.appointment.findFirst({ where: { id: appointmentId, tenantId: tenant.id } });
+  const outcome = await prisma.$transaction(async (tx) => {
+    const appt = await tx.appointment.findFirst({
+      where: { id: appointmentId, tenantId: tenant.id },
+      include: { doctor: { select: { googleCalendarId: true } } },
+    });
     if (!appt) return { erro: "Agendamento não encontrado." };
     if (appt.status === AppointmentStatus.CANCELLED) return { erro: "Esse agendamento já está cancelado." };
 
     await tx.appointment.update({ where: { id: appt.id }, data: { status: AppointmentStatus.CANCELLED } });
     await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
-    return { status: "CANCELADO", appointmentId: appt.id };
+    return { appt };
   });
+
+  if ("erro" in outcome) return outcome;
+  const { appt } = outcome;
+
+  if (appt.googleEventId && appt.doctor.googleCalendarId && isGoogleConfigured()) {
+    try {
+      await deleteEvent(appt.doctor.googleCalendarId, appt.googleEventId);
+    } catch (err) {
+      logger.error({ err, appointmentId: appt.id }, "falha ao remover evento do Google Calendar");
+    }
+  }
+
+  return { status: "CANCELADO", appointmentId: appt.id };
 }
 
 export async function rescheduleAppointment(
@@ -276,13 +324,16 @@ export async function rescheduleAppointment(
   if (!tenant.config.booking.allowReschedule) {
     return { erro: "Remarcação não permitida pelo assistente." };
   }
-  return prisma.$transaction(async (tx) => {
-    const appt = await tx.appointment.findFirst({ where: { id: appointmentId, tenantId: tenant.id } });
+  const outcome = await prisma.$transaction(async (tx) => {
+    const appt = await tx.appointment.findFirst({
+      where: { id: appointmentId, tenantId: tenant.id },
+      include: { doctor: { select: { googleCalendarId: true } } },
+    });
     if (!appt) return { erro: "Agendamento não encontrado." };
 
     const novo = await tx.slot.findFirst({
       where: { id: novoSlotId, tenantId: tenant.id },
-      include: { doctor: true, unit: true },
+      include: { doctor: true, unit: true, specialty: true },
     });
     if (!novo) return { erro: "Novo horário não encontrado." };
     if (novo.status !== SlotStatus.AVAILABLE) return { erro: "Esse horário não está mais livre." };
@@ -299,13 +350,42 @@ export async function rescheduleAppointment(
         status: AppointmentStatus.RESCHEDULED,
       },
     });
-
-    return {
-      status: "REMARCADO",
-      appointmentId: updated.id,
-      medico: novo.doctor.name,
-      unidade: novo.unit.name,
-      inicio: formatDateTime(novo.startsAt, tenant.timezone),
-    };
+    return { appt, novo, updated };
   });
+
+  if ("erro" in outcome) return outcome;
+  const { appt, novo, updated } = outcome;
+
+  // Google Calendar: atualiza o evento (ou move de calendário se o dentista mudou).
+  if (isGoogleConfigured()) {
+    try {
+      const oldCal = appt.doctor.googleCalendarId;
+      const newCal = novo.doctor.googleCalendarId;
+      const patient = await prisma.patient.findUnique({ where: { id: updated.patientId }, select: { name: true } });
+      const ev = {
+        summary: `Consulta: ${patient?.name ?? "Paciente"} (${novo.specialty.name})`,
+        description: `Dentista: ${novo.doctor.name}\nUnidade: ${novo.unit.name}`,
+        startsAt: novo.startsAt,
+        endsAt: novo.endsAt,
+        timeZone: tenant.timezone,
+      };
+      if (appt.googleEventId && oldCal && oldCal === newCal) {
+        await updateEvent(newCal, appt.googleEventId, ev);
+      } else {
+        if (appt.googleEventId && oldCal) await deleteEvent(oldCal, appt.googleEventId).catch(() => {});
+        const newEventId = newCal ? await createEvent(newCal, ev) : null;
+        await prisma.appointment.update({ where: { id: updated.id }, data: { googleEventId: newEventId } });
+      }
+    } catch (err) {
+      logger.error({ err, appointmentId: updated.id }, "falha ao sincronizar remarcação no Google Calendar");
+    }
+  }
+
+  return {
+    status: "REMARCADO",
+    appointmentId: updated.id,
+    medico: novo.doctor.name,
+    unidade: novo.unit.name,
+    inicio: formatDateTime(novo.startsAt, tenant.timezone),
+  };
 }

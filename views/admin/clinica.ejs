@@ -182,6 +182,9 @@
 
 <div class="card" id="medicos">
   <h2>Médicos</h2>
+  <% if (googleEmail) { %>
+    <p class="muted">🔗 <strong>Google Calendar:</strong> compartilhe o calendário de cada dentista (permissão "Fazer alterações nos eventos") com <code><%= googleEmail %></code> e cole o <em>Calendar ID</em> dele abaixo.</p>
+  <% } %>
   <table>
     <tbody>
       <% t.doctors.forEach(function(d){ %>
@@ -191,6 +194,12 @@
             <% d.specialties.forEach(function(s){ %><span class="pill"><%= s.name %></span><% }) %>
             <% d.units.forEach(function(u){ %><span class="pill">📍 <%= u.name %></span><% }) %>
             <% d.healthPlans.forEach(function(p){ %><span class="pill">💳 <%= p.name %></span><% }) %>
+            <% if (googleEmail) { %>
+              <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/google" class="inline" style="margin-top:8px;gap:6px">
+                <input name="googleCalendarId" value="<%= d.googleCalendarId || '' %>" placeholder="Google Calendar ID (…@group.calendar.google.com)" />
+                <button class="btn sm ghost">Salvar calendário</button>
+              </form>
+            <% } %>
           </td>
           <td style="text-align:right">
             <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/doctor/<%= d.id %>"><button class="btn sm danger">Excluir</button></form>

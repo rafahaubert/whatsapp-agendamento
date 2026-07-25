@@ -98,13 +98,14 @@ model Specialty {
 // MÉDICO — pode ter VÁRIAS especialidades e atuar em VÁRIAS unidades
 // =========================================================
 model Doctor {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
-  crm       String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  tenantId         String
+  name             String
+  crm              String?
+  googleCalendarId String? // ID do calendário Google deste dentista (sync one-way)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   specialties  Specialty[] // m-n
@@ -238,10 +239,11 @@ model Appointment {
   slotId       String   @unique // 1 slot = 1 agendamento
   healthPlanId String? // null = atendimento particular
   paymentType  String   @default("PARTICULAR") // PARTICULAR | HEALTH_PLAN
-  status       String   @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status        String  @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
+  notes         String?
+  googleEventId String? // ID do evento no Google Calendar (para atualizar/remover)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit       Unit        @relation(fields: [unitId], references: [id])

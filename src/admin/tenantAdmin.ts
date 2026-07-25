@@ -147,6 +147,13 @@ export async function addDoctor(
   });
 }
 
+export async function updateDoctorCalendarId(tenantId: string, doctorId: string, calendarId?: string) {
+  await prisma.doctor.updateMany({
+    where: { id: doctorId, tenantId },
+    data: { googleCalendarId: calendarId?.trim() || null },
+  });
+}
+
 /** Exclusão escopada por tenant. Retorna erro amigável se houver vínculos. */
 export async function remove(
   tenantId: string,

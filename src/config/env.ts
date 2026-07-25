@@ -24,6 +24,10 @@ const schema = z.object({
   ADMIN_USER: z.string().min(1).default("admin"),
   ADMIN_PASSWORD: z.string().min(1),
   SESSION_SECRET: z.string().min(1).default("troque-este-segredo-em-producao"),
+
+  // Google Calendar (opcional) — chave JSON da conta de serviço.
+  // Se ausente, a sincronização com o Google fica desligada.
+  GOOGLE_SERVICE_ACCOUNT_KEY: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

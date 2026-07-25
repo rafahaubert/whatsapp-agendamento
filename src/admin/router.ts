@@ -17,6 +17,7 @@ import {
   addInsurer,
   addPlan,
   addDoctor,
+  updateDoctorCalendarId,
   remove,
   generateAgenda,
   listAppointments,
@@ -24,6 +25,7 @@ import {
   listConversations,
   resetConversation,
 } from "./tenantAdmin.js";
+import { serviceAccountEmail } from "../integrations/googleCalendar.js";
 import type { TenantConfig } from "../config/types.js";
 
 // ---------- helpers ----------
@@ -150,6 +152,7 @@ export function makeAdminRouter(): Router {
       cfg: t.parsedConfig,
       agendamentos,
       conversas,
+      googleEmail: serviceAccountEmail(),
       msg: req.query.msg ?? null,
       erro: req.query.erro ?? null,
     });
@@ -223,6 +226,11 @@ export function makeAdminRouter(): Router {
       unitIds: toArr(req.body.unidades),
       planIds: toArr(req.body.planos),
     });
+    res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
+  });
+
+  router.post("/clinicas/:id/medicos/:docId/google", async (req: Request, res: Response) => {
+    await updateDoctorCalendarId(req.params.id, req.params.docId, req.body.googleCalendarId);
     res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
   });
 
