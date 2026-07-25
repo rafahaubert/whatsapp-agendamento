@@ -76,9 +76,11 @@ function parseConfig(body: any, timezone: string): TenantConfig {
   };
 }
 
-function clinicaUrl(id: string, params?: Record<string, string>): string {
-  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-  return `/admin/clinicas/${id}${qs}`;
+function clinicaUrl(id: string, params?: Record<string, string>, anchor?: string): string {
+  const qs =
+    params && Object.keys(params).length ? "?" + new URLSearchParams(params).toString() : "";
+  const frag = anchor ? `#${anchor}` : "";
+  return `/admin/clinicas/${id}${qs}${frag}`;
 }
 
 export function makeAdminRouter(): Router {
@@ -162,22 +164,22 @@ export function makeAdminRouter(): Router {
   // ----- Catálogo -----
   router.post("/clinicas/:id/unidades", async (req: Request, res: Response) => {
     await addUnit(req.params.id, { name: req.body.name, address: req.body.address, phone: req.body.phone });
-    res.redirect(clinicaUrl(req.params.id));
+    res.redirect(clinicaUrl(req.params.id, undefined, "unidades"));
   });
 
   router.post("/clinicas/:id/especialidades", async (req: Request, res: Response) => {
     await addSpecialty(req.params.id, req.body.name);
-    res.redirect(clinicaUrl(req.params.id));
+    res.redirect(clinicaUrl(req.params.id, undefined, "especialidades"));
   });
 
   router.post("/clinicas/:id/convenios", async (req: Request, res: Response) => {
     await addInsurer(req.params.id, { name: req.body.name, code: req.body.code });
-    res.redirect(clinicaUrl(req.params.id));
+    res.redirect(clinicaUrl(req.params.id, undefined, "convenios"));
   });
 
   router.post("/clinicas/:id/planos", async (req: Request, res: Response) => {
     await addPlan(req.params.id, req.body.insurerId, req.body.name);
-    res.redirect(clinicaUrl(req.params.id));
+    res.redirect(clinicaUrl(req.params.id, undefined, "convenios"));
   });
 
   router.post("/clinicas/:id/medicos", async (req: Request, res: Response) => {
@@ -188,19 +190,20 @@ export function makeAdminRouter(): Router {
       unitIds: toArr(req.body.unidades),
       planIds: toArr(req.body.planos),
     });
-    res.redirect(clinicaUrl(req.params.id));
+    res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
   });
 
   router.post("/clinicas/:id/excluir/:entity/:entId", async (req: Request, res: Response) => {
     const entity = req.params.entity as "unit" | "specialty" | "insurer" | "healthPlan" | "doctor";
+    const anchor = { unit: "unidades", specialty: "especialidades", insurer: "convenios", healthPlan: "convenios", doctor: "medicos" }[entity];
     const r = await remove(req.params.id, entity, req.params.entId);
-    res.redirect(clinicaUrl(req.params.id, r.ok ? {} : { erro: r.erro }));
+    res.redirect(clinicaUrl(req.params.id, r.ok ? undefined : { erro: r.erro }, anchor));
   });
 
   // ----- Agenda -----
   router.post("/clinicas/:id/agenda/gerar", async (req: Request, res: Response) => {
     const n = await generateAgenda(req.params.id, num(req.body.days, 7));
-    res.redirect(clinicaUrl(req.params.id, { msg: `${n} horários gerados` }));
+    res.redirect(clinicaUrl(req.params.id, { msg: `${n} horários gerados` }, "agenda"));
   });
 
   return router;

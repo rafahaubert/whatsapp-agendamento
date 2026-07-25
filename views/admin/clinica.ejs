@@ -76,7 +76,7 @@
 </form>
 
 <!-- ============ CATÁLOGO ============ -->
-<div class="card">
+<div class="card" id="unidades">
   <h2>Unidades</h2>
   <table><tbody>
     <% t.units.forEach(function(u){ %>
@@ -96,7 +96,7 @@
   </form>
 </div>
 
-<div class="card">
+<div class="card" id="especialidades">
   <h2>Especialidades</h2>
   <p>
     <% t.specialties.forEach(function(s){ %>
@@ -113,7 +113,7 @@
   </form>
 </div>
 
-<div class="card">
+<div class="card" id="convenios">
   <h2>Convênios e planos</h2>
   <% t.insurers.forEach(function(ins){ %>
     <div style="margin-bottom:8px">
@@ -152,7 +152,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="medicos">
   <h2>Médicos</h2>
   <table>
     <tbody>
@@ -206,7 +206,7 @@
 </div>
 
 <!-- ============ AGENDA ============ -->
-<div class="card">
+<div class="card" id="agenda">
   <h2>Agenda</h2>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
     <label>Gerar horários livres para os próximos<input type="number" name="days" value="7" style="max-width:90px" /> dias</label>
