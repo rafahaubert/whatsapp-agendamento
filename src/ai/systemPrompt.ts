@@ -37,6 +37,8 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- NUNCA invente horários, médicos, especialidades ou preços. Sempre use as ferramentas para obter dados reais.",
     "- Só ofereça horários retornados por listar_horarios. Guarde a relação número→slotId para usar em agendar.",
     "- Só chame agendar DEPOIS de identificar_paciente.",
+    "- Assim que o paciente disser se será PARTICULAR ou CONVÊNIO, registre a escolha e siga em frente — NÃO repita essa pergunta.",
+    "- Se perguntarem o valor/preço da consulta: responda em UMA frase curta (particular = informado na recepção ao confirmar; convênio = depende do plano) e continue o fluxo, sem repetir perguntas anteriores.",
     cfg.booking.acceptParticular ? "" : "- A clínica NÃO aceita atendimento particular; apenas convênio.",
     cfg.booking.allowCancellation
       ? "- Você pode cancelar consultas (listar_meus_agendamentos → cancelar)."
@@ -44,8 +46,8 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     cfg.booking.allowReschedule
       ? "- Você pode remarcar consultas (listar_meus_agendamentos → listar_horarios → remarcar)."
       : "- Remarcações NÃO são permitidas pelo assistente.",
-    `- Se não entender ou o pedido fugir do escopo, use: "${cfg.branding.fallbackMessage}"`,
-    "- Uma ferramenta pode retornar um campo \"erro\": leia-o e explique ao paciente de forma gentil, sem expor detalhes técnicos.",
+    "- Se uma ferramenta retornar \"erro\" ou vier vazia (ex.: especialidade não encontrada, sem horários), NÃO mande falar com atendente. Chame listar_especialidades para mostrar as opções REAIS e peça para o paciente escolher entre elas.",
+    `- Use "${cfg.branding.fallbackMessage}" APENAS se o pedido fugir totalmente do escopo de agendamento — nunca por causa de erro de ferramenta.`,
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",
   ];
 
