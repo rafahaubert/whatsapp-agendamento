@@ -5,6 +5,7 @@
  *
  * Toda query filtra por tenantId (regra de ouro multi-tenant).
  */
+import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { SlotStatus, AppointmentStatus, PaymentType } from "../shared/enums.js";
 import { formatDateTime } from "../shared/datetime.js";
@@ -81,9 +82,16 @@ async function resolveHealthPlan(tenantId: string, name: string) {
 }
 
 // ---------- Horários ----------
+/** Faixas de hora local por período do dia. */
+const PERIODOS: Record<string, [number, number]> = {
+  manha: [0, 12],
+  tarde: [12, 18],
+  noite: [18, 24],
+};
+
 export async function listAvailableSlots(
   tenant: ResolvedTenant,
-  opts: { especialidade: string; unidade?: string; plano?: string },
+  opts: { especialidade: string; unidade?: string; plano?: string; periodo?: string },
 ) {
   const tenantId = tenant.id;
   const specialty = await resolveSpecialty(tenantId, opts.especialidade);
@@ -109,17 +117,35 @@ export async function listAvailableSlots(
     if (plan) where.doctor = { healthPlans: { some: { id: plan.id } } };
   }
 
-  const slots = await prisma.slot.findMany({
+  // Busca uma janela maior e filtra por período (hora local) antes de cortar em N.
+  const encontrados = await prisma.slot.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    take: tenant.config.booking.maxOptionsOffered,
+    take: 200,
     include: { doctor: true, unit: true },
   });
 
-  if (slots.length === 0) return { horarios: [], aviso: "Nenhum horário livre encontrado com esses critérios." };
+  const faixa = opts.periodo ? PERIODOS[opts.periodo.trim().toLowerCase()] : undefined;
+  const filtrados = faixa
+    ? encontrados.filter((s) => {
+        const hora = DateTime.fromJSDate(s.startsAt).setZone(tenant.timezone).hour;
+        return hora >= faixa[0] && hora < faixa[1];
+      })
+    : encontrados;
+
+  const escolhidos = filtrados.slice(0, tenant.config.booking.maxOptionsOffered);
+
+  if (escolhidos.length === 0) {
+    return {
+      horarios: [],
+      aviso: opts.periodo
+        ? `Nenhum horário livre no período "${opts.periodo}". Há horários em outros períodos?`
+        : "Nenhum horário livre encontrado com esses critérios.",
+    };
+  }
 
   return {
-    horarios: slots.map((s) => ({
+    horarios: escolhidos.map((s) => ({
       slotId: s.id,
       medico: s.doctor.name,
       unidade: s.unit.name,

@@ -57,6 +57,11 @@ export const tools: Anthropic.Tool[] = [
           type: "string",
           description: "Nome do plano para filtrar médicos que o aceitam (opcional)",
         },
+        periodo: {
+          type: "string",
+          enum: ["manha", "tarde", "noite"],
+          description: "Preferência de período do dia do paciente (opcional)",
+        },
       },
       required: ["especialidade"],
     },
@@ -136,6 +141,7 @@ export async function executeTool(
         especialidade: input.especialidade,
         unidade: input.unidade,
         plano: input.plano,
+        periodo: input.periodo,
       });
     case "agendar":
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado. Use identificar_paciente antes." };
