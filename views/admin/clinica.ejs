@@ -11,8 +11,18 @@
 <% if (msg) { %><p class="ok"><%= msg %></p><% } %>
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
+<nav class="subnav">
+  <a href="#config">Configuração</a>
+  <a href="#unidades">Unidades</a>
+  <a href="#especialidades">Especialidades</a>
+  <a href="#convenios">Convênios</a>
+  <a href="#medicos">Médicos</a>
+  <a href="#agenda">Agenda</a>
+  <a href="#ferramentas">Conversas</a>
+</nav>
+
 <!-- ============ CONFIGURAÇÃO ============ -->
-<form method="post" action="/admin/clinicas/<%= t.id %>" class="card">
+<form method="post" action="/admin/clinicas/<%= t.id %>" class="card" id="config">
   <h2>Dados</h2>
   <div class="grid2">
     <label>Nome<input name="name" value="<%= t.name %>" required /></label>
@@ -72,7 +82,12 @@
   </div>
   <label>Persona (tom/estilo)<textarea name="ai_persona"><%= cfg.ai.persona %></textarea></label>
 
-  <button class="btn">Salvar configuração</button>
+  <h2>Base de conhecimento (FAQ)</h2>
+  <label>Informações e perguntas frequentes que o agente pode usar para responder dúvidas gerais (procedimentos, formas de pagamento, localização, estacionamento…). O agente só afirma o que estiver aqui ou vier das ferramentas — se não souber, orienta a recepção.
+    <textarea name="knowledgeBase" style="min-height:150px" placeholder="Ex.: Formas de pagamento: cartão, PIX e dinheiro (particular parcelamos em até 6x). Endereço: Av. Pedro Adams Filho, 1678, com estacionamento próprio. Fazemos clareamento, implantes, próteses e ortodontia. Urgência 24h para dor."><%= cfg.knowledgeBase || '' %></textarea>
+  </label>
+
+  <div style="margin-top:16px"><button class="btn">Salvar configuração</button></div>
 </form>
 
 <!-- ============ CATÁLOGO ============ -->
@@ -241,6 +256,33 @@
             <td><%= a.medico %></td>
             <td><%= a.unidade %></td>
             <td><%= a.status %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</div>
+
+<!-- ============ CONVERSAS ============ -->
+<div class="card" id="ferramentas">
+  <h2>Conversas (memória do agente)</h2>
+  <p class="muted">Cada conversa guarda o histórico por telefone. "Reiniciar" apaga a memória — o próximo "oi" daquele número começa do zero (útil para testar).</p>
+  <% if (!conversas || conversas.length === 0) { %>
+    <p class="muted">Nenhuma conversa ainda.</p>
+  <% } else { %>
+    <table>
+      <thead><tr><th>Telefone</th><th>Última mensagem</th><th></th></tr></thead>
+      <tbody>
+        <% conversas.forEach(function(c){ %>
+          <tr>
+            <td><%= c.patientPhone %></td>
+            <td class="muted"><%= new Date(c.lastMessageAt).toLocaleString("pt-BR") %></td>
+            <td style="text-align:right">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/conversa/reiniciar">
+                <input type="hidden" name="phone" value="<%= c.patientPhone %>" />
+                <button class="btn sm ghost">Reiniciar</button>
+              </form>
+            </td>
           </tr>
         <% }) %>
       </tbody>

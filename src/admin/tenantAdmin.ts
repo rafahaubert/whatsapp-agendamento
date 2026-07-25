@@ -184,6 +184,21 @@ export async function generateAgenda(tenantId: string, days: number) {
   return regenerateSlots(prisma, { tenantId, timezone: t.timezone, config, slotDays: days });
 }
 
+// ---------- Conversas (memória do agente) ----------
+export async function listConversations(tenantId: string) {
+  return prisma.conversation.findMany({
+    where: { tenantId },
+    orderBy: { lastMessageAt: "desc" },
+    take: 20,
+    select: { patientPhone: true, lastMessageAt: true },
+  });
+}
+
+/** Apaga a memória de uma conversa (o próximo "oi" começa do zero). */
+export async function resetConversation(tenantId: string, phone: string) {
+  await prisma.conversation.deleteMany({ where: { tenantId, patientPhone: phone.trim() } });
+}
+
 export async function listAppointments(tenantId: string, timezone: string) {
   const now = new Date();
   const appts = await prisma.appointment.findMany({

@@ -43,6 +43,12 @@ export interface TenantConfig {
     /** Tom/estilo injetado no system prompt. Nos modelos atuais o tom se controla por prompt (não há `temperature`). */
     persona: string;
   };
+
+  /**
+   * Base de conhecimento / FAQ da clínica (texto livre) — injetada no prompt para
+   * o agente responder perguntas gerais (procedimentos, pagamento, localização…).
+   */
+  knowledgeBase?: string;
 }
 
 // ---------- Catálogo (seed) ----------

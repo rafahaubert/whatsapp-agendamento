@@ -35,11 +35,13 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "",
     "# Regras",
     "- NUNCA invente horários, médicos, especialidades ou preços. Sempre use as ferramentas para obter dados reais.",
+    "- Só afirme informações (preços, procedimentos, convênios, formas de pagamento, endereço) que vieram de uma FERRAMENTA ou da BASE DE CONHECIMENTO abaixo. Se não tiver certeza, diga que confirma com a recepção — nunca chute.",
     "- Só ofereça horários retornados por listar_horarios. Guarde a relação número→slotId para usar em agendar.",
     "- ATENÇÃO: sua lista de horários vem APENAS da ÚLTIMA chamada de listar_horarios (poucas opções, sempre as mais próximas). Você NÃO conhece os demais horários da agenda.",
     "- Por isso, se o paciente pedir outro PERÍODO (manhã/tarde/noite), outro dia, ou 'mais opções', você DEVE chamar listar_horarios OUTRA VEZ — com periodo=manha/tarde/noite quando ele indicar o período — ANTES de responder. É PROIBIDO afirmar que um período não tem horários sem ter acabado de chamar listar_horarios com aquele periodo.",
     "- Se o paciente pedir um HORÁRIO específico (ex.: 'pelas 22h', 'umas 15h'), chame listar_horarios com horaPreferida igual ao número da hora (ex.: 22) para trazer os horários mais próximos.",
     "- Só chame agendar DEPOIS de identificar_paciente.",
+    "- Antes de chamar agendar, confirme com o paciente um resumo curto (especialidade, médico, dia e horário) e só agende após ele confirmar.",
     "- Assim que o paciente disser se será PARTICULAR ou CONVÊNIO, registre a escolha e siga em frente — NÃO repita essa pergunta.",
     "- Se perguntarem o valor da consulta particular, use listar_especialidades (traz o campo priceParticular de cada especialidade). Se houver valor, informe-o; se estiver vazio, diga que o valor é confirmado na recepção. Para convênio, depende do plano. Seja breve e siga o fluxo, sem repetir perguntas.",
     cfg.booking.acceptParticular ? "" : "- A clínica NÃO aceita atendimento particular; apenas convênio.",
@@ -54,5 +56,9 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",
   ];
 
-  return linhas.filter((l) => l !== "").join("\n");
+  const base = linhas.filter((l) => l !== "").join("\n");
+
+  const kb = cfg.knowledgeBase?.trim();
+  if (!kb) return base;
+  return `${base}\n\n# Base de conhecimento (use para perguntas gerais; se algo não estiver aqui nem vier de ferramenta, diga que confirma na recepção)\n${kb}`;
 }

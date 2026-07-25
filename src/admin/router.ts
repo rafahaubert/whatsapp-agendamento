@@ -20,6 +20,8 @@ import {
   remove,
   generateAgenda,
   listAppointments,
+  listConversations,
+  resetConversation,
 } from "./tenantAdmin.js";
 import type { TenantConfig } from "../config/types.js";
 
@@ -74,6 +76,7 @@ function parseConfig(body: any, timezone: string): TenantConfig {
       acceptParticular: bool(body.booking_acceptParticular),
     },
     ai: { model: body.ai_model ?? "claude-haiku-4-5", persona: body.ai_persona ?? "" },
+    knowledgeBase: (body.knowledgeBase ?? "").trim() || undefined,
   };
 }
 
@@ -140,13 +143,20 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
     const agendamentos = await listAppointments(t.id, t.timezone);
+    const conversas = await listConversations(t.id);
     res.render("admin/clinica", {
       t,
       cfg: t.parsedConfig,
       agendamentos,
+      conversas,
       msg: req.query.msg ?? null,
       erro: req.query.erro ?? null,
     });
+  });
+
+  router.post("/clinicas/:id/conversa/reiniciar", async (req: Request, res: Response) => {
+    await resetConversation(req.params.id, String(req.body.phone ?? ""));
+    res.redirect(clinicaUrl(req.params.id, { msg: "Conversa reiniciada" }, "ferramentas"));
   });
 
   router.post("/clinicas/:id", async (req: Request, res: Response) => {

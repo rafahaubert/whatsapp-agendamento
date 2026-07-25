@@ -5,28 +5,24 @@
 </div>
 <% if (msg) { %><p class="ok"><%= msg %></p><% } %>
 
-<div class="card">
-  <% if (clinicas.length === 0) { %>
-    <p class="muted">Nenhuma clínica ainda. Crie a primeira ou rode <code>npm run seed</code>.</p>
-  <% } else { %>
-    <table>
-      <thead>
-        <tr><th>Nome</th><th>Slug</th><th>Nº WhatsApp</th><th>Médicos</th><th>Horários</th><th>Ativa</th><th></th></tr>
-      </thead>
-      <tbody>
-        <% clinicas.forEach(function(c){ %>
-          <tr>
-            <td><%= c.name %></td>
-            <td class="muted"><%= c.slug %></td>
-            <td class="muted"><%= c.whatsappPhoneNumberId %></td>
-            <td><%= c._count.doctors %></td>
-            <td><%= c._count.slots %></td>
-            <td><%= c.isActive ? "Sim" : "Não" %></td>
-            <td><a href="/admin/clinicas/<%= c.id %>">Editar →</a></td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
-  <% } %>
-</div>
+<% if (clinicas.length === 0) { %>
+  <div class="card"><p class="muted">Nenhuma clínica ainda. Crie a primeira ou rode <code>npm run seed</code>.</p></div>
+<% } else { %>
+  <div class="cards">
+    <% clinicas.forEach(function(c){ %>
+      <a class="card" href="/admin/clinicas/<%= c.id %>">
+        <div class="row between">
+          <strong style="font-size:16px;color:var(--ink)"><%= c.name %></strong>
+          <span class="badge <%= c.isActive ? 'on' : 'off' %>"><%= c.isActive ? 'Ativa' : 'Inativa' %></span>
+        </div>
+        <div class="muted" style="margin-top:2px"><%= c.slug %></div>
+        <div class="muted" style="margin-top:8px">📱 <%= c.whatsappPhoneNumberId %></div>
+        <div class="stat">
+          <div><b><%= c._count.doctors %></b><span>médicos</span></div>
+          <div><b><%= c._count.slots %></b><span>horários</span></div>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+<% } %>
 <%- include('partials/footer') %>
