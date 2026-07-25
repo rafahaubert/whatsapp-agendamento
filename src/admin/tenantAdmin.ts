@@ -218,3 +218,41 @@ export async function listAppointments(tenantId: string, timezone: string) {
     cancelado: a.status === AppointmentStatus.CANCELLED,
   }));
 }
+
+/** Eventos (formato FullCalendar) num intervalo — alimenta a tela de calendário. */
+export async function listAppointmentsRange(
+  tenantId: string,
+  fromISO: string,
+  toISO: string,
+  opts: { doctorId?: string } = {},
+) {
+  const from = new Date(fromISO);
+  const to = new Date(toISO);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = { tenantId, slot: { startsAt: { gte: from, lt: to } } };
+  if (opts.doctorId) where.doctorId = opts.doctorId;
+
+  const appts = await prisma.appointment.findMany({
+    where,
+    include: { patient: true, doctor: true, unit: true, specialty: true, slot: true },
+    orderBy: { slot: { startsAt: "asc" } },
+    take: 1000,
+  });
+
+  const cor = (status: string) => {
+    if (status === AppointmentStatus.CANCELLED) return "#9aa5ab";
+    if (status === AppointmentStatus.NO_SHOW) return "#c0392b";
+    return "#128c7e";
+  };
+
+  return appts.map((a) => ({
+    id: a.id,
+    title: `${a.patient.name} · ${a.specialty.name}`,
+    start: a.slot.startsAt.toISOString(),
+    end: a.slot.endsAt.toISOString(),
+    color: cor(a.status),
+    extendedProps: { medico: a.doctor.name, unidade: a.unit.name, status: a.status },
+  }));
+}

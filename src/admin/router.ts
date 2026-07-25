@@ -20,6 +20,7 @@ import {
   remove,
   generateAgenda,
   listAppointments,
+  listAppointmentsRange,
   listConversations,
   resetConversation,
 } from "./tenantAdmin.js";
@@ -157,6 +158,22 @@ export function makeAdminRouter(): Router {
   router.post("/clinicas/:id/conversa/reiniciar", async (req: Request, res: Response) => {
     await resetConversation(req.params.id, String(req.body.phone ?? ""));
     res.redirect(clinicaUrl(req.params.id, { msg: "Conversa reiniciada" }, "ferramentas"));
+  });
+
+  // ----- Calendário -----
+  router.get("/clinicas/:id/calendario", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    res.render("admin/calendario", { t });
+  });
+
+  router.get("/clinicas/:id/eventos.json", async (req: Request, res: Response) => {
+    const start = String(req.query.start ?? "");
+    const end = String(req.query.end ?? "");
+    if (!start || !end) return res.json([]);
+    const doctorId = req.query.doctorId ? String(req.query.doctorId) : undefined;
+    const eventos = await listAppointmentsRange(req.params.id, start, end, { doctorId });
+    res.json(eventos);
   });
 
   router.post("/clinicas/:id", async (req: Request, res: Response) => {

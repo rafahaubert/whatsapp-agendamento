@@ -1,0 +1,49 @@
+<%- include('partials/header') %>
+<p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
+<div class="row between" style="flex-wrap:wrap;gap:10px">
+  <h1>Calendário</h1>
+  <label style="margin:0;display:flex;align-items:center;gap:8px">Dentista
+    <select id="doctorFilter" style="width:auto">
+      <option value="">Todos</option>
+      <% t.doctors.forEach(function(d){ %>
+        <option value="<%= d.id %>"><%= d.name %></option>
+      <% }) %>
+    </select>
+  </label>
+</div>
+
+<div class="card"><div id="calendar"></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var el = document.getElementById("calendar");
+    var filter = document.getElementById("doctorFilter");
+    var base = "/admin/clinicas/<%= t.id %>/eventos.json";
+
+    var cal = new FullCalendar.Calendar(el, {
+      initialView: "timeGridWeek",
+      locale: "pt-br",
+      headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay" },
+      slotMinTime: "07:00:00",
+      slotMaxTime: "23:00:00",
+      nowIndicator: true,
+      expandRows: true,
+      height: "auto",
+      events: function (info, success, failure) {
+        var url = base + "?start=" + encodeURIComponent(info.startStr) + "&end=" + encodeURIComponent(info.endStr) +
+          (filter.value ? "&doctorId=" + encodeURIComponent(filter.value) : "");
+        fetch(url).then(function (r) { return r.json(); }).then(success).catch(failure);
+      },
+      eventClick: function (arg) {
+        var p = arg.event.extendedProps || {};
+        alert(arg.event.title + "\n" + (p.medico || "") + " · " + (p.unidade || "") + "\nStatus: " + (p.status || ""));
+      }
+    });
+
+    cal.render();
+    filter.addEventListener("change", function () { cal.refetchEvents(); });
+  });
+</script>
+<%- include('partials/footer') %>

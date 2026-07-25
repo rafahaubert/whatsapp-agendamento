@@ -19,6 +19,7 @@
   <a href="#medicos">Médicos</a>
   <a href="#agenda">Agenda</a>
   <a href="#ferramentas">Conversas</a>
+  <a href="/admin/clinicas/<%= t.id %>/calendario">📅 Calendário</a>
 </nav>
 
 <!-- ============ CONFIGURAÇÃO ============ -->
@@ -235,6 +236,7 @@
 <!-- ============ AGENDA ============ -->
 <div class="card" id="agenda">
   <h2>Agenda</h2>
+  <p><a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">📅 Ver calendário</a></p>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
     <label>Gerar horários livres para os próximos<input type="number" name="days" value="7" style="max-width:90px" /> dias</label>
     <button class="btn sm">Gerar horários</button>
