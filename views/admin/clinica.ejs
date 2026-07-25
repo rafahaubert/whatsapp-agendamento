@@ -98,17 +98,29 @@
 
 <div class="card" id="especialidades">
   <h2>Especialidades</h2>
-  <p>
-    <% t.specialties.forEach(function(s){ %>
-      <span class="pill"><%= s.name %>
-        <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/specialty/<%= s.id %>" style="display:inline">
-          <button class="link" style="color:var(--danger)" title="excluir">×</button>
-        </form>
-      </span>
-    <% }) %>
-  </p>
-  <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades" class="inline">
+  <p class="muted">O valor particular é o que o agente informa quando o paciente pergunta o preço (deixe vazio se preferir informar só na recepção).</p>
+  <table>
+    <thead><tr><th>Especialidade</th><th>Valor particular</th><th></th></tr></thead>
+    <tbody>
+      <% t.specialties.forEach(function(s){ %>
+        <tr>
+          <td><%= s.name %></td>
+          <td>
+            <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades/<%= s.id %>/preco" class="inline" style="gap:6px">
+              <input name="preco" value="<%= s.priceParticular || '' %>" placeholder="ex.: 150,00" style="max-width:150px" />
+              <button class="btn sm ghost">Salvar</button>
+            </form>
+          </td>
+          <td style="text-align:right">
+            <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/specialty/<%= s.id %>"><button class="btn sm danger">Excluir</button></form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades" class="inline" style="margin-top:10px">
     <label>Nova especialidade<input name="name" required /></label>
+    <label>Valor particular (opcional)<input name="preco" placeholder="ex.: 150,00" /></label>
     <button class="btn sm">Adicionar</button>
   </form>
 </div>

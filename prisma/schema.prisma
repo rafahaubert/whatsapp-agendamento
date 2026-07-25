@@ -77,11 +77,12 @@ model Unit {
 // ESPECIALIDADE
 // =========================================================
 model Specialty {
-  id          String  @id @default(cuid())
-  tenantId    String
-  name        String // "Clínico Geral", "Cardiologia", "Dermatologia"
-  description String?
-  isActive    Boolean @default(true)
+  id              String  @id @default(cuid())
+  tenantId        String
+  name            String // "Clínico Geral", "Cardiologia", "Dermatologia"
+  description     String?
+  priceParticular String? // valor particular (texto livre, ex.: "150,00" ou "A partir de R$ 120")
+  isActive        Boolean @default(true)
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   doctors      Doctor[] // m-n

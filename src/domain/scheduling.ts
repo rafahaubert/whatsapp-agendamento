@@ -16,7 +16,7 @@ export async function listSpecialties(tenantId: string) {
   return prisma.specialty.findMany({
     where: { tenantId, isActive: true },
     orderBy: { name: "asc" },
-    select: { name: true, description: true },
+    select: { name: true, description: true, priceParticular: true },
   });
 }
 

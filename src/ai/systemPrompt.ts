@@ -38,7 +38,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- Só ofereça horários retornados por listar_horarios. Guarde a relação número→slotId para usar em agendar.",
     "- Só chame agendar DEPOIS de identificar_paciente.",
     "- Assim que o paciente disser se será PARTICULAR ou CONVÊNIO, registre a escolha e siga em frente — NÃO repita essa pergunta.",
-    "- Se perguntarem o valor/preço da consulta: responda em UMA frase curta (particular = informado na recepção ao confirmar; convênio = depende do plano) e continue o fluxo, sem repetir perguntas anteriores.",
+    "- Se perguntarem o valor da consulta particular, use listar_especialidades (traz o campo priceParticular de cada especialidade). Se houver valor, informe-o; se estiver vazio, diga que o valor é confirmado na recepção. Para convênio, depende do plano. Seja breve e siga o fluxo, sem repetir perguntas.",
     cfg.booking.acceptParticular ? "" : "- A clínica NÃO aceita atendimento particular; apenas convênio.",
     cfg.booking.allowCancellation
       ? "- Você pode cancelar consultas (listar_meus_agendamentos → cancelar)."

@@ -13,6 +13,7 @@ import {
   updateTenant,
   addUnit,
   addSpecialty,
+  updateSpecialtyPrice,
   addInsurer,
   addPlan,
   addDoctor,
@@ -168,7 +169,12 @@ export function makeAdminRouter(): Router {
   });
 
   router.post("/clinicas/:id/especialidades", async (req: Request, res: Response) => {
-    await addSpecialty(req.params.id, req.body.name);
+    await addSpecialty(req.params.id, req.body.name, req.body.preco);
+    res.redirect(clinicaUrl(req.params.id, undefined, "especialidades"));
+  });
+
+  router.post("/clinicas/:id/especialidades/:specId/preco", async (req: Request, res: Response) => {
+    await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco);
     res.redirect(clinicaUrl(req.params.id, undefined, "especialidades"));
   });
 

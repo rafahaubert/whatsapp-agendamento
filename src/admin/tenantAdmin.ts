@@ -110,8 +110,17 @@ export async function addUnit(tenantId: string, d: { name: string; address?: str
   });
 }
 
-export async function addSpecialty(tenantId: string, name: string) {
-  await prisma.specialty.create({ data: { tenantId, name } });
+export async function addSpecialty(tenantId: string, name: string, priceParticular?: string) {
+  await prisma.specialty.create({
+    data: { tenantId, name, priceParticular: priceParticular?.trim() || null },
+  });
+}
+
+export async function updateSpecialtyPrice(tenantId: string, id: string, priceParticular?: string) {
+  await prisma.specialty.updateMany({
+    where: { id, tenantId },
+    data: { priceParticular: priceParticular?.trim() || null },
+  });
 }
 
 export async function addInsurer(tenantId: string, d: { name: string; code?: string }) {
