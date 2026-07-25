@@ -4,6 +4,7 @@ import { verifyWhatsAppSignature } from "./signature.js";
 import { parseWhatsAppWebhook } from "./parse.js";
 import { sendWhatsAppText } from "./client.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
+import { markMessageProcessed } from "../../db/idempotency.js";
 import { logger } from "../../shared/logger.js";
 import type { MessageHandler } from "../types.js";
 import type { WhatsAppWebhookBody } from "./types.js";
@@ -49,7 +50,14 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
       const messages = parseWhatsAppWebhook(req.body as WhatsAppWebhookBody);
 
       for (const parsed of messages) {
-        if (!parsed.text) continue; // Fase 1: apenas texto
+        if (!parsed.text) continue; // apenas texto
+
+        // Idempotência: a Meta reentrega webhooks (ex.: durante cold start).
+        // Processa cada mensagem uma única vez.
+        if (!(await markMessageProcessed(parsed.messageId))) {
+          logger.info({ messageId: parsed.messageId }, "mensagem duplicada — ignorada");
+          continue;
+        }
 
         // Roteamento multi-tenant: número que recebeu → clínica.
         const tenant = await findTenantByPhoneNumberId(parsed.phoneNumberId);

@@ -257,6 +257,17 @@ model Appointment {
 }
 
 // =========================================================
+// IDEMPOTÊNCIA — mensagens já processadas (evita reprocessar reentregas da Meta)
+// =========================================================
+model ProcessedMessage {
+  id        String   @id // ID da mensagem do WhatsApp (wamid...)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("processed_messages")
+}
+
+// =========================================================
 // CONVERSA — memória do agente entre mensagens (por telefone)
 // =========================================================
 model Conversation {
