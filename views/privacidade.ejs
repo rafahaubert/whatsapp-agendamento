@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<%- include('admin/partials/head') %>
+<body>
+  <main class="container" style="max-width:760px">
+    <h1>Política de Privacidade</h1>
+    <p class="muted">
+      Modelo base para o assistente de agendamento por WhatsApp. Revise e adapte
+      com os dados e o jurídico da sua clínica antes do uso em produção.
+    </p>
+
+    <div class="card">
+      <h2>1. Dados que coletamos</h2>
+      <p>Ao interagir com nosso assistente no WhatsApp, podemos coletar: nome,
+        CPF, telefone, convênio/plano de saúde e o conteúdo das mensagens
+        necessárias para agendar, confirmar, cancelar ou remarcar consultas.</p>
+
+      <h2>2. Para que usamos</h2>
+      <p>Utilizamos esses dados exclusivamente para agendar e gerenciar suas
+        consultas e para nos comunicarmos com você pelo WhatsApp.</p>
+
+      <h2>3. Como as mensagens são processadas</h2>
+      <p>O canal de atendimento é o WhatsApp (Meta). Para entender seus pedidos e
+        conduzir o agendamento, as mensagens podem ser processadas por
+        inteligência artificial (Anthropic). Os dados são tratados apenas para
+        operar o serviço de agendamento.</p>
+
+      <h2>4. Compartilhamento</h2>
+      <p>Não vendemos seus dados. Eles são utilizados pela clínica e por
+        provedores que viabilizam o serviço (WhatsApp/Meta, provedor de IA e
+        hospedagem), sempre com a finalidade de operar o atendimento.</p>
+
+      <h2>5. Retenção</h2>
+      <p>Mantemos os dados pelo tempo necessário ao atendimento e ao cumprimento
+        de obrigações legais aplicáveis, após o que são eliminados ou
+        anonimizados.</p>
+
+      <h2>6. Seus direitos (LGPD)</h2>
+      <p>Você pode solicitar acesso, correção, exclusão ou portabilidade dos seus
+        dados, bem como revogar consentimento, entrando em contato conosco.</p>
+
+      <h2>7. Contato</h2>
+      <p>Clínica: <strong>[NOME DA CLÍNICA]</strong> — E-mail: <strong>[E-MAIL]</strong> —
+        Telefone: <strong>[TELEFONE]</strong>.</p>
+
+      <p class="muted">Última atualização: <%= new Date().toLocaleDateString("pt-BR") %>.</p>
+    </div>
+  </main>
+</body>
+</html>

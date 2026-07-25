@@ -40,6 +40,12 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "whatsapp-clinic-agent" });
 });
 
+// Raiz → painel.
+app.get("/", (_req, res) => res.redirect("/admin"));
+
+// Política de privacidade (URL exigida para publicar o app na Meta).
+app.get("/privacidade", (_req, res) => res.render("privacidade"));
+
 // Canal WhatsApp → motor de conversa (Claude + ferramentas).
 app.use("/webhook/whatsapp", makeWhatsAppRouter(conversationEngine));
 
