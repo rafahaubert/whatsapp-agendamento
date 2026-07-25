@@ -1,0 +1,83 @@
+{
+  "slug": "clinica-exemplo",
+  "name": "Clínica Exemplo",
+  "whatsappPhoneNumberId": "COLOQUE_O_PHONE_NUMBER_ID_AQUI",
+  "timezone": "America/Sao_Paulo",
+
+  "config": {
+    "branding": {
+      "clinicName": "Clínica Exemplo",
+      "greetingMessage": "Olá! 👋 Sou o assistente virtual da Clínica Exemplo. Posso te ajudar a agendar uma consulta. Para começar, qual é o seu nome completo?",
+      "fallbackMessage": "Desculpe, não entendi. Se preferir, digite *atendente* para falar com nossa recepção.",
+      "closingMessage": "Prontinho! Seu agendamento está confirmado. ✅ Enviaremos um lembrete antes da consulta. Até breve!"
+    },
+    "businessHours": {
+      "timezone": "America/Sao_Paulo",
+      "days": {
+        "0": null,
+        "1": { "open": "08:00", "close": "18:00" },
+        "2": { "open": "08:00", "close": "18:00" },
+        "3": { "open": "08:00", "close": "18:00" },
+        "4": { "open": "08:00", "close": "18:00" },
+        "5": { "open": "08:00", "close": "18:00" },
+        "6": { "open": "08:00", "close": "12:00" }
+      }
+    },
+    "booking": {
+      "slotDurationMinutes": 30,
+      "maxOptionsOffered": 3,
+      "advanceBookingDays": 30,
+      "allowCancellation": true,
+      "allowReschedule": true,
+      "askInsurance": true,
+      "acceptParticular": true
+    },
+    "ai": {
+      "model": "claude-haiku-4-5",
+      "persona": "Você é um atendente cordial, objetivo e acolhedor de uma clínica médica no Brasil. Use português do Brasil, seja breve e evite jargões."
+    }
+  },
+
+  "catalog": {
+    "units": [
+      { "name": "Unidade Centro", "address": "Rua das Flores, 100 - Centro", "phone": "+551133330000" },
+      { "name": "Unidade Zona Sul", "address": "Av. Beira Rio, 2000 - Zona Sul", "phone": "+551133330001" }
+    ],
+    "specialties": [
+      "Clínico Geral",
+      "Cardiologia",
+      "Dermatologia",
+      "Pediatria",
+      "Ortopedia",
+      "Ginecologia"
+    ],
+    "insurers": [
+      { "name": "Unimed", "code": "339679", "plans": ["Unimed Nacional", "Unimed Estadual"] },
+      { "name": "Bradesco Saúde", "code": "005711", "plans": ["Bradesco Top Nacional", "Bradesco Nacional Flex"] },
+      { "name": "Amil", "code": "326305", "plans": ["Amil 400", "Amil One"] }
+    ],
+    "doctors": [
+      {
+        "name": "Dra. Ana Souza",
+        "crm": "SP-123456",
+        "specialties": ["Clínico Geral", "Cardiologia"],
+        "units": ["Unidade Centro"],
+        "acceptedPlans": ["Unimed Nacional", "Bradesco Top Nacional"]
+      },
+      {
+        "name": "Dr. Bruno Lima",
+        "crm": "SP-234567",
+        "specialties": ["Dermatologia"],
+        "units": ["Unidade Centro", "Unidade Zona Sul"],
+        "acceptedPlans": ["Amil 400", "Amil One", "Unimed Nacional"]
+      },
+      {
+        "name": "Dra. Carla Nunes",
+        "crm": "SP-345678",
+        "specialties": ["Pediatria", "Clínico Geral"],
+        "units": ["Unidade Zona Sul"],
+        "acceptedPlans": []
+      }
+    ]
+  }
+}

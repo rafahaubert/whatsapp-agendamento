@@ -1,0 +1,276 @@
+// Prisma schema — Agente de WhatsApp (multi-tenant, multi-unidade, convênios)
+// Docs: https://pris.ly/d/prisma-schema
+//
+// Banco: PostgreSQL (dev e produção). Os campos de status são `String` e os
+// campos "JSON" também (serializados) — a segurança de tipos vive no TypeScript
+// (src/shared/enums.ts). Isso mantém o schema simples; no futuro dá para migrar
+// para `enum`/`jsonb` nativos do Postgres se quiser.
+// Para desenvolvimento local, suba um Postgres com: docker compose up -d db
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================================
+// TENANT — cada cliente (clínica) da plataforma
+// =========================================================
+model Tenant {
+  id       String @id @default(cuid())
+  slug     String @unique // "clinica-exemplo"
+  name     String
+  timezone String @default("America/Sao_Paulo")
+
+  // Roteamento do WhatsApp: o número que RECEBE a mensagem identifica o tenant.
+  whatsappPhoneNumberId String  @unique
+  whatsappBusinessId    String?
+
+  // JSON serializado com o comportamento/branding (TenantConfig em src/config/types.ts).
+  config String
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  units         Unit[]
+  specialties   Specialty[]
+  doctors       Doctor[]
+  insurers      Insurer[]
+  healthPlans   HealthPlan[]
+  patients      Patient[]
+  slots         Slot[]
+  appointments  Appointment[]
+  conversations Conversation[]
+
+  @@map("tenants")
+}
+
+// =========================================================
+// UNIDADE / FILIAL — uma clínica pode ter várias
+// =========================================================
+model Unit {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String // "Unidade Centro", "Unidade Zona Sul"
+  address   String?
+  phone     String?
+  timezone  String? // se null, herda o do tenant
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  doctors      Doctor[] // m-n: médicos que atendem nesta unidade
+  slots        Slot[]
+  appointments Appointment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("units")
+}
+
+// =========================================================
+// ESPECIALIDADE
+// =========================================================
+model Specialty {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String // "Clínico Geral", "Cardiologia", "Dermatologia"
+  description String?
+  isActive    Boolean @default(true)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  doctors      Doctor[] // m-n
+  slots        Slot[]
+  appointments Appointment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("specialties")
+}
+
+// =========================================================
+// MÉDICO — pode ter VÁRIAS especialidades e atuar em VÁRIAS unidades
+// =========================================================
+model Doctor {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  crm       String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  specialties  Specialty[] // m-n
+  units        Unit[] // m-n
+  healthPlans  HealthPlan[] // m-n: convênios/planos que este médico aceita
+  slots        Slot[]
+  appointments Appointment[]
+
+  @@index([tenantId])
+  @@map("doctors")
+}
+
+// =========================================================
+// CONVÊNIO (operadora) — ex: Unimed, Bradesco Saúde, Amil
+// =========================================================
+model Insurer {
+  id       String  @id @default(cuid())
+  tenantId String
+  name     String
+  code     String? // registro ANS, se aplicável
+  isActive Boolean @default(true)
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plans  HealthPlan[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("insurers")
+}
+
+// =========================================================
+// PLANO DE SAÚDE — um plano específico de um convênio
+// =========================================================
+model HealthPlan {
+  id        String  @id @default(cuid())
+  tenantId  String
+  insurerId String
+  name      String // "Unimed Nacional", "Bradesco Top Nacional"
+  isActive  Boolean @default(true)
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  insurer           Insurer            @relation(fields: [insurerId], references: [id], onDelete: Cascade)
+  doctors           Doctor[] // m-n: médicos que aceitam este plano
+  patientInsurances PatientInsurance[]
+  appointments      Appointment[]
+
+  @@unique([tenantId, insurerId, name])
+  @@index([tenantId])
+  @@index([insurerId])
+  @@map("health_plans")
+}
+
+// =========================================================
+// PACIENTE
+// =========================================================
+model Patient {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  cpf       String
+  phone     String // E.164: +5511999999999
+  birthDate DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  insurances   PatientInsurance[]
+  appointments Appointment[]
+
+  @@unique([tenantId, cpf]) // CPF único POR clínica
+  @@index([tenantId, phone])
+  @@map("patients")
+}
+
+// =========================================================
+// CARTEIRINHA — vínculo paciente ↔ plano (um paciente pode ter vários)
+// =========================================================
+model PatientInsurance {
+  id           String    @id @default(cuid())
+  tenantId     String
+  patientId    String
+  healthPlanId String
+  cardNumber   String? // número da carteirinha
+  validThru    DateTime?
+  isPrimary    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  patient    Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  healthPlan HealthPlan @relation(fields: [healthPlanId], references: [id])
+
+  @@index([tenantId, patientId])
+  @@map("patient_insurances")
+}
+
+// =========================================================
+// AGENDA (Slot) — janela de atendimento de um médico, em uma unidade
+// =========================================================
+model Slot {
+  id          String   @id @default(cuid())
+  tenantId    String
+  unitId      String
+  doctorId    String
+  specialtyId String
+  startsAt    DateTime
+  endsAt      DateTime
+  status      String   @default("AVAILABLE") // AVAILABLE | BOOKED | BLOCKED (src/shared/enums.ts)
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit        Unit         @relation(fields: [unitId], references: [id])
+  doctor      Doctor       @relation(fields: [doctorId], references: [id])
+  specialty   Specialty    @relation(fields: [specialtyId], references: [id])
+  appointment Appointment?
+
+  // Consulta principal: "horários livres de X especialidade (em Y unidade) a partir de agora"
+  @@index([tenantId, specialtyId, status, startsAt])
+  @@index([tenantId, unitId, startsAt])
+  @@index([doctorId, startsAt])
+  @@map("slots")
+}
+
+// =========================================================
+// AGENDAMENTO
+// =========================================================
+model Appointment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  unitId       String
+  patientId    String
+  doctorId     String
+  specialtyId  String
+  slotId       String   @unique // 1 slot = 1 agendamento
+  healthPlanId String? // null = atendimento particular
+  paymentType  String   @default("PARTICULAR") // PARTICULAR | HEALTH_PLAN
+  status       String   @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unit       Unit        @relation(fields: [unitId], references: [id])
+  patient    Patient     @relation(fields: [patientId], references: [id])
+  doctor     Doctor      @relation(fields: [doctorId], references: [id])
+  specialty  Specialty   @relation(fields: [specialtyId], references: [id])
+  slot       Slot        @relation(fields: [slotId], references: [id])
+  healthPlan HealthPlan? @relation(fields: [healthPlanId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([patientId])
+  @@map("appointments")
+}
+
+// =========================================================
+// CONVERSA — memória do agente entre mensagens (por telefone)
+// =========================================================
+model Conversation {
+  id            String   @id @default(cuid())
+  tenantId      String
+  patientPhone  String // E.164
+  state         String // JSON serializado: etapa (FSM) + dados coletados
+  history       String? // JSON serializado: histórico compactado p/ o LLM
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, patientPhone])
+  @@index([tenantId, lastMessageAt])
+  @@map("conversations")
+}

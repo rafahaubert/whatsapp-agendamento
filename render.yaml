@@ -1,0 +1,34 @@
+# Blueprint do Render — serviço web (Docker) usando um Postgres EXTERNO (Neon).
+# No Render: New → Blueprint → conecte este repositório. Depois, no dashboard,
+# preencha as variáveis marcadas como "sync: false" (segredos), incluindo o
+# DATABASE_URL com a connection string do Neon (conexão DIRETA, não a pooled).
+services:
+  - type: web
+    name: whatsapp-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free # sobe grátis; hiberna após ~15 min de inatividade
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WHATSAPP_API_VERSION
+        value: v21.0
+      - key: ADMIN_USER
+        value: admin
+      # Gerado automaticamente pelo Render:
+      - key: SESSION_SECRET
+        generateValue: true
+      # Preencha no dashboard (não versionados):
+      - key: DATABASE_URL
+        sync: false # cole a connection string DIRETA do Neon (com ?sslmode=require)
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

@@ -1,0 +1,7 @@
+node_modules
+dist
+.git
+.env
+*.db
+*.db-journal
+test-integration.db

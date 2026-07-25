@@ -1,0 +1,42 @@
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Painel · Agente WhatsApp</title>
+  <style>
+    :root{--bg:#f4f5f7;--card:#fff;--ink:#1f2430;--muted:#6b7280;--line:#e5e7eb;--brand:#128c7e;--danger:#c0392b;--ok:#137a3f}
+    *{box-sizing:border-box}
+    body{margin:0;font:15px/1.5 system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+    a{color:var(--brand);text-decoration:none}
+    .topbar{display:flex;justify-content:space-between;align-items:center;background:var(--brand);color:#fff;padding:12px 20px}
+    .topbar .brand{color:#fff;font-weight:600}
+    .container{max-width:980px;margin:24px auto;padding:0 16px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin:14px 0}
+    h1{font-size:22px;margin:.2em 0}h2{font-size:17px;margin:1.2em 0 .4em}
+    .row{display:flex;gap:12px;align-items:center}.between{justify-content:space-between}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    label{display:block;margin:8px 0;font-size:13px;color:var(--muted)}
+    input[type=text],input:not([type]),input[type=password],input[type=number],input[type=time],textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff;color:var(--ink)}
+    textarea{min-height:70px}
+    .inline{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+    .inline>*{flex:1}
+    .btn{display:inline-block;background:var(--brand);color:#fff;border:0;border-radius:8px;padding:9px 14px;font:inherit;cursor:pointer}
+    .btn.sm{padding:5px 9px;font-size:13px}
+    .btn.ghost{background:#eef2f1;color:var(--ink)}
+    .btn.danger{background:#fbeaea;color:var(--danger)}
+    .link{background:none;border:0;color:#fff;cursor:pointer;font:inherit;text-decoration:underline}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+    th{color:var(--muted);font-weight:600}
+    .pill{display:inline-block;background:#eef2f1;border-radius:20px;padding:2px 9px;font-size:12px;margin:2px}
+    .ok{background:#e7f6ee;color:var(--ok);padding:10px;border-radius:8px}
+    .erro{background:#fbeaea;color:var(--danger);padding:10px;border-radius:8px}
+    .muted{color:var(--muted);font-size:13px}
+    .login-wrap{min-height:100vh;display:grid;place-items:center}
+    .login{width:320px}
+    .checks{display:flex;gap:16px;flex-wrap:wrap}
+    .checks label{display:flex;align-items:center;gap:6px;color:var(--ink);margin:4px 0}
+    .checks input{width:auto}
+    fieldset{border:1px solid var(--line);border-radius:8px;margin:10px 0;padding:10px}
+    legend{color:var(--muted);font-size:13px;padding:0 6px}
+  </style>
+</head>

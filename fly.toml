@@ -1,0 +1,34 @@
+# Fly.io — faz deploy do Dockerfile na região de São Paulo (gru).
+#   Primeira vez:  fly launch --no-deploy   (detecta o Dockerfile; pode ajustar este arquivo)
+#   Deploys:       fly deploy
+#
+# As migrations rodam no start do container (CMD do Dockerfile: `prisma migrate deploy`),
+# então NÃO usamos release_command aqui — evita rodar a migration duas vezes.
+
+app = "whatsapp-agent"
+primary_region = "gru" # São Paulo
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  WHATSAPP_API_VERSION = "v21.0"
+  ADMIN_USER = "admin"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "off"  # sempre no ar — webhooks chegam a qualquer hora
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -1,0 +1,18 @@
+<%- include('partials/header') %>
+<p><a href="/admin">← Clínicas</a></p>
+<h1>Nova clínica</h1>
+<% if (erro) { %><p class="erro"><%= erro %></p><% } %>
+
+<form method="post" action="/admin/clinicas" class="card">
+  <div class="grid2">
+    <label>Nome<input name="name" required /></label>
+    <label>Slug (opcional)<input name="slug" placeholder="gerado a partir do nome" /></label>
+  </div>
+  <div class="grid2">
+    <label>Phone Number ID (WhatsApp)<input name="whatsappPhoneNumberId" required /></label>
+    <label>Fuso horário<input name="timezone" value="America/Sao_Paulo" /></label>
+  </div>
+  <p class="muted">A clínica é criada com uma configuração padrão que você ajusta na tela seguinte.</p>
+  <button class="btn">Criar clínica</button>
+</form>
+<%- include('partials/footer') %>
