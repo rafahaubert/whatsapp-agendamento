@@ -1,18 +1,89 @@
 <%- include('partials/header') %>
+<%
+  var days = cfg.businessHours.days || {};
+  var abertos = Object.keys(days).filter(function(k){ return days[k]; });
+  var minOpen = "08:00", maxClose = "18:00";
+  abertos.forEach(function(k, i){
+    if (i === 0 || days[k].open < minOpen) minOpen = days[k].open;
+    if (i === 0 || days[k].close > maxClose) maxClose = days[k].close;
+  });
+  function pad(n){ return String(n).padStart(2, "0"); }
+  function menos1h(hhmm){ var h = parseInt(hhmm.split(":")[0], 10) - 1; return pad(h < 0 ? 0 : h) + ":00:00"; }
+  function mais1h(hhmm){ var h = parseInt(hhmm.split(":")[0], 10) + 1; return (h >= 24 ? "24" : pad(h)) + ":00:00"; }
+%>
 <p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
 <div class="row between" style="flex-wrap:wrap;gap:10px">
   <h1>Calendário</h1>
-  <label style="margin:0;display:flex;align-items:center;gap:8px">Dentista
-    <select id="doctorFilter" style="width:auto">
-      <option value="">Todos</option>
-      <% t.doctors.forEach(function(d){ %>
-        <option value="<%= d.id %>"><%= d.name %></option>
-      <% }) %>
-    </select>
-  </label>
+  <div class="row" style="gap:10px;flex-wrap:wrap">
+    <label style="margin:0;display:flex;align-items:center;gap:8px">Dentista
+      <select id="doctorFilter" style="width:auto">
+        <option value="">Todos</option>
+        <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
+      </select>
+    </label>
+    <button class="btn sm" id="btnNovo">+ Novo agendamento</button>
+  </div>
 </div>
+<% if (erro) { %><p class="erro"><%= erro %></p><% } %>
+<p class="muted">Clique num espaço livre para agendar · clique num agendamento para ver/cancelar · arraste para mudar o horário.</p>
 
 <div class="card"><div id="calendar"></div></div>
+
+<!-- Modal: novo agendamento -->
+<dialog id="dlgNovo">
+  <h2 style="margin-top:0">Novo agendamento</h2>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos">
+    <input type="hidden" name="voltar" value="calendario" />
+    <label>Data e hora<input type="datetime-local" name="startsAt" id="fStartsAt" required /></label>
+    <div class="grid2">
+      <label>Paciente<input name="nome" required placeholder="Nome completo" /></label>
+      <label>CPF<input name="cpf" required placeholder="000.000.000-00" /></label>
+    </div>
+    <label>Telefone (opcional)<input name="telefone" placeholder="+5551999999999" /></label>
+    <div class="grid2">
+      <label>Dentista
+        <select name="doctorId" required>
+          <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
+        </select>
+      </label>
+      <label>Especialidade
+        <select name="specialtyId" required>
+          <% t.specialties.forEach(function(s){ %><option value="<%= s.id %>"><%= s.name %></option><% }) %>
+        </select>
+      </label>
+    </div>
+    <div class="grid2">
+      <label>Unidade
+        <select name="unitId" required>
+          <% t.units.forEach(function(u){ %><option value="<%= u.id %>"><%= u.name %></option><% }) %>
+        </select>
+      </label>
+      <label>Pagamento
+        <select name="paymentType">
+          <option value="PARTICULAR">Particular</option>
+          <option value="HEALTH_PLAN">Convênio</option>
+        </select>
+      </label>
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">
+      <button type="button" class="btn sm ghost" onclick="document.getElementById('dlgNovo').close()">Cancelar</button>
+      <button class="btn sm">Agendar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Modal: detalhes do agendamento -->
+<dialog id="dlgInfo">
+  <h2 style="margin-top:0">Agendamento</h2>
+  <p id="infoTexto" style="white-space:pre-line"></p>
+  <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">
+    <button type="button" class="btn sm ghost" onclick="document.getElementById('dlgInfo').close()">Fechar</button>
+    <form method="post" id="formCancelar">
+      <input type="hidden" name="voltar" value="calendario" />
+      <button class="btn sm danger">Cancelar consulta</button>
+    </form>
+  </div>
+</dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/locales-all.global.min.js"></script>
@@ -23,30 +94,72 @@
       el.innerHTML = "<p class='muted'>Não foi possível carregar o calendário (biblioteca bloqueada pela rede/navegador).</p>";
       return;
     }
+    var clinicaId = "<%= t.id %>";
     var filter = document.getElementById("doctorFilter");
-    var base = "/admin/clinicas/<%= t.id %>/eventos.json";
+    var dlgNovo = document.getElementById("dlgNovo");
+    var dlgInfo = document.getElementById("dlgInfo");
+
+    function paraInputLocal(d) {
+      var p = function (n) { return String(n).padStart(2, "0"); };
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+    }
+    function abrirNovo(quando) {
+      document.getElementById("fStartsAt").value = paraInputLocal(quando || new Date());
+      dlgNovo.showModal();
+    }
 
     var cal = new FullCalendar.Calendar(el, {
       initialView: "timeGridWeek",
       locale: "pt-br",
-      height: 760,
-      headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay" },
-      slotMinTime: "07:00:00",
-      slotMaxTime: "23:00:00",
+      height: 780,
+      headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek" },
+      buttonText: { today: "hoje", month: "mês", week: "semana", day: "dia", list: "lista" },
+      slotMinTime: "<%= menos1h(minOpen) %>",
+      slotMaxTime: "<%= mais1h(maxClose) %>",
+      scrollTime: "<%= minOpen %>:00",
+      slotDuration: "00:<%= String(cfg.booking.slotDurationMinutes).padStart(2, '0') %>:00",
+      allDaySlot: false,
       nowIndicator: true,
+      weekNumbers: false,
+      dayMaxEvents: true,
+      selectable: true,
+      editable: true,
+      eventDurationEditable: false,
+      businessHours: [
+        <% Object.keys(days).forEach(function(k){ if (days[k]) { %>
+          { daysOfWeek: [<%= k %>], startTime: "<%= days[k].open %>", endTime: "<%= days[k].close %>" },
+        <% } }) %>
+      ],
       events: function (info, success, failure) {
-        var url = base + "?start=" + encodeURIComponent(info.startStr) + "&end=" + encodeURIComponent(info.endStr) +
-          (filter.value ? "&doctorId=" + encodeURIComponent(filter.value) : "");
+        var url = "/admin/clinicas/" + clinicaId + "/eventos.json?start=" + encodeURIComponent(info.startStr) +
+          "&end=" + encodeURIComponent(info.endStr) + (filter.value ? "&doctorId=" + encodeURIComponent(filter.value) : "");
         fetch(url).then(function (r) { return r.json(); }).then(success).catch(failure);
       },
+      select: function (sel) { abrirNovo(sel.start); cal.unselect(); },
       eventClick: function (arg) {
         var p = arg.event.extendedProps || {};
-        alert(arg.event.title + "\n" + (p.medico || "") + " · " + (p.unidade || "") + "\nStatus: " + (p.status || ""));
+        var quando = arg.event.start ? arg.event.start.toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" }) : "";
+        document.getElementById("infoTexto").textContent =
+          arg.event.title + "\n" + quando + "\nDentista: " + (p.medico || "") + "\nUnidade: " + (p.unidade || "") + "\nStatus: " + (p.status || "");
+        document.getElementById("formCancelar").action =
+          "/admin/clinicas/" + clinicaId + "/agendamentos/" + arg.event.id + "/cancelar";
+        dlgInfo.showModal();
+      },
+      eventDrop: function (arg) {
+        fetch("/admin/clinicas/" + clinicaId + "/agendamentos/" + arg.event.id + "/mover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startsAt: arg.event.start.toISOString() })
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) { if (!res.ok) { alert(res.j.erro || "Não foi possível mover."); arg.revert(); } })
+          .catch(function () { alert("Falha de conexão."); arg.revert(); });
       }
     });
 
     cal.render();
     filter.addEventListener("change", function () { cal.refetchEvents(); });
+    document.getElementById("btnNovo").addEventListener("click", function () { abrirNovo(new Date()); });
   });
 </script>
 <%- include('partials/footer') %>

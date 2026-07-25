@@ -324,6 +324,11 @@ export async function rescheduleAppointment(
   if (!tenant.config.booking.allowReschedule) {
     return { erro: "Remarcação não permitida pelo assistente." };
   }
+  return doReschedule(tenant, appointmentId, novoSlotId);
+}
+
+/** Núcleo da remarcação (sem checar a regra do assistente) — usado pelo agente e pelo painel. */
+async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoSlotId: string) {
   const outcome = await prisma.$transaction(async (tx) => {
     const appt = await tx.appointment.findFirst({
       where: { id: appointmentId, tenantId: tenant.id },
@@ -388,4 +393,107 @@ export async function rescheduleAppointment(
     unidade: novo.unit.name,
     inicio: formatDateTime(novo.startsAt, tenant.timezone),
   };
+}
+
+// =========================================================
+// Operações administrativas (painel) — criar/mover manualmente
+// =========================================================
+
+/** Acha um slot LIVRE no horário exato ou cria um (agenda administrativa). */
+async function findOrCreateSlot(
+  tenantId: string,
+  p: { doctorId: string; specialtyId: string; unitId: string; startsAt: Date; durationMinutes: number },
+) {
+  const existing = await prisma.slot.findFirst({
+    where: {
+      tenantId,
+      doctorId: p.doctorId,
+      specialtyId: p.specialtyId,
+      startsAt: p.startsAt,
+      status: SlotStatus.AVAILABLE,
+    },
+  });
+  if (existing) return existing;
+
+  return prisma.slot.create({
+    data: {
+      tenantId,
+      unitId: p.unitId,
+      doctorId: p.doctorId,
+      specialtyId: p.specialtyId,
+      startsAt: p.startsAt,
+      endsAt: new Date(p.startsAt.getTime() + p.durationMinutes * 60_000),
+      status: SlotStatus.AVAILABLE,
+    },
+  });
+}
+
+/** Cria um agendamento manualmente pelo painel (cria o paciente e o horário se preciso). */
+export async function createManualAppointment(
+  tenant: ResolvedTenant,
+  p: {
+    nome: string;
+    cpf: string;
+    telefone?: string;
+    doctorId: string;
+    specialtyId: string;
+    unitId: string;
+    startsAt: string; // ISO local vindo do formulário
+    paymentType?: string;
+    plano?: string;
+  },
+) {
+  const startsAt = new Date(p.startsAt);
+  if (Number.isNaN(startsAt.getTime())) return { erro: "Data/hora inválida." };
+
+  const paciente = await findOrCreatePatient(tenant.id, {
+    nome: p.nome,
+    cpf: p.cpf,
+    phone: p.telefone ?? "",
+  });
+  if ("erro" in paciente) return paciente;
+
+  const doctor = await prisma.doctor.findFirst({ where: { id: p.doctorId, tenantId: tenant.id } });
+  if (!doctor) return { erro: "Dentista não encontrado." };
+
+  const slot = await findOrCreateSlot(tenant.id, {
+    doctorId: p.doctorId,
+    specialtyId: p.specialtyId,
+    unitId: p.unitId,
+    startsAt,
+    durationMinutes: tenant.config.booking.slotDurationMinutes,
+  });
+
+  return bookAppointment(
+    tenant,
+    paciente.patientId,
+    slot.id,
+    p.paymentType ?? PaymentType.PARTICULAR,
+    p.plano,
+  );
+}
+
+/** Move um agendamento para outro horário (arrastar no calendário do painel). */
+export async function moveAppointment(
+  tenant: ResolvedTenant,
+  appointmentId: string,
+  novoInicioISO: string,
+) {
+  const startsAt = new Date(novoInicioISO);
+  if (Number.isNaN(startsAt.getTime())) return { erro: "Data/hora inválida." };
+
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId: tenant.id },
+  });
+  if (!appt) return { erro: "Agendamento não encontrado." };
+
+  const slot = await findOrCreateSlot(tenant.id, {
+    doctorId: appt.doctorId,
+    specialtyId: appt.specialtyId,
+    unitId: appt.unitId,
+    startsAt,
+    durationMinutes: tenant.config.booking.slotDurationMinutes,
+  });
+
+  return doReschedule(tenant, appointmentId, slot.id);
 }

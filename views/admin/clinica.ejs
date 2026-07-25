@@ -257,7 +257,7 @@
     <p class="muted">Nenhum agendamento futuro.</p>
   <% } else { %>
     <table>
-      <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Médico</th><th>Unidade</th><th>Status</th></tr></thead>
+      <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Médico</th><th>Unidade</th><th>Status</th><th></th></tr></thead>
       <tbody>
         <% agendamentos.forEach(function(a){ %>
           <tr>
@@ -267,11 +267,58 @@
             <td><%= a.medico %></td>
             <td><%= a.unidade %></td>
             <td><%= a.status %></td>
+            <td style="text-align:right">
+              <% if (!a.cancelado) { %>
+                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/cancelar"
+                      onsubmit="return confirm('Cancelar a consulta de <%= a.paciente %>?')">
+                  <button class="btn sm danger">Cancelar</button>
+                </form>
+              <% } %>
+            </td>
           </tr>
         <% }) %>
       </tbody>
     </table>
   <% } %>
+
+  <h2>Novo agendamento (manual)</h2>
+  <p class="muted">Para encaixes feitos por telefone ou na recepção. Cria o paciente e o horário se ainda não existirem.</p>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos">
+    <div class="grid2">
+      <label>Data e hora<input type="datetime-local" name="startsAt" required /></label>
+      <label>Paciente<input name="nome" required placeholder="Nome completo" /></label>
+    </div>
+    <div class="grid2">
+      <label>CPF<input name="cpf" required placeholder="000.000.000-00" /></label>
+      <label>Telefone (opcional)<input name="telefone" placeholder="+5551999999999" /></label>
+    </div>
+    <div class="grid2">
+      <label>Dentista
+        <select name="doctorId" required>
+          <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
+        </select>
+      </label>
+      <label>Especialidade
+        <select name="specialtyId" required>
+          <% t.specialties.forEach(function(s){ %><option value="<%= s.id %>"><%= s.name %></option><% }) %>
+        </select>
+      </label>
+    </div>
+    <div class="grid2">
+      <label>Unidade
+        <select name="unitId" required>
+          <% t.units.forEach(function(u){ %><option value="<%= u.id %>"><%= u.name %></option><% }) %>
+        </select>
+      </label>
+      <label>Pagamento
+        <select name="paymentType">
+          <option value="PARTICULAR">Particular</option>
+          <option value="HEALTH_PLAN">Convênio</option>
+        </select>
+      </label>
+    </div>
+    <button class="btn sm">Criar agendamento</button>
+  </form>
 </div>
 
 <!-- ============ CONVERSAS ============ -->

@@ -81,6 +81,39 @@
     fieldset{border:1px solid var(--line);border-radius:10px;margin:10px 0;padding:12px}
     legend{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:0 6px}
 
+    /* ---- FullCalendar: integra com o tema (claro/escuro) ---- */
+    .fc{--fc-border-color:var(--line);--fc-page-bg-color:var(--card);--fc-neutral-bg-color:var(--bg);
+        --fc-today-bg-color:rgba(18,140,126,.07);--fc-now-indicator-color:#e0554a;
+        --fc-event-border-color:transparent;--fc-small-font-size:12px}
+    @media (prefers-color-scheme: dark){ .fc{--fc-today-bg-color:rgba(0,168,132,.12)} }
+    :root[data-theme="dark"] .fc{--fc-today-bg-color:rgba(0,168,132,.12)}
+    .fc a{color:inherit;text-decoration:none}
+    .fc .fc-toolbar-title{font-size:18px;font-weight:600;letter-spacing:-.01em}
+    .fc .fc-toolbar.fc-header-toolbar{margin-bottom:14px;gap:8px;flex-wrap:wrap}
+    .fc .fc-button{background:var(--card);border:1px solid var(--line);color:var(--ink);
+        font-weight:500;font-size:13px;padding:6px 12px;border-radius:8px;box-shadow:none;text-transform:capitalize}
+    .fc .fc-button:hover{background:var(--bg);border-color:var(--brand);color:var(--brand)}
+    .fc .fc-button:focus{box-shadow:0 0 0 3px rgba(18,140,126,.15)!important}
+    .fc .fc-button-primary:not(:disabled).fc-button-active,
+    .fc .fc-button-primary:not(:disabled):active{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+    .fc .fc-button-primary:disabled{background:var(--card);border-color:var(--line);color:var(--muted);opacity:.6}
+    .fc .fc-col-header-cell{background:var(--bg);padding:8px 2px;font-size:12px;font-weight:600;
+        text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+    .fc .fc-daygrid-day-number,.fc .fc-timegrid-slot-label-cushion{color:var(--muted);font-size:12px}
+    .fc .fc-day-today .fc-daygrid-day-number{color:var(--brand);font-weight:700}
+    .fc .fc-event{border-radius:6px;padding:1px 4px;font-size:12px;font-weight:500;cursor:pointer}
+    .fc .fc-event:hover{filter:brightness(1.08)}
+    .fc .fc-timegrid-slot{height:2.1em}
+    .fc .fc-scrollgrid{border-radius:10px;overflow:hidden}
+    .fc .fc-day-sat,.fc .fc-day-sun{background:var(--bg)}
+    .fc .fc-day-today{background:var(--fc-today-bg-color)!important}
+    .fc .fc-non-business{background:repeating-linear-gradient(45deg,transparent,transparent 6px,var(--line) 6px,var(--line) 7px);opacity:.45}
+
+    /* Modal simples (agendamento) */
+    dialog{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);color:var(--ink);
+        padding:20px;max-width:460px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+    dialog::backdrop{background:rgba(0,0,0,.45)}
+
     /* Dashboard de clínicas */
     .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:16px}
     .cards .card{margin:0;transition:border-color .12s,transform .12s}

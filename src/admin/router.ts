@@ -26,6 +26,12 @@ import {
   resetConversation,
 } from "./tenantAdmin.js";
 import { serviceAccountEmail } from "../integrations/googleCalendar.js";
+import { findTenantById } from "../db/tenantRepository.js";
+import {
+  createManualAppointment,
+  moveAppointment,
+  cancelAppointment,
+} from "../domain/scheduling.js";
 import type { TenantConfig } from "../config/types.js";
 
 // ---------- helpers ----------
@@ -167,7 +173,57 @@ export function makeAdminRouter(): Router {
   router.get("/clinicas/:id/calendario", async (req: Request, res: Response) => {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
-    res.render("admin/calendario", { t });
+    res.render("admin/calendario", { t, cfg: t.parsedConfig, erro: req.query.erro ?? null });
+  });
+
+  // ----- Agendamentos (criar / mover / cancelar pelo painel) -----
+  router.post("/clinicas/:id/agendamentos", async (req: Request, res: Response) => {
+    const tenant = await findTenantById(req.params.id);
+    if (!tenant) return res.redirect("/admin");
+
+    const r = (await createManualAppointment(tenant, {
+      nome: String(req.body.nome ?? ""),
+      cpf: String(req.body.cpf ?? ""),
+      telefone: String(req.body.telefone ?? ""),
+      doctorId: String(req.body.doctorId ?? ""),
+      specialtyId: String(req.body.specialtyId ?? ""),
+      unitId: String(req.body.unitId ?? ""),
+      startsAt: String(req.body.startsAt ?? ""),
+      paymentType: String(req.body.paymentType ?? "PARTICULAR"),
+      plano: req.body.plano ? String(req.body.plano) : undefined,
+    })) as { erro?: string };
+
+    const voltar = String(req.body.voltar ?? "");
+    if (voltar === "calendario") {
+      return res.redirect(`/admin/clinicas/${req.params.id}/calendario${r.erro ? "?erro=" + encodeURIComponent(r.erro) : ""}`);
+    }
+    res.redirect(
+      clinicaUrl(req.params.id, r.erro ? { erro: r.erro } : { msg: "Agendamento criado" }, "agenda"),
+    );
+  });
+
+  router.post("/clinicas/:id/agendamentos/:apptId/cancelar", async (req: Request, res: Response) => {
+    const tenant = await findTenantById(req.params.id);
+    if (!tenant) return res.redirect("/admin");
+    const r = (await cancelAppointment(tenant, req.params.apptId)) as { erro?: string };
+
+    if (String(req.body.voltar ?? "") === "calendario") {
+      return res.redirect(`/admin/clinicas/${req.params.id}/calendario`);
+    }
+    res.redirect(
+      clinicaUrl(req.params.id, r.erro ? { erro: r.erro } : { msg: "Agendamento cancelado" }, "agenda"),
+    );
+  });
+
+  /** Arrastar/soltar no calendário (fetch JSON). */
+  router.post("/clinicas/:id/agendamentos/:apptId/mover", async (req: Request, res: Response) => {
+    const tenant = await findTenantById(req.params.id);
+    if (!tenant) return res.status(404).json({ erro: "Clínica não encontrada." });
+    const r = (await moveAppointment(tenant, req.params.apptId, String(req.body.startsAt ?? ""))) as {
+      erro?: string;
+    };
+    if (r.erro) return res.status(400).json(r);
+    res.json({ ok: true });
   });
 
   router.get("/clinicas/:id/eventos.json", async (req: Request, res: Response) => {

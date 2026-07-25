@@ -11,6 +11,20 @@ export interface ResolvedTenant {
   config: TenantConfig;
 }
 
+/** Carrega um tenant pelo id, já com a config desserializada. */
+export async function findTenantById(id: string): Promise<ResolvedTenant | null> {
+  const tenant = await prisma.tenant.findUnique({ where: { id } });
+  if (!tenant) return null;
+  return {
+    id: tenant.id,
+    slug: tenant.slug,
+    name: tenant.name,
+    timezone: tenant.timezone,
+    whatsappPhoneNumberId: tenant.whatsappPhoneNumberId,
+    config: JSON.parse(tenant.config) as TenantConfig,
+  };
+}
+
 /**
  * Coração do roteamento multi-tenant: dado o número que RECEBEU a mensagem
  * (phone_number_id da Meta), descobre a qual clínica ela pertence.
