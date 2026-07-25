@@ -91,7 +91,13 @@ const PERIODOS: Record<string, [number, number]> = {
 
 export async function listAvailableSlots(
   tenant: ResolvedTenant,
-  opts: { especialidade: string; unidade?: string; plano?: string; periodo?: string },
+  opts: {
+    especialidade: string;
+    unidade?: string;
+    plano?: string;
+    periodo?: string;
+    horaPreferida?: number;
+  },
 ) {
   const tenantId = tenant.id;
   const specialty = await resolveSpecialty(tenantId, opts.especialidade);
@@ -117,21 +123,34 @@ export async function listAvailableSlots(
     if (plan) where.doctor = { healthPlans: { some: { id: plan.id } } };
   }
 
-  // Busca uma janela maior e filtra por período (hora local) antes de cortar em N.
+  // Busca uma janela maior e filtra por período / hora (local) antes de cortar em N.
   const encontrados = await prisma.slot.findMany({
     where,
     orderBy: { startsAt: "asc" },
-    take: 200,
+    take: 300,
     include: { doctor: true, unit: true },
   });
 
+  const horaLocal = (d: Date) => {
+    const dt = DateTime.fromJSDate(d).setZone(tenant.timezone);
+    return dt.hour + dt.minute / 60;
+  };
+
   const faixa = opts.periodo ? PERIODOS[opts.periodo.trim().toLowerCase()] : undefined;
-  const filtrados = faixa
+  let filtrados = faixa
     ? encontrados.filter((s) => {
-        const hora = DateTime.fromJSDate(s.startsAt).setZone(tenant.timezone).hour;
-        return hora >= faixa[0] && hora < faixa[1];
+        const h = horaLocal(s.startsAt);
+        return h >= faixa[0] && h < faixa[1];
       })
     : encontrados;
+
+  // Preferência de horário específico ("pelas 22h"): ordena pelos mais próximos.
+  if (opts.horaPreferida != null && Number.isFinite(opts.horaPreferida)) {
+    const alvo = opts.horaPreferida;
+    filtrados = [...filtrados].sort(
+      (a, b) => Math.abs(horaLocal(a.startsAt) - alvo) - Math.abs(horaLocal(b.startsAt) - alvo),
+    );
+  }
 
   const escolhidos = filtrados.slice(0, tenant.config.booking.maxOptionsOffered);
 

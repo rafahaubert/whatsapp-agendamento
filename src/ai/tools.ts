@@ -62,6 +62,10 @@ export const tools: Anthropic.Tool[] = [
           enum: ["manha", "tarde", "noite"],
           description: "Preferência de período do dia do paciente (opcional)",
         },
+        horaPreferida: {
+          type: "integer",
+          description: "Hora aproximada preferida pelo paciente (0 a 23). Ex.: 22 para 'pelas 22h' (opcional)",
+        },
       },
       required: ["especialidade"],
     },
@@ -142,6 +146,7 @@ export async function executeTool(
         unidade: input.unidade,
         plano: input.plano,
         periodo: input.periodo,
+        horaPreferida: input.horaPreferida,
       });
     case "agendar":
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado. Use identificar_paciente antes." };
