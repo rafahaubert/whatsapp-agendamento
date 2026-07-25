@@ -19,18 +19,21 @@
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     var el = document.getElementById("calendar");
+    if (typeof FullCalendar === "undefined") {
+      el.innerHTML = "<p class='muted'>Não foi possível carregar o calendário (biblioteca bloqueada pela rede/navegador).</p>";
+      return;
+    }
     var filter = document.getElementById("doctorFilter");
     var base = "/admin/clinicas/<%= t.id %>/eventos.json";
 
     var cal = new FullCalendar.Calendar(el, {
       initialView: "timeGridWeek",
       locale: "pt-br",
+      height: 760,
       headerToolbar: { left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay" },
       slotMinTime: "07:00:00",
       slotMaxTime: "23:00:00",
       nowIndicator: true,
-      expandRows: true,
-      height: "auto",
       events: function (info, success, failure) {
         var url = base + "?start=" + encodeURIComponent(info.startStr) + "&end=" + encodeURIComponent(info.endStr) +
           (filter.value ? "&doctorId=" + encodeURIComponent(filter.value) : "");
