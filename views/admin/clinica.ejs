@@ -220,9 +220,10 @@
             <details style="margin-top:8px">
               <summary class="muted" style="cursor:pointer">Horários de atendimento</summary>
               <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/horarios" style="margin-top:8px">
-                <label class="checks" style="margin-bottom:6px">
+                <label class="checks" style="margin-bottom:4px">
                   <input type="checkbox" name="herdar" <%= herda ? "checked" : "" %> /> Usar o horário de funcionamento da clínica
                 </label>
+                <p class="muted" style="margin:0 0 8px">Ao editar qualquer horário abaixo, esta opção é desmarcada automaticamente (vira agenda própria).</p>
                 <table>
                   <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th></tr></thead>
                   <tbody>
@@ -394,4 +395,21 @@
     </table>
   <% } %>
 </div>
+<script>
+  // Editar a agenda de um profissional desmarca "usar o horário da clínica" —
+  // senão o formulário salvaria null e a edição seria perdida.
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll('form[action$="/horarios"]').forEach(function (form) {
+      var herdar = form.querySelector('input[name="herdar"]');
+      if (!herdar) return;
+      form
+        .querySelectorAll('input[type="time"], input[type="checkbox"]:not([name="herdar"])')
+        .forEach(function (campo) {
+          ["input", "change"].forEach(function (evt) {
+            campo.addEventListener(evt, function () { herdar.checked = false; });
+          });
+        });
+    });
+  });
+</script>
 <%- include('partials/footer') %>
