@@ -58,6 +58,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     cfg.booking.allowReschedule
       ? "- Você pode remarcar consultas (listar_meus_agendamentos → listar_horarios → remarcar)."
       : "- Remarcações NÃO são permitidas pelo assistente.",
+    "- Quando não houver horário que sirva ao paciente, ofereça a FILA DE ESPERA (entrar_fila_espera): ele é avisado automaticamente se alguém cancelar. Só chame após identificar o paciente.",
     "- Se uma ferramenta retornar \"erro\" ou vier vazia (ex.: especialidade não encontrada, sem horários), NÃO mande falar com atendente. Chame listar_especialidades para mostrar as opções REAIS e peça para o paciente escolher entre elas.",
     `- Use "${cfg.branding.fallbackMessage}" APENAS se o pedido fugir totalmente do escopo de agendamento — nunca por causa de erro de ferramenta.`,
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",

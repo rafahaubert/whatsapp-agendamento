@@ -17,6 +17,7 @@ import {
   updateEvent,
   deleteEvent,
 } from "../integrations/googleCalendar.js";
+import { sendWhatsAppTemplate } from "../channels/whatsapp/client.js";
 import type { ResolvedTenant } from "../db/tenantRepository.js";
 
 // ---------- Catálogo ----------
@@ -432,6 +433,13 @@ export async function cancelAppointment(tenant: ResolvedTenant, appointmentId: s
     }
   }
 
+  // O horário voltou a ficar livre: avisa quem está na fila de espera.
+  try {
+    await notificarFilaEspera(tenant, appt.slotId);
+  } catch (err) {
+    logger.error({ err, appointmentId: appt.id }, "falha ao avisar a fila de espera");
+  }
+
   return { status: "CANCELADO", appointmentId: appt.id };
 }
 
@@ -662,4 +670,96 @@ export async function marcarComparecimento(
     data: { status: compareceu ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW },
   });
   return { status: compareceu ? "COMPARECEU" : "FALTOU", appointmentId: appt.id };
+}
+
+// =========================================================
+// Fila de espera — transforma cancelamento em receita
+// =========================================================
+
+/** Período do dia de um horário, no fuso da clínica. */
+function periodoDoHorario(quando: Date, timezone: string): string {
+  const h = DateTime.fromJSDate(quando).setZone(timezone).hour;
+  if (h < 12) return "manha";
+  if (h < 18) return "tarde";
+  return "noite";
+}
+
+/** Coloca o paciente na fila de espera de uma especialidade. */
+export async function entrarFilaEspera(
+  tenant: ResolvedTenant,
+  patientId: string,
+  especialidade: string,
+  periodo?: string,
+) {
+  const spec = await resolveSpecialty(tenant.id, especialidade);
+  if (!spec) return { erro: `Especialidade "${especialidade}" não encontrada.` };
+
+  const jaNaFila = await prisma.waitlist.findFirst({
+    where: { tenantId: tenant.id, patientId, specialtyId: spec.id, status: "ACTIVE" },
+  });
+  if (jaNaFila) return { ok: true, jaEstava: true, especialidade: spec.name };
+
+  await prisma.waitlist.create({
+    data: {
+      tenantId: tenant.id,
+      patientId,
+      specialtyId: spec.id,
+      periodo: periodo?.trim().toLowerCase() || null,
+    },
+  });
+  return { ok: true, jaEstava: false, especialidade: spec.name };
+}
+
+/**
+ * Avisa o primeiro da fila quando um horário é liberado (cancelamento).
+ * Best-effort: nunca quebra o cancelamento. Exige o template `waitlistTemplate`
+ * configurado na clínica.
+ */
+export async function notificarFilaEspera(tenant: ResolvedTenant, slotId: string): Promise<void> {
+  const template = tenant.config.waitlist?.templateName;
+  if (!tenant.config.waitlist?.enabled || !template) return;
+
+  const slot = await prisma.slot.findFirst({
+    where: { id: slotId, tenantId: tenant.id, status: SlotStatus.AVAILABLE },
+    include: { doctor: true, unit: true, specialty: true },
+  });
+  if (!slot) return;
+
+  const periodo = periodoDoHorario(slot.startsAt, tenant.timezone);
+
+  const candidato = await prisma.waitlist.findFirst({
+    where: {
+      tenantId: tenant.id,
+      specialtyId: slot.specialtyId,
+      status: "ACTIVE",
+      OR: [{ periodo: null }, { periodo }],
+    },
+    orderBy: { createdAt: "asc" }, // quem esperou mais tempo primeiro
+    include: { patient: true },
+  });
+  if (!candidato) return;
+
+  await sendWhatsAppTemplate(tenant.whatsappPhoneNumberId, candidato.patient.phone, {
+    name: template,
+    lang: tenant.config.waitlist.templateLang || "pt_BR",
+    // {{1}} paciente · {{2}} data/hora · {{3}} profissional · {{4}} unidade
+    bodyParams: [
+      candidato.patient.name,
+      formatDateTime(slot.startsAt, tenant.timezone),
+      slot.doctor.name,
+      slot.unit.name,
+    ],
+    // O botão devolve o slotId — o motor já sabe tratar payloads "SLOT:".
+    buttonPayloads: [`SLOT:${slot.id}`],
+  });
+
+  await prisma.waitlist.update({
+    where: { id: candidato.id },
+    data: { status: "NOTIFIED", notifiedAt: new Date() },
+  });
+
+  logger.info(
+    { tenant: tenant.slug, paciente: candidato.patient.name, slotId },
+    "fila de espera avisada sobre horário liberado",
+  );
 }

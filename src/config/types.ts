@@ -75,6 +75,22 @@ export interface TenantConfig {
     /** Código do idioma do template (ex.: "pt_BR"). */
     templateLang: string;
   };
+
+  /** Fila de espera: avisa quando um horário é liberado por cancelamento. */
+  waitlist?: {
+    enabled: boolean;
+    templateName: string;
+    templateLang: string;
+  };
+
+  /** Reativação: convida de volta quem não vem há alguns meses. */
+  recall?: {
+    enabled: boolean;
+    /** Meses sem consulta para entrar no convite (ex.: 6). */
+    months: number;
+    templateName: string;
+    templateLang: string;
+  };
 }
 
 // ---------- Catálogo (seed) ----------

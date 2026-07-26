@@ -127,6 +127,17 @@ function parseConfig(body: any, timezone: string): TenantConfig {
       templateName: (body.reminders_templateName ?? "").trim(),
       templateLang: (body.reminders_templateLang ?? "pt_BR").trim() || "pt_BR",
     },
+    waitlist: {
+      enabled: bool(body.waitlist_enabled),
+      templateName: (body.waitlist_templateName ?? "").trim(),
+      templateLang: (body.waitlist_templateLang ?? "pt_BR").trim() || "pt_BR",
+    },
+    recall: {
+      enabled: bool(body.recall_enabled),
+      months: num(body.recall_months, 6),
+      templateName: (body.recall_templateName ?? "").trim(),
+      templateLang: (body.recall_templateLang ?? "pt_BR").trim() || "pt_BR",
+    },
   };
 }
 

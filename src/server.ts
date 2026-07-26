@@ -7,6 +7,7 @@ import { conversationEngine } from "./core/engine.js";
 import { makeAdminRouter } from "./admin/router.js";
 import { enviarLembretes } from "./jobs/reminders.js";
 import { renovarAgendas } from "./jobs/agenda.js";
+import { enviarReativacoes } from "./jobs/recall.js";
 import { logger } from "./shared/logger.js";
 
 const app = express();
@@ -67,7 +68,8 @@ app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
     // para quem já configurou o cron antigo).
     const lembretes = await enviarLembretes();
     const agenda = req.path === "/jobs/run" ? await renovarAgendas() : null;
-    res.json({ ok: true, lembretes, agenda });
+    const reativacoes = req.path === "/jobs/run" ? await enviarReativacoes() : null;
+    res.json({ ok: true, lembretes, agenda, reativacoes });
   } catch (err) {
     logger.error({ err }, "falha ao executar os jobs");
     res.status(500).json({ ok: false });
@@ -93,6 +95,7 @@ app.listen(env.PORT, () => {
   setInterval(
     () => {
       renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
+      enviarReativacoes().catch((err) => logger.error({ err }, "falha nas reativações"));
     },
     24 * 60 * 60 * 1000,
   ).unref();

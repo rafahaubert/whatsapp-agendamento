@@ -122,6 +122,44 @@
     <input type="hidden" name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" />
   <% } %>
 
+  <h2>Fila de espera (aproveita cancelamentos)</h2>
+  <% var wl = cfg.waitlist || { enabled: false, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Sem horário disponível, o agente oferece a fila. Quando alguém cancela,
+    o primeiro da fila é avisado na hora — com botão para pegar a vaga.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="waitlist_enabled" <%= wl.enabled ? "checked" : "" %> /> Ativar fila de espera</label>
+  </div>
+  <% if (ehSuper) { %>
+    <div class="grid2">
+      <label>Nome do template<input name="waitlist_templateName" value="<%= wl.templateName %>" placeholder="vaga_disponivel" /></label>
+      <label>Idioma do template<input name="waitlist_templateLang" value="<%= wl.templateLang || 'pt_BR' %>" /></label>
+    </div>
+  <% } else { %>
+    <input type="hidden" name="waitlist_templateName" value="<%= wl.templateName %>" />
+    <input type="hidden" name="waitlist_templateLang" value="<%= wl.templateLang || 'pt_BR' %>" />
+  <% } %>
+
+  <h2>Reativação de pacientes (traz quem sumiu)</h2>
+  <% var rc = cfg.recall || { enabled: false, months: 6, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Convida de volta quem não vem há alguns meses (ex.: limpeza semestral).
+    Cada paciente recebe no máximo um convite a cada 90 dias.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="recall_enabled" <%= rc.enabled ? "checked" : "" %> /> Ativar reativação</label>
+  </div>
+  <div class="grid2">
+    <label>Meses sem consulta<input type="number" name="recall_months" value="<%= rc.months %>" /></label>
+    <% if (ehSuper) { %>
+      <label>Nome do template<input name="recall_templateName" value="<%= rc.templateName %>" placeholder="retorno_consulta" /></label>
+    <% } else { %>
+      <input type="hidden" name="recall_templateName" value="<%= rc.templateName %>" />
+    <% } %>
+  </div>
+  <% if (ehSuper) { %>
+    <label>Idioma do template<input name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" /></label>
+  <% } else { %>
+    <input type="hidden" name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" />
+  <% } %>
+
   <h2>Base de conhecimento (FAQ)</h2>
   <label>Informações e perguntas frequentes que o agente pode usar para responder dúvidas gerais (procedimentos, formas de pagamento, localização, estacionamento…). O agente só afirma o que estiver aqui ou vier das ferramentas — se não souber, orienta a recepção.
     <textarea name="knowledgeBase" style="min-height:150px" placeholder="Ex.: Formas de pagamento: cartão, PIX e dinheiro (particular parcelamos em até 6x). Endereço: Av. Pedro Adams Filho, 1678, com estacionamento próprio. Fazemos clareamento, implantes, próteses e ortodontia. Urgência 24h para dor."><%= cfg.knowledgeBase || '' %></textarea>

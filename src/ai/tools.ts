@@ -34,6 +34,23 @@ export const tools: Anthropic.Tool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "entrar_fila_espera",
+    description:
+      "Coloca o paciente na fila de espera de uma especialidade. Ofereça isso quando NÃO houver horários disponíveis que sirvam — assim ele é avisado automaticamente se alguém cancelar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        especialidade: { type: "string", description: "Nome da especialidade" },
+        periodo: {
+          type: "string",
+          enum: ["manha", "tarde", "noite"],
+          description: "Período preferido, se o paciente indicou (opcional)",
+        },
+      },
+      required: ["especialidade"],
+    },
+  },
+  {
     name: "chamar_atendente",
     description:
       "Transfere a conversa para um atendente humano da recepção. Use quando o paciente pedir para falar com uma pessoa, reclamar, tratar de urgência/dor, ou quando o pedido fugir do agendamento. Depois de chamar, avise que a recepção vai responder.",
@@ -184,6 +201,12 @@ export async function executeTool(
 
     case "listar_medicos":
       return scheduling.listDoctors(t, input.especialidade);
+
+    case "entrar_fila_espera":
+      if (!ctx.patientId) {
+        return { erro: "Identifique o paciente (nome e CPF) antes de entrar na fila." };
+      }
+      return scheduling.entrarFilaEspera(t, ctx.patientId, input.especialidade, input.periodo);
 
     case "chamar_atendente":
       ctx.handoffRequested = true;

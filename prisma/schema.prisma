@@ -48,6 +48,7 @@ model Tenant {
   messages      Message[]
   adminUsers    AdminUser[]
   blocks        Block[]
+  waitlist      Waitlist[]
 
   @@map("tenants")
 }
@@ -91,6 +92,7 @@ model Specialty {
   doctors      Doctor[] // m-n
   slots        Slot[]
   appointments Appointment[]
+  waitlist     Waitlist[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -173,12 +175,14 @@ model Patient {
   cpf       String
   phone     String // E.164: +5511999999999
   birthDate DateTime?
+  lastRecallAt DateTime? // último contato de reativação (evita repetir)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   insurances   PatientInsurance[]
   appointments Appointment[]
+  waitlist     Waitlist[]
 
   @@unique([tenantId, cpf]) // CPF único POR clínica
   @@index([tenantId, phone])
@@ -263,6 +267,28 @@ model Appointment {
   @@index([tenantId, status])
   @@index([patientId])
   @@map("appointments")
+}
+
+// =========================================================
+// FILA DE ESPERA — quem quer ser avisado quando vagar um horário.
+// Converte cancelamento (buraco na agenda) em receita.
+// =========================================================
+model Waitlist {
+  id          String    @id @default(cuid())
+  tenantId    String
+  patientId   String
+  specialtyId String
+  periodo     String? // manha | tarde | noite (opcional)
+  status      String    @default("ACTIVE") // ACTIVE | NOTIFIED | DONE
+  notifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, specialtyId, status])
+  @@map("waitlist")
 }
 
 // =========================================================

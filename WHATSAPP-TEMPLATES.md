@@ -91,6 +91,52 @@ Defina `JOBS_TOKEN` nas variáveis de ambiente e agende no
 3. Você deve receber o lembrete com os 3 botões → clique em **Confirmar** → o status muda
    para *Confirmado* no painel.
 
+---
+
+# Outros dois templates (opcionais)
+
+Mesmo processo do lembrete: **Utilidade**, Português (BR), e o nome exato preenchido no painel.
+
+## `vaga_disponivel` — fila de espera
+
+Enviado quando alguém cancela e há paciente esperando. Converte o buraco na agenda em receita.
+
+**Corpo:**
+
+```
+Boa notícia, {{1}}! Vagou um horário na nossa agenda.
+
+🗓️ {{2}}
+👨‍⚕️ {{3}}
+📍 {{4}}
+
+Quer garantir esse horário?
+```
+
+**Botão** (resposta rápida, apenas **um**): `Quero esse horário`
+
+> Ao tocar no botão, o sistema já sabe qual horário é — o agente segue direto para a
+> confirmação. Se outra pessoa pegar antes, ele avisa e oferece alternativas.
+
+Ative em **Fila de espera** na configuração da clínica.
+
+## `retorno_consulta` — reativação de pacientes
+
+Convida de volta quem não aparece há alguns meses (limpeza semestral, retorno).
+
+**Corpo:**
+
+```
+Olá, {{1}}! Faz um tempinho desde a sua última consulta na {{2}}.
+
+Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do resto. 😊
+```
+
+Sem botões. Ative em **Reativação de pacientes**, definindo os meses (padrão: 6).
+Cada paciente recebe no máximo **um convite a cada 90 dias**.
+
+---
+
 ## Observações
 
 - **Janela de 24h**: fora dela, só é possível iniciar conversa por template — vale também
