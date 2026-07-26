@@ -1,0 +1,78 @@
+<%- include('partials/header') %>
+<p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
+<div class="row between" style="flex-wrap:wrap;gap:10px">
+  <h1>Caixa de entrada</h1>
+  <span class="muted">A recepção assume a conversa; enquanto isso o bot fica em silêncio.</span>
+</div>
+<% if (msg) { %><p class="ok"><%= msg %></p><% } %>
+<% if (erro) { %><p class="erro"><%= erro %></p><% } %>
+
+<div class="inbox">
+  <!-- Lista de conversas -->
+  <div class="card" style="padding:8px">
+    <% if (conversas.length === 0) { %>
+      <p class="muted" style="padding:10px">Nenhuma conversa ainda.</p>
+    <% } %>
+    <% conversas.forEach(function(c){ %>
+      <a class="conv <%= c.telefone === telefone ? 'sel' : '' %>"
+         href="/admin/clinicas/<%= t.id %>/inbox?telefone=<%= encodeURIComponent(c.telefone) %>">
+        <div class="row between">
+          <strong><%= c.telefone %></strong>
+          <% if (c.aguardando) { %><span class="st st-remarcado">aguardando</span><% } %>
+        </div>
+        <div class="muted" style="margin-top:2px"><%= c.previa || "—" %></div>
+        <div class="muted" style="font-size:11px;margin-top:3px">
+          <%= new Date(c.ultimaEm).toLocaleString("pt-BR") %>
+          <%= c.janelaAberta ? "" : " · janela de 24h fechada" %>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+
+  <!-- Conversa selecionada -->
+  <div class="card">
+    <% if (!telefone) { %>
+      <p class="muted">Selecione uma conversa ao lado.</p>
+    <% } else { %>
+      <div class="row between" style="flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0"><%= telefone %></h2>
+        <form method="post" action="/admin/clinicas/<%= t.id %>/inbox/handoff">
+          <input type="hidden" name="telefone" value="<%= telefone %>" />
+          <input type="hidden" name="ativar" value="<%= atual && atual.aguardando ? '' : 'on' %>" />
+          <button class="btn sm <%= atual && atual.aguardando ? 'ghost' : 'danger' %>">
+            <%= atual && atual.aguardando ? "Devolver ao bot" : "Assumir conversa" %>
+          </button>
+        </form>
+      </div>
+
+      <% if (atual && !atual.janelaAberta) { %>
+        <p class="erro" style="margin-top:10px">
+          Passaram mais de 24h desde a última mensagem do paciente — a Meta bloqueia respostas livres.
+          Só é possível retomar por template aprovado.
+        </p>
+      <% } %>
+
+      <div class="thread">
+        <% if (thread.length === 0) { %><p class="muted">Sem mensagens registradas.</p><% } %>
+        <% thread.forEach(function(m){ %>
+          <div class="bolha <%= m.entrada ? 'in' : 'out' %>">
+            <div><%= m.texto %></div>
+            <div class="meta">
+              <%= m.entrada ? "paciente" : (m.autor === "HUMAN" ? "recepção" : "bot") %> ·
+              <%= new Date(m.quando).toLocaleString("pt-BR") %>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+
+      <form method="post" action="/admin/clinicas/<%= t.id %>/inbox/responder" class="inline" style="margin-top:12px">
+        <input type="hidden" name="telefone" value="<%= telefone %>" />
+        <label style="flex:1">Responder como recepção
+          <input name="texto" placeholder="Escreva sua mensagem…" required />
+        </label>
+        <button class="btn sm">Enviar</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+<%- include('partials/footer') %>

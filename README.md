@@ -109,3 +109,6 @@ válidos como **seed inicial / import** (`npm run seed`).
 - [x] **Fase 2 — Motor + IA:** Claude conduz a conversa via *tool use*, com histórico persistido por telefone.
 - [x] **Fase 3 — Domínio:** horários livres, agendar, cancelar e remarcar (com convênio/unidade) — expostos como ferramentas.
 - [x] **Fase 4 — Operação:** seed real, logs estruturados (pino), testes (vitest), REPL de teste e deploy (Docker/Compose + [DEPLOY.md](DEPLOY.md)).
+- [x] **Fase 5 — Painel:** login, CRUD de clínicas/catálogo, calendário, agendamento manual, FAQ, horários por médico.
+- [x] **Fase 6 — Recursos de venda:** lembrete + confirmação (anti-falta, [WHATSAPP-TEMPLATES.md](WHATSAPP-TEMPLATES.md)),
+      áudio transcrito (Groq), opções clicáveis no WhatsApp, transbordo humano e caixa de entrada.

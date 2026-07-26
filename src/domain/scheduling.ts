@@ -571,3 +571,29 @@ export async function moveAppointment(
 
   return doReschedule(tenant, appointmentId, slot.id);
 }
+
+/** Confirma a presença do paciente (resposta ao lembrete). */
+export async function confirmAppointment(tenant: ResolvedTenant, appointmentId: string) {
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId: tenant.id },
+    include: { doctor: true, unit: true, specialty: true, slot: true },
+  });
+  if (!appt) return { erro: "Agendamento não encontrado." };
+  if (appt.status === AppointmentStatus.CANCELLED) {
+    return { erro: "Esse agendamento está cancelado." };
+  }
+
+  await prisma.appointment.update({
+    where: { id: appt.id },
+    data: { status: AppointmentStatus.CONFIRMED, confirmedAt: new Date() },
+  });
+
+  return {
+    status: "CONFIRMADO",
+    appointmentId: appt.id,
+    medico: appt.doctor.name,
+    unidade: appt.unit.name,
+    especialidade: appt.specialty.name,
+    inicio: formatDateTime(appt.slot.startsAt, tenant.timezone),
+  };
+}

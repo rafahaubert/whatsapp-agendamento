@@ -25,7 +25,13 @@ import {
   listAppointmentsRange,
   listConversations,
   resetConversation,
+  listInbox,
+  listThread,
+  countPendentes,
 } from "./tenantAdmin.js";
+import { setHandoff, logMessage } from "../db/conversationRepository.js";
+import { sendWhatsAppText } from "../channels/whatsapp/client.js";
+import { logger } from "../shared/logger.js";
 import { serviceAccountEmail } from "../integrations/googleCalendar.js";
 import { findTenantById } from "../db/tenantRepository.js";
 import {
@@ -87,6 +93,12 @@ function parseConfig(body: any, timezone: string): TenantConfig {
     },
     ai: { model: body.ai_model ?? "claude-haiku-4-5", persona: body.ai_persona ?? "" },
     knowledgeBase: (body.knowledgeBase ?? "").trim() || undefined,
+    reminders: {
+      enabled: bool(body.reminders_enabled),
+      hoursBefore: num(body.reminders_hoursBefore, 24),
+      templateName: (body.reminders_templateName ?? "").trim(),
+      templateLang: (body.reminders_templateLang ?? "pt_BR").trim() || "pt_BR",
+    },
   };
 }
 
@@ -153,15 +165,17 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, conversas] = await Promise.all([
+    const [agendamentos, conversas, pendentes] = await Promise.all([
       listAppointments(t.id, t.timezone),
       listConversations(t.id),
+      countPendentes(t.id),
     ]);
     res.render("admin/clinica", {
       t,
       cfg: t.parsedConfig,
       agendamentos,
       conversas,
+      pendentes,
       googleEmail: serviceAccountEmail(),
       msg: req.query.msg ?? null,
       erro: req.query.erro ?? null,
@@ -171,6 +185,65 @@ export function makeAdminRouter(): Router {
   router.post("/clinicas/:id/conversa/reiniciar", async (req: Request, res: Response) => {
     await resetConversation(req.params.id, String(req.body.phone ?? ""));
     res.redirect(clinicaUrl(req.params.id, { msg: "Conversa reiniciada" }, "ferramentas"));
+  });
+
+  // ----- Caixa de entrada (transbordo humano) -----
+  router.get("/clinicas/:id/inbox", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const telefone = req.query.telefone ? String(req.query.telefone) : null;
+    const [conversas, thread] = await Promise.all([
+      listInbox(t.id),
+      telefone ? listThread(t.id, telefone) : Promise.resolve([]),
+    ]);
+    const atual = telefone ? conversas.find((c) => c.telefone === telefone) ?? null : null;
+
+    res.render("admin/inbox", {
+      t,
+      conversas,
+      thread,
+      telefone,
+      atual,
+      msg: req.query.msg ?? null,
+      erro: req.query.erro ?? null,
+    });
+  });
+
+  router.post("/clinicas/:id/inbox/responder", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const telefone = String(req.body.telefone ?? "");
+    const texto = String(req.body.texto ?? "").trim();
+    const voltar = (p: Record<string, string>) =>
+      `/admin/clinicas/${req.params.id}/inbox?telefone=${encodeURIComponent(telefone)}&` +
+      new URLSearchParams(p).toString();
+
+    if (!telefone || !texto) return res.redirect(voltar({ erro: "Escreva uma mensagem." }));
+
+    try {
+      await sendWhatsAppText(t.whatsappPhoneNumberId, telefone, texto);
+      await logMessage(t.id, telefone, "OUT", texto, "HUMAN");
+      res.redirect(voltar({ msg: "Mensagem enviada" }));
+    } catch (err) {
+      logger.error({ err, telefone }, "falha ao responder pelo painel");
+      res.redirect(
+        voltar({
+          erro: "Não foi possível enviar. Se passaram mais de 24h da última mensagem do paciente, a Meta bloqueia a resposta livre.",
+        }),
+      );
+    }
+  });
+
+  router.post("/clinicas/:id/inbox/handoff", async (req: Request, res: Response) => {
+    const telefone = String(req.body.telefone ?? "");
+    const ativar = bool(req.body.ativar);
+    await setHandoff(req.params.id, telefone, ativar);
+    res.redirect(
+      `/admin/clinicas/${req.params.id}/inbox?telefone=${encodeURIComponent(telefone)}&msg=` +
+        encodeURIComponent(ativar ? "Assumido pela recepção" : "Devolvido ao bot"),
+    );
   });
 
   // ----- Calendário -----

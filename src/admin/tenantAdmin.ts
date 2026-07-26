@@ -218,6 +218,59 @@ export async function resetConversation(tenantId: string, phone: string) {
   await prisma.conversation.deleteMany({ where: { tenantId, patientPhone: phone.trim() } });
 }
 
+// ---------- Caixa de entrada (transbordo humano) ----------
+
+/** Conversas para o inbox: pendentes de atendimento humano primeiro. */
+export async function listInbox(tenantId: string) {
+  const convs = await prisma.conversation.findMany({
+    where: { tenantId },
+    orderBy: [{ humanHandoff: "desc" }, { lastMessageAt: "desc" }],
+    take: 50,
+    select: { patientPhone: true, humanHandoff: true, handoffAt: true, lastMessageAt: true },
+  });
+
+  // Última mensagem de cada conversa, para prévia na lista.
+  const ultimas = await Promise.all(
+    convs.map((c) =>
+      prisma.message.findFirst({
+        where: { tenantId, phone: c.patientPhone },
+        orderBy: { createdAt: "desc" },
+        select: { text: true, direction: true },
+      }),
+    ),
+  );
+
+  return convs.map((c, i) => ({
+    telefone: c.patientPhone,
+    aguardando: c.humanHandoff,
+    ultimaEm: c.lastMessageAt,
+    previa: ultimas[i]?.text?.slice(0, 90) ?? "",
+    ultimaDirecao: ultimas[i]?.direction ?? "",
+    /** A Meta só permite resposta livre até 24h após a última mensagem do paciente. */
+    janelaAberta: Date.now() - c.lastMessageAt.getTime() < 24 * 3600 * 1000,
+  }));
+}
+
+export async function countPendentes(tenantId: string): Promise<number> {
+  return prisma.conversation.count({ where: { tenantId, humanHandoff: true } });
+}
+
+/** Histórico legível de uma conversa. */
+export async function listThread(tenantId: string, phone: string) {
+  const msgs = await prisma.message.findMany({
+    where: { tenantId, phone },
+    orderBy: { createdAt: "asc" },
+    take: 200,
+  });
+  return msgs.map((m) => ({
+    id: m.id,
+    texto: m.text,
+    entrada: m.direction === "IN",
+    autor: m.sentBy,
+    quando: m.createdAt,
+  }));
+}
+
 export async function listAppointments(tenantId: string, timezone: string) {
   const now = new Date();
   const appts = await prisma.appointment.findMany({

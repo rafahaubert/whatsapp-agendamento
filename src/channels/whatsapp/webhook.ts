@@ -2,7 +2,7 @@ import express, { type Request, type Response, type Router } from "express";
 import { env } from "../../config/env.js";
 import { verifyWhatsAppSignature } from "./signature.js";
 import { parseWhatsAppWebhook } from "./parse.js";
-import { sendWhatsAppText } from "./client.js";
+import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from "./client.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
 import { markMessageProcessed } from "../../db/idempotency.js";
 import { logger } from "../../shared/logger.js";
@@ -50,7 +50,8 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
       const messages = parseWhatsAppWebhook(req.body as WhatsAppWebhookBody);
 
       for (const parsed of messages) {
-        if (!parsed.text) continue; // apenas texto
+        // Áudio e opções também são tratados; ignoramos apenas o que não tem conteúdo algum.
+        if (!parsed.text && !parsed.audioId && !parsed.payload && parsed.tipo === "text") continue;
 
         // Idempotência: a Meta reentrega webhooks (ex.: durante cold start).
         // Processa cada mensagem uma única vez.
@@ -76,10 +77,29 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
           messageId: parsed.messageId,
           timestamp: parsed.timestamp,
           text: parsed.text,
+          audioId: parsed.audioId,
+          payload: parsed.payload,
+          tipo: parsed.tipo,
         });
 
-        if (reply) {
-          await sendWhatsAppText(tenant.whatsappPhoneNumberId, parsed.from, reply);
+        if (!reply) continue;
+
+        const numero = tenant.whatsappPhoneNumberId;
+        if (reply.opcoes?.length) {
+          // Até 3 opções cabem em botões; acima disso, lista interativa.
+          if (reply.opcoes.length <= 3) {
+            await sendWhatsAppButtons(numero, parsed.from, reply.texto, reply.opcoes);
+          } else {
+            await sendWhatsAppList(
+              numero,
+              parsed.from,
+              reply.texto,
+              reply.opcoes,
+              reply.rotuloOpcoes,
+            );
+          }
+        } else {
+          await sendWhatsAppText(numero, parsed.from, reply.texto);
         }
       }
     } catch (err) {

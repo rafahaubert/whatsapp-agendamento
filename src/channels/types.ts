@@ -13,13 +13,35 @@ export interface IncomingMessage {
   from: string; // telefone do paciente (E.164)
   messageId: string;
   timestamp: Date;
-  text: string; // Fase 1: apenas texto
+  /** Texto digitado ou rótulo da opção escolhida. Null em áudio/mídia. */
+  text: string | null;
+  /** ID da mídia de áudio, quando o paciente mandou um áudio. */
+  audioId?: string;
+  /** Payload da opção escolhida (ex.: "SLOT:abc", "CONFIRMAR:xyz"). */
+  payload?: string;
+  /** Tipo bruto recebido no canal (text, audio, image…). */
+  tipo?: string;
+}
+
+/** Opção apresentada ao paciente (vira lista/botões no WhatsApp). */
+export interface ReplyOption {
+  id: string;
+  titulo: string;
+  descricao?: string;
+}
+
+/** Resposta do motor: texto e, opcionalmente, opções para o paciente escolher. */
+export interface Reply {
+  texto: string;
+  opcoes?: ReplyOption[];
+  /** Rótulo do botão que abre a lista (quando há opções). */
+  rotuloOpcoes?: string;
 }
 
 /**
- * Contrato que o motor de conversa implementará (Fase 2). Recebe a mensagem
- * já resolvida e devolve o texto de resposta (ou null para não responder).
+ * Contrato do motor de conversa. Recebe a mensagem já resolvida e devolve a
+ * resposta (ou null para não responder — ex.: conversa em atendimento humano).
  */
 export interface MessageHandler {
-  handle(message: IncomingMessage): Promise<string | null>;
+  handle(message: IncomingMessage): Promise<Reply | null>;
 }

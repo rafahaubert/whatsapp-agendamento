@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 import { makeWhatsAppRouter } from "./channels/whatsapp/webhook.js";
 import { conversationEngine } from "./core/engine.js";
 import { makeAdminRouter } from "./admin/router.js";
+import { enviarLembretes } from "./jobs/reminders.js";
 import { logger } from "./shared/logger.js";
 
 const app = express();
@@ -52,6 +53,31 @@ app.use("/webhook/whatsapp", makeWhatsAppRouter(conversationEngine));
 // Painel de administração.
 app.use("/admin", makeAdminRouter());
 
+/**
+ * Disparo dos lembretes por cron EXTERNO (cron-job.org, UptimeRobot…).
+ * Protegido por JOBS_TOKEN — útil porque o plano free hiberna e o setInterval
+ * abaixo pode não rodar no horário.
+ */
+app.post("/jobs/reminders", async (req, res) => {
+  const token = req.header("x-jobs-token") ?? req.query.token;
+  if (!env.JOBS_TOKEN || token !== env.JOBS_TOKEN) return res.sendStatus(401);
+  try {
+    const r = await enviarLembretes();
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    logger.error({ err }, "falha ao executar lembretes");
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp" }, "servidor no ar");
+
+  // Verificação periódica dos lembretes (a cada 10 min) enquanto o processo vive.
+  setInterval(
+    () => {
+      enviarLembretes().catch((err) => logger.error({ err }, "falha no ciclo de lembretes"));
+    },
+    10 * 60 * 1000,
+  ).unref();
 });

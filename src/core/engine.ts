@@ -2,41 +2,146 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "../ai/anthropic.js";
 import { buildSystemPrompt } from "../ai/systemPrompt.js";
 import { tools, executeTool, type ConversationContext } from "../ai/tools.js";
-import { loadConversation, saveConversation } from "../db/conversationRepository.js";
+import {
+  loadConversation,
+  saveConversation,
+  setHandoff,
+  logMessage,
+} from "../db/conversationRepository.js";
+import { baixarMidia } from "../channels/whatsapp/media.js";
+import { transcreverAudio, isTranscricaoConfigurada } from "../integrations/transcription.js";
+import { confirmAppointment, cancelAppointment } from "../domain/scheduling.js";
 import { logger } from "../shared/logger.js";
-import type { IncomingMessage, MessageHandler } from "../channels/types.js";
+import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
 /** Fallback de modelo caso a config da clínica não defina um. */
 const DEFAULT_MODEL = "claude-opus-4-8";
 /** Limite de idas ao Claude por mensagem (evita loop de tool use infinito). */
 const MAX_TURNS = 8;
 
+/** Pedidos explícitos de atendimento humano (atalho, sem gastar LLM). */
+const PEDE_ATENDENTE =
+  /^\s*(atendente|humano|recep(c|ç)(a|ã)o)\s*$|falar com (um )?(atendente|humano|pessoa|recep)/i;
+
+/** Horários oferecidos na última busca, para virarem opções clicáveis. */
+interface HorarioOferecido {
+  slotId: string;
+  medico: string;
+  unidade: string;
+  inicio: string;
+}
+
+function extrairHorarios(resultado: unknown): HorarioOferecido[] {
+  const r = resultado as { horarios?: HorarioOferecido[] } | null;
+  return Array.isArray(r?.horarios) ? r.horarios : [];
+}
+
 /**
  * Motor de conversa. Para cada mensagem recebida:
- *   1. carrega o histórico + estado da Conversation (memória entre mensagens);
- *   2. roda um loop de tool use com o Claude, executando as ferramentas de
- *      domínio no banco até o modelo produzir a resposta final;
- *   3. persiste o histórico atualizado e devolve o texto para o canal enviar.
+ *   1. resolve o conteúdo (texto, transcrição de áudio ou opção clicada);
+ *   2. trata atalhos determinísticos (lembrete, atendente) sem chamar o modelo;
+ *   3. roda o loop de tool use com o Claude sobre as ferramentas de domínio;
+ *   4. persiste histórico/estado e devolve a resposta (com opções, se houver).
  */
 export const conversationEngine: MessageHandler = {
-  async handle(message: IncomingMessage): Promise<string | null> {
+  async handle(message: IncomingMessage): Promise<Reply | null> {
     const tenant = message.tenant;
-    const { history, state } = await loadConversation(tenant.id, message.from);
+    const conversa = await loadConversation(tenant.id, message.from);
 
+    // ---------- 1. Conteúdo da mensagem ----------
+    let texto = message.text?.trim() || null;
+
+    if (message.audioId) {
+      try {
+        const midia = await baixarMidia(message.audioId);
+        const transcrito = midia ? await transcreverAudio(midia.buffer, midia.mimeType) : null;
+        if (transcrito) {
+          texto = transcrito;
+          logger.info({ from: message.from }, "áudio transcrito");
+        }
+      } catch (err) {
+        logger.error({ err, from: message.from }, "falha ao processar áudio");
+      }
+
+      if (!texto) {
+        await logMessage(tenant.id, message.from, "IN", "[áudio]", "PATIENT");
+        const aviso = isTranscricaoConfigurada()
+          ? "Não consegui entender o áudio 😕 Pode escrever, por favor?"
+          : "Ainda não consigo ouvir áudios 😅 Pode escrever sua mensagem, por favor?";
+        await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+        return { texto: aviso };
+      }
+    }
+
+    if (!texto && !message.payload) {
+      // Imagem, documento, figurinha…
+      await logMessage(tenant.id, message.from, "IN", `[${message.tipo ?? "mídia"}]`, "PATIENT");
+      const aviso = "Consigo ler mensagens de texto e áudio 🙂 Pode me escrever o que precisa?";
+      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+      return { texto: aviso };
+    }
+
+    await logMessage(tenant.id, message.from, "IN", texto ?? message.payload ?? "", "PATIENT");
+
+    // ---------- 2. Atendimento humano em andamento: bot silencia ----------
+    if (conversa.humanHandoff) {
+      logger.info({ from: message.from }, "conversa em atendimento humano — bot não respondeu");
+      return null;
+    }
+
+    // ---------- 3. Atalhos determinísticos ----------
+    if (texto && PEDE_ATENDENTE.test(texto)) {
+      await setHandoff(tenant.id, message.from, true);
+      const aviso = "Certo! Já avisei a recepção — em instantes alguém da equipe fala com você. 🙂";
+      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+      return { texto: aviso };
+    }
+
+    // Botões do lembrete: CONFIRMAR / CANCELAR / REMARCAR + id do agendamento.
+    if (message.payload) {
+      const [acao, id] = message.payload.split(":");
+
+      if (acao === "CONFIRMAR" && id) {
+        const r = (await confirmAppointment(tenant, id)) as { erro?: string; inicio?: string };
+        const resposta = r.erro
+          ? r.erro
+          : `Presença confirmada! ✅ Te esperamos ${r.inicio}. Até breve!`;
+        await logMessage(tenant.id, message.from, "OUT", resposta, "BOT");
+        return { texto: resposta };
+      }
+
+      if (acao === "CANCELAR" && id) {
+        const r = (await cancelAppointment(tenant, id)) as { erro?: string };
+        const resposta = r.erro
+          ? r.erro
+          : "Consulta cancelada. 👍 Se quiser remarcar, é só me chamar!";
+        await logMessage(tenant.id, message.from, "OUT", resposta, "BOT");
+        return { texto: resposta };
+      }
+
+      if (acao === "REMARCAR" && id) {
+        texto = "Quero remarcar minha consulta.";
+      } else if (acao === "SLOT" && id) {
+        texto = `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`;
+      }
+    }
+
+    // ---------- 4. Conversa com o Claude ----------
     const messages: Anthropic.MessageParam[] = [
-      ...history,
-      { role: "user", content: message.text },
+      ...conversa.history,
+      { role: "user", content: texto ?? "" },
     ];
 
     const ctx: ConversationContext = {
       tenant,
       phone: message.from,
-      patientId: state.patientId,
+      patientId: conversa.state.patientId,
     };
     const model = tenant.config.ai.model || DEFAULT_MODEL;
     const system = buildSystemPrompt(tenant);
 
     let replyText = tenant.config.branding.fallbackMessage;
+    let ultimosHorarios: HorarioOferecido[] = [];
 
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -56,6 +161,11 @@ export const conversationEngine: MessageHandler = {
             let result: unknown;
             try {
               result = await executeTool(block.name, block.input, ctx);
+              if (block.name === "listar_horarios") {
+                const horarios = extrairHorarios(result);
+                if (horarios.length) ultimosHorarios = horarios;
+              }
+              if (block.name === "agendar") ultimosHorarios = []; // já escolheu
             } catch (err) {
               logger.error({ err, tool: block.name }, "erro ao executar ferramenta");
               result = { erro: "Falha ao executar a operação." };
@@ -81,10 +191,27 @@ export const conversationEngine: MessageHandler = {
       }
     } catch (err) {
       logger.error({ err, tenant: tenant.slug, from: message.from }, "erro na conversa com o Claude");
-      return tenant.config.branding.fallbackMessage;
+      const aviso = tenant.config.branding.fallbackMessage;
+      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+      return { texto: aviso };
     }
 
     await saveConversation(tenant.id, message.from, messages, { patientId: ctx.patientId });
-    return replyText;
+
+    // A ferramenta pediu atendimento humano.
+    if (ctx.handoffRequested) await setHandoff(tenant.id, message.from, true);
+
+    await logMessage(tenant.id, message.from, "OUT", replyText, "BOT");
+
+    // Horários viram opções clicáveis (botões até 3; lista acima disso).
+    const opcoes: ReplyOption[] = ultimosHorarios.slice(0, 10).map((h) => ({
+      id: `SLOT:${h.slotId}`,
+      titulo: h.inicio,
+      descricao: `${h.medico} · ${h.unidade}`,
+    }));
+
+    return opcoes.length
+      ? { texto: replyText, opcoes, rotuloOpcoes: "Ver horários" }
+      : { texto: replyText };
   },
 };

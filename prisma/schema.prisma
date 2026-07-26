@@ -45,6 +45,7 @@ model Tenant {
   slots         Slot[]
   appointments  Appointment[]
   conversations Conversation[]
+  messages      Message[]
 
   @@map("tenants")
 }
@@ -240,9 +241,11 @@ model Appointment {
   slotId       String   @unique // 1 slot = 1 agendamento
   healthPlanId String? // null = atendimento particular
   paymentType  String   @default("PARTICULAR") // PARTICULAR | HEALTH_PLAN
-  status        String  @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
-  notes         String?
-  googleEventId String? // ID do evento no Google Calendar (para atualizar/remover)
+  status         String    @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
+  notes          String?
+  googleEventId  String? // ID do evento no Google Calendar (para atualizar/remover)
+  reminderSentAt DateTime? // quando o lembrete foi enviado (evita reenvio)
+  confirmedAt    DateTime? // quando o paciente confirmou presença
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -274,18 +277,40 @@ model ProcessedMessage {
 // CONVERSA — memória do agente entre mensagens (por telefone)
 // =========================================================
 model Conversation {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
   patientPhone  String // E.164
   state         String // JSON serializado: etapa (FSM) + dados coletados
   history       String? // JSON serializado: histórico compactado p/ o LLM
-  lastMessageAt DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  humanHandoff  Boolean   @default(false) // true = atendimento humano (bot silencia)
+  handoffAt     DateTime?
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, patientPhone])
   @@index([tenantId, lastMessageAt])
+  @@index([tenantId, humanHandoff])
   @@map("conversations")
+}
+
+// =========================================================
+// MENSAGEM — log legível para a caixa de entrada do painel
+// (a memória do LLM continua em Conversation.history)
+// =========================================================
+model Message {
+  id        String   @id @default(cuid())
+  tenantId  String
+  phone     String // E.164 do paciente
+  direction String // IN | OUT
+  sentBy    String   @default("BOT") // BOT | HUMAN | PATIENT
+  text      String
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, phone, createdAt])
+  @@map("messages")
 }

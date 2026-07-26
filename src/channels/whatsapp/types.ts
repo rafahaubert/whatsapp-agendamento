@@ -32,7 +32,15 @@ export interface WhatsAppMessage {
   from: string; // telefone do paciente
   id: string;
   timestamp: string; // epoch em segundos (string)
-  type: string; // "text" | "interactive" | "image" | ...
+  type: string; // "text" | "audio" | "button" | "interactive" | "image" | ...
   text?: { body: string };
-  interactive?: unknown;
+  audio?: { id: string; mime_type?: string; voice?: boolean };
+  /** Resposta a um botão de TEMPLATE (quick reply). */
+  button?: { payload?: string; text?: string };
+  /** Resposta a mensagem interativa (botões ou lista) enviada por nós. */
+  interactive?: {
+    type?: string;
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string; description?: string };
+  };
 }

@@ -20,6 +20,7 @@
   <a href="#agenda">Agenda</a>
   <a href="#ferramentas">Conversas</a>
   <a href="/admin/clinicas/<%= t.id %>/calendario">📅 Calendário</a>
+  <a href="/admin/clinicas/<%= t.id %>/inbox">💬 Caixa de entrada<%= pendentes ? " (" + pendentes + ")" : "" %></a>
 </nav>
 
 <!-- ============ CONFIGURAÇÃO ============ -->
@@ -82,6 +83,19 @@
     <label>&nbsp;<span class="muted">Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</span></label>
   </div>
   <label>Persona (tom/estilo)<textarea name="ai_persona"><%= cfg.ai.persona %></textarea></label>
+
+  <h2>Lembrete de consulta (reduz faltas)</h2>
+  <% var rem = cfg.reminders || { enabled: false, hoursBefore: 24, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Envia um lembrete automático antes da consulta, com botões Confirmar / Remarcar / Cancelar.
+    Exige um template aprovado na Meta — veja <code>WHATSAPP-TEMPLATES.md</code>.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="reminders_enabled" <%= rem.enabled ? "checked" : "" %> /> Ativar lembretes</label>
+  </div>
+  <div class="grid2">
+    <label>Horas de antecedência<input type="number" name="reminders_hoursBefore" value="<%= rem.hoursBefore %>" /></label>
+    <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
+  </div>
+  <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
 
   <h2>Base de conhecimento (FAQ)</h2>
   <label>Informações e perguntas frequentes que o agente pode usar para responder dúvidas gerais (procedimentos, formas de pagamento, localização, estacionamento…). O agente só afirma o que estiver aqui ou vier das ferramentas — se não souber, orienta a recepção.

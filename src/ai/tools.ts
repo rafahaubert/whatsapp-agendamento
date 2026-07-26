@@ -12,6 +12,8 @@ export interface ConversationContext {
   tenant: ResolvedTenant;
   phone: string;
   patientId?: string;
+  /** Ligado pela ferramenta chamar_atendente; o motor persiste ao fim do turno. */
+  handoffRequested?: boolean;
 }
 
 /** Definições das ferramentas expostas ao Claude (esquema JSON). */
@@ -30,6 +32,17 @@ export const tools: Anthropic.Tool[] = [
     name: "listar_convenios",
     description: "Lista os convênios e planos de saúde aceitos pela clínica.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "chamar_atendente",
+    description:
+      "Transfere a conversa para um atendente humano da recepção. Use quando o paciente pedir para falar com uma pessoa, reclamar, tratar de urgência/dor, ou quando o pedido fugir do agendamento. Depois de chamar, avise que a recepção vai responder.",
+    input_schema: {
+      type: "object",
+      properties: {
+        motivo: { type: "string", description: "Resumo curto do motivo (opcional)" },
+      },
+    },
   },
   {
     name: "listar_medicos",
@@ -170,6 +183,14 @@ export async function executeTool(
 
     case "listar_medicos":
       return scheduling.listDoctors(t, input.especialidade);
+
+    case "chamar_atendente":
+      ctx.handoffRequested = true;
+      return {
+        ok: true,
+        instrucao:
+          "Avise ao paciente, de forma acolhedora, que a recepção foi notificada e vai responder em instantes. Não continue o agendamento.",
+      };
     case "agendar":
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado. Use identificar_paciente antes." };
       return scheduling.bookAppointment(

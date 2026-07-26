@@ -56,6 +56,8 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- Se uma ferramenta retornar \"erro\" ou vier vazia (ex.: especialidade não encontrada, sem horários), NÃO mande falar com atendente. Chame listar_especialidades para mostrar as opções REAIS e peça para o paciente escolher entre elas.",
     `- Use "${cfg.branding.fallbackMessage}" APENAS se o pedido fugir totalmente do escopo de agendamento — nunca por causa de erro de ferramenta.`,
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",
+    "- Chame chamar_atendente quando o paciente pedir uma pessoa/recepção, reclamar, relatar urgência ou dor forte, ou pedir algo fora do agendamento. Depois disso, não continue o fluxo — apenas informe que a recepção vai responder.",
+    "- Ao listar horários, escreva-os no texto normalmente; o sistema também os envia como opções clicáveis.",
   ];
 
   const base = linhas.filter((l) => l !== "").join("\n");

@@ -6,19 +6,26 @@ export interface ConversationState {
   patientId?: string;
 }
 
+export interface ConversationSnapshot {
+  history: Anthropic.MessageParam[];
+  state: ConversationState;
+  /** true = conversa em atendimento humano; o bot fica em silêncio. */
+  humanHandoff: boolean;
+}
+
 /** Carrega o histórico (mensagens para o Claude) e o estado por telefone. */
 export async function loadConversation(
   tenantId: string,
   phone: string,
-): Promise<{ history: Anthropic.MessageParam[]; state: ConversationState }> {
+): Promise<ConversationSnapshot> {
   const conv = await prisma.conversation.findUnique({
     where: { tenantId_patientPhone: { tenantId, patientPhone: phone } },
   });
-  if (!conv) return { history: [], state: {} };
+  if (!conv) return { history: [], state: {}, humanHandoff: false };
 
   const history = conv.history ? (JSON.parse(conv.history) as Anthropic.MessageParam[]) : [];
   const state = conv.state ? (JSON.parse(conv.state) as ConversationState) : {};
-  return { history, state };
+  return { history, state, humanHandoff: conv.humanHandoff };
 }
 
 /** Persiste (upsert) o histórico e o estado. `state`/`history` são JSON (String no banco). */
@@ -42,4 +49,35 @@ export async function saveConversation(
     },
     update: { state: stateStr, history: historyStr, lastMessageAt: new Date() },
   });
+}
+
+/** Liga/desliga o atendimento humano para uma conversa. */
+export async function setHandoff(
+  tenantId: string,
+  phone: string,
+  ativo: boolean,
+): Promise<void> {
+  await prisma.conversation.upsert({
+    where: { tenantId_patientPhone: { tenantId, patientPhone: phone } },
+    create: {
+      tenantId,
+      patientPhone: phone,
+      state: "{}",
+      humanHandoff: ativo,
+      handoffAt: ativo ? new Date() : null,
+      lastMessageAt: new Date(),
+    },
+    update: { humanHandoff: ativo, handoffAt: ativo ? new Date() : null },
+  });
+}
+
+/** Registra a mensagem no log legível da caixa de entrada. */
+export async function logMessage(
+  tenantId: string,
+  phone: string,
+  direction: "IN" | "OUT",
+  text: string,
+  sentBy: "BOT" | "HUMAN" | "PATIENT",
+): Promise<void> {
+  await prisma.message.create({ data: { tenantId, phone, direction, text, sentBy } });
 }

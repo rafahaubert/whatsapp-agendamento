@@ -49,6 +49,20 @@ export interface TenantConfig {
    * o agente responder perguntas gerais (procedimentos, pagamento, localização…).
    */
   knowledgeBase?: string;
+
+  /**
+   * Lembrete automático de consulta (reduz faltas). Exige um template aprovado
+   * na Meta — ver WHATSAPP-TEMPLATES.md.
+   */
+  reminders?: {
+    enabled: boolean;
+    /** Horas de antecedência do envio (ex.: 24). */
+    hoursBefore: number;
+    /** Nome do template aprovado na Meta. */
+    templateName: string;
+    /** Código do idioma do template (ex.: "pt_BR"). */
+    templateLang: string;
+  };
 }
 
 // ---------- Catálogo (seed) ----------

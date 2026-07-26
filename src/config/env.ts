@@ -28,6 +28,13 @@ const schema = z.object({
   // Google Calendar (opcional) — chave JSON da conta de serviço.
   // Se ausente, a sincronização com o Google fica desligada.
   GOOGLE_SERVICE_ACCOUNT_KEY: z.string().optional(),
+
+  // Transcrição de áudio (opcional) — Groq Whisper.
+  // Se ausente, o bot pede que o paciente escreva em vez de ignorar o áudio.
+  GROQ_API_KEY: z.string().optional(),
+
+  // Token para disparar jobs (lembretes) por cron externo.
+  JOBS_TOKEN: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
