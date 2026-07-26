@@ -69,8 +69,16 @@ Deploy: [DEPLOY.md](DEPLOY.md) · Render blueprint em [render.yaml](render.yaml)
 
 ## Painel de administração
 
-Com o servidor rodando (`npm run dev`), acesse **http://localhost:3000/admin**
-(login definido em `ADMIN_USER` / `ADMIN_PASSWORD` no `.env`). Pelo painel dá para,
+Com o servidor rodando (`npm run dev`), acesse **http://localhost:3000/admin**.
+
+### Acessos (multi-clínica)
+- **Administrador da plataforma (SUPER)** — vê e gerencia todas as clínicas e os usuários.
+- **Usuário de clínica (CLINIC)** — enxerga **apenas a própria clínica**; campos técnicos
+  (Phone Number ID, modelo de IA, nome do template) ficam ocultos.
+
+Enquanto não existir nenhum usuário cadastrado, o login por `ADMIN_USER`/`ADMIN_PASSWORD`
+funciona como SUPER. Crie o primeiro acesso em **/admin/usuarios** e, a partir daí, o login
+passa a ser pelo banco (senhas com hash scrypt). Pelo painel dá para,
 **sem editar arquivos**: criar/editar clínicas, ajustar textos, horário de
 funcionamento, regras e modelo de IA, gerenciar unidades/especialidades/convênios/médicos,
 gerar horários e ver os agendamentos. Os arquivos `config/clinics/*.json` seguem

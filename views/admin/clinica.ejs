@@ -3,7 +3,7 @@
 <% const days = cfg.businessHours.days; %>
 <% const allPlans = t.insurers.flatMap(function(i){ return i.plans; }); %>
 
-<p><a href="/admin">← Clínicas</a></p>
+<% if (typeof ehSuper !== "undefined" && ehSuper) { %><p><a href="/admin">← Clínicas</a></p><% } %>
 <div class="row between">
   <h1><%= t.name %></h1>
   <span class="muted"><%= t.slug %></span>
@@ -28,11 +28,19 @@
   <h2>Dados</h2>
   <div class="grid2">
     <label>Nome<input name="name" value="<%= t.name %>" required /></label>
-    <label>Phone Number ID<input name="whatsappPhoneNumberId" value="<%= t.whatsappPhoneNumberId %>" required /></label>
+    <% if (ehSuper) { %>
+      <label>Phone Number ID<input name="whatsappPhoneNumberId" value="<%= t.whatsappPhoneNumberId %>" required /></label>
+    <% } else { %>
+      <input type="hidden" name="whatsappPhoneNumberId" value="<%= t.whatsappPhoneNumberId %>" />
+    <% } %>
   </div>
   <div class="grid2">
     <label>Fuso horário<input name="timezone" value="<%= t.timezone %>" /></label>
-    <label class="checks" style="align-self:end"><input type="checkbox" name="isActive" <%= t.isActive ? "checked" : "" %> /> Clínica ativa</label>
+    <% if (ehSuper) { %>
+      <label class="checks" style="align-self:end"><input type="checkbox" name="isActive" <%= t.isActive ? "checked" : "" %> /> Clínica ativa</label>
+    <% } else { %>
+      <input type="hidden" name="isActive" value="<%= t.isActive ? 'on' : '' %>" />
+    <% } %>
   </div>
 
   <h2>Mensagens</h2>
@@ -72,16 +80,20 @@
   </div>
 
   <h2>Inteligência artificial</h2>
-  <div class="grid2">
-    <label>Modelo
-      <select name="ai_model">
-        <% ["claude-haiku-4-5","claude-sonnet-5","claude-opus-4-8"].forEach(function(m){ %>
-          <option value="<%= m %>" <%= cfg.ai.model === m ? "selected" : "" %>><%= m %></option>
-        <% }) %>
-      </select>
-    </label>
-    <label>&nbsp;<span class="muted">Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</span></label>
-  </div>
+  <% if (ehSuper) { %>
+    <div class="grid2">
+      <label>Modelo
+        <select name="ai_model">
+          <% ["claude-haiku-4-5","claude-sonnet-5","claude-opus-4-8"].forEach(function(m){ %>
+            <option value="<%= m %>" <%= cfg.ai.model === m ? "selected" : "" %>><%= m %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>&nbsp;<span class="muted">Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</span></label>
+    </div>
+  <% } else { %>
+    <input type="hidden" name="ai_model" value="<%= cfg.ai.model %>" />
+  <% } %>
   <label>Persona (tom/estilo)<textarea name="ai_persona"><%= cfg.ai.persona %></textarea></label>
 
   <h2>Lembrete de consulta (reduz faltas)</h2>
@@ -93,9 +105,17 @@
   </div>
   <div class="grid2">
     <label>Horas de antecedência<input type="number" name="reminders_hoursBefore" value="<%= rem.hoursBefore %>" /></label>
-    <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
+    <% if (ehSuper) { %>
+      <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
+    <% } else { %>
+      <input type="hidden" name="reminders_templateName" value="<%= rem.templateName %>" />
+    <% } %>
   </div>
-  <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
+  <% if (ehSuper) { %>
+    <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
+  <% } else { %>
+    <input type="hidden" name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" />
+  <% } %>
 
   <h2>Base de conhecimento (FAQ)</h2>
   <label>Informações e perguntas frequentes que o agente pode usar para responder dúvidas gerais (procedimentos, formas de pagamento, localização, estacionamento…). O agente só afirma o que estiver aqui ou vier das ferramentas — se não souber, orienta a recepção.

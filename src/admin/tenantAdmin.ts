@@ -334,3 +334,42 @@ export async function listAppointmentsRange(
     },
   }));
 }
+
+// ---------- Usuários do painel ----------
+
+export async function listUsers() {
+  return prisma.adminUser.findMany({
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+    include: { tenant: { select: { name: true } } },
+  });
+}
+
+export async function createUser(d: {
+  email: string;
+  name: string;
+  passwordHash: string;
+  role: string;
+  tenantId?: string | null;
+}) {
+  await prisma.adminUser.create({
+    data: {
+      email: d.email.trim().toLowerCase(),
+      name: d.name.trim(),
+      passwordHash: d.passwordHash,
+      role: d.role,
+      tenantId: d.role === "CLINIC" ? (d.tenantId || null) : null,
+    },
+  });
+}
+
+export async function setUserActive(id: string, ativo: boolean) {
+  await prisma.adminUser.update({ where: { id }, data: { isActive: ativo } });
+}
+
+export async function setUserPassword(id: string, passwordHash: string) {
+  await prisma.adminUser.update({ where: { id }, data: { passwordHash } });
+}
+
+export async function deleteUser(id: string) {
+  await prisma.adminUser.delete({ where: { id } });
+}

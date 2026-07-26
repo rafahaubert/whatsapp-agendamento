@@ -1,10 +1,16 @@
 import express, { type Request, type Response, type Router } from "express";
 import {
-  checkCredentials,
+  autenticar,
   isLoggedIn,
   login,
   logout,
   requireAuth,
+  requireSuper,
+  requireTenant,
+  usuarioAtual,
+  ehSuper,
+  hashSenha,
+  Role,
 } from "./auth.js";
 import {
   listTenants,
@@ -28,6 +34,11 @@ import {
   listInbox,
   listThread,
   countPendentes,
+  listUsers,
+  createUser,
+  setUserActive,
+  setUserPassword,
+  deleteUser,
 } from "./tenantAdmin.js";
 import { setHandoff, logMessage } from "../db/conversationRepository.js";
 import { sendWhatsAppText } from "../channels/whatsapp/client.js";
@@ -118,12 +129,18 @@ export function makeAdminRouter(): Router {
     res.render("admin/login", { erro: req.query.erro ? "Usuário ou senha inválidos." : null });
   });
 
-  router.post("/login", (req: Request, res: Response) => {
+  router.post("/login", async (req: Request, res: Response) => {
     const user = String(req.body.user ?? "");
     const password = String(req.body.password ?? "");
-    if (checkCredentials(user, password)) {
-      login(req, user);
-      return res.redirect("/admin");
+    const autenticado = await autenticar(user, password);
+    if (autenticado) {
+      login(req, autenticado);
+      // Usuário de clínica vai direto para a sua clínica.
+      return res.redirect(
+        autenticado.role === Role.CLINIC && autenticado.tenantId
+          ? `/admin/clinicas/${autenticado.tenantId}`
+          : "/admin",
+      );
     }
     res.redirect("/admin/login?erro=1");
   });
@@ -136,16 +153,32 @@ export function makeAdminRouter(): Router {
   // ----- Daqui em diante, exige autenticação -----
   router.use(requireAuth);
 
+  // Disponibiliza o usuário logado para todas as views (menu, permissões).
+  router.use((req: Request, res: Response, next) => {
+    const u = usuarioAtual(req);
+    res.locals.usuario = u;
+    res.locals.ehSuper = ehSuper(req);
+    next();
+  });
+
+  // Isolamento entre clínicas: vale para TODAS as rotas /clinicas/:id/*
+  router.use("/clinicas/:id", requireTenant);
+
   router.get("/", async (req: Request, res: Response) => {
+    // Usuário de clínica não vê a lista — vai direto para a sua.
+    const u = usuarioAtual(req);
+    if (u.role === Role.CLINIC && u.tenantId) {
+      return res.redirect(`/admin/clinicas/${u.tenantId}`);
+    }
     const clinicas = await listTenants();
     res.render("admin/dashboard", { clinicas, msg: req.query.msg ?? null });
   });
 
-  router.get("/clinicas/nova", (_req: Request, res: Response) => {
+  router.get("/clinicas/nova", requireSuper, (_req: Request, res: Response) => {
     res.render("admin/clinica_nova", { erro: null });
   });
 
-  router.post("/clinicas", async (req: Request, res: Response) => {
+  router.post("/clinicas", requireSuper, async (req: Request, res: Response) => {
     try {
       const t = await createTenant({
         slug: slugify(req.body.slug || req.body.name),
@@ -185,6 +218,55 @@ export function makeAdminRouter(): Router {
   router.post("/clinicas/:id/conversa/reiniciar", async (req: Request, res: Response) => {
     await resetConversation(req.params.id, String(req.body.phone ?? ""));
     res.redirect(clinicaUrl(req.params.id, { msg: "Conversa reiniciada" }, "ferramentas"));
+  });
+
+  // ----- Usuários do painel (somente SUPER) -----
+  router.get("/usuarios", requireSuper, async (req: Request, res: Response) => {
+    const [usuarios, clinicas] = await Promise.all([listUsers(), listTenants()]);
+    res.render("admin/usuarios", {
+      usuarios,
+      clinicas,
+      msg: req.query.msg ?? null,
+      erro: req.query.erro ?? null,
+    });
+  });
+
+  router.post("/usuarios", requireSuper, async (req: Request, res: Response) => {
+    const senha = String(req.body.senha ?? "");
+    if (senha.length < 8) {
+      return res.redirect("/admin/usuarios?erro=" + encodeURIComponent("A senha precisa ter ao menos 8 caracteres."));
+    }
+    try {
+      await createUser({
+        email: String(req.body.email ?? ""),
+        name: String(req.body.nome ?? ""),
+        passwordHash: await hashSenha(senha),
+        role: req.body.role === Role.SUPER ? Role.SUPER : Role.CLINIC,
+        tenantId: req.body.tenantId ? String(req.body.tenantId) : null,
+      });
+      res.redirect("/admin/usuarios?msg=" + encodeURIComponent("Usuário criado"));
+    } catch {
+      res.redirect("/admin/usuarios?erro=" + encodeURIComponent("E-mail já cadastrado."));
+    }
+  });
+
+  router.post("/usuarios/:userId/senha", requireSuper, async (req: Request, res: Response) => {
+    const senha = String(req.body.senha ?? "");
+    if (senha.length < 8) {
+      return res.redirect("/admin/usuarios?erro=" + encodeURIComponent("A senha precisa ter ao menos 8 caracteres."));
+    }
+    await setUserPassword(req.params.userId, await hashSenha(senha));
+    res.redirect("/admin/usuarios?msg=" + encodeURIComponent("Senha redefinida"));
+  });
+
+  router.post("/usuarios/:userId/ativo", requireSuper, async (req: Request, res: Response) => {
+    await setUserActive(req.params.userId, bool(req.body.ativar));
+    res.redirect("/admin/usuarios?msg=" + encodeURIComponent("Acesso atualizado"));
+  });
+
+  router.post("/usuarios/:userId/excluir", requireSuper, async (req: Request, res: Response) => {
+    await deleteUser(req.params.userId);
+    res.redirect("/admin/usuarios?msg=" + encodeURIComponent("Usuário removido"));
   });
 
   // ----- Caixa de entrada (transbordo humano) -----

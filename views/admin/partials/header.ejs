@@ -4,6 +4,14 @@
 <body>
   <header class="topbar">
     <a href="/admin" class="brand">🩺 Painel · Agente WhatsApp</a>
-    <form method="post" action="/admin/logout"><button class="link">Sair</button></form>
+    <div class="row" style="gap:16px;align-items:center">
+      <% if (typeof ehSuper !== "undefined" && ehSuper) { %>
+        <a href="/admin/usuarios" style="color:var(--brand-ink);font-size:14px">Usuários</a>
+      <% } %>
+      <% if (typeof usuario !== "undefined" && usuario && usuario.nome) { %>
+        <span style="font-size:13px;opacity:.85"><%= usuario.nome %></span>
+      <% } %>
+      <form method="post" action="/admin/logout"><button class="link">Sair</button></form>
+    </div>
   </header>
   <main class="container">
