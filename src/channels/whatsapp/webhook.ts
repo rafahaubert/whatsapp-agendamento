@@ -85,21 +85,35 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
         if (!reply) continue;
 
         const numero = tenant.whatsappPhoneNumberId;
-        if (reply.opcoes?.length) {
-          // Até 3 opções cabem em botões; acima disso, lista interativa.
-          if (reply.opcoes.length <= 3) {
-            await sendWhatsAppButtons(numero, parsed.from, reply.texto, reply.opcoes);
+        try {
+          if (reply.opcoes?.length) {
+            // Até 3 opções cabem em botões; acima disso, lista interativa.
+            if (reply.opcoes.length <= 3) {
+              await sendWhatsAppButtons(numero, parsed.from, reply.texto, reply.opcoes);
+            } else {
+              await sendWhatsAppList(
+                numero,
+                parsed.from,
+                reply.texto,
+                reply.opcoes,
+                reply.rotuloOpcoes,
+              );
+            }
           } else {
-            await sendWhatsAppList(
-              numero,
-              parsed.from,
-              reply.texto,
-              reply.opcoes,
-              reply.rotuloOpcoes,
-            );
+            await sendWhatsAppText(numero, parsed.from, reply.texto);
           }
-        } else {
-          await sendWhatsAppText(numero, parsed.from, reply.texto);
+        } catch (err) {
+          // Nunca deixar o paciente sem resposta: se o formato interativo falhar,
+          // manda o mesmo conteúdo como texto simples.
+          logger.error({ err, to: parsed.from }, "falha ao enviar resposta — tentando texto");
+          const lista = (reply.opcoes ?? [])
+            .map((o, i) => `${i + 1}. ${o.titulo}${o.descricao ? ` — ${o.descricao}` : ""}`)
+            .join("\n");
+          await sendWhatsAppText(
+            numero,
+            parsed.from,
+            lista ? `${reply.texto}\n\n${lista}` : reply.texto,
+          ).catch((e) => logger.error({ err: e }, "falha também no envio de texto"));
         }
       }
     } catch (err) {

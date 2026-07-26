@@ -34,6 +34,26 @@ async function enviar(phoneNumberId: string, corpo: Record<string, any>): Promis
 const corta = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 /**
+ * A Meta rejeita botões/itens com títulos repetidos ("Duplicate button title").
+ * Como o corte por tamanho também pode gerar repetição, garantimos unicidade
+ * acrescentando um sufixo numérico.
+ */
+export function titulosUnicos(opcoes: OpcaoWhatsApp[], max: number): OpcaoWhatsApp[] {
+  const usados = new Set<string>();
+  return opcoes.map((o) => {
+    let titulo = corta(o.titulo, max);
+    let n = 2;
+    while (usados.has(titulo)) {
+      const sufixo = ` (${n})`;
+      titulo = corta(o.titulo, max - sufixo.length) + sufixo;
+      n++;
+    }
+    usados.add(titulo);
+    return { ...o, titulo };
+  });
+}
+
+/**
  * Envia uma mensagem de texto pela Cloud API.
  * O `phoneNumberId` vem do tenant, então a MESMA credencial global pode enviar
  * a partir de números diferentes (multi-clínica).
@@ -63,9 +83,9 @@ export async function sendWhatsAppButtons(
       type: "button",
       body: { text: corta(texto, 1024) },
       action: {
-        buttons: opcoes.slice(0, 3).map((o) => ({
+        buttons: titulosUnicos(opcoes.slice(0, 3), 20).map((o) => ({
           type: "reply",
-          reply: { id: corta(o.id, 200), title: corta(o.titulo, 20) },
+          reply: { id: corta(o.id, 200), title: o.titulo },
         })),
       },
     },
@@ -94,9 +114,9 @@ export async function sendWhatsAppList(
         sections: [
           {
             title: "Opções",
-            rows: opcoes.slice(0, 10).map((o) => ({
+            rows: titulosUnicos(opcoes.slice(0, 10), 24).map((o) => ({
               id: corta(o.id, 200),
-              title: corta(o.titulo, 24),
+              title: o.titulo,
               ...(o.descricao ? { description: corta(o.descricao, 72) } : {}),
             })),
           },

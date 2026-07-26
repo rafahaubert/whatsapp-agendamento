@@ -219,11 +219,17 @@ export const conversationEngine: MessageHandler = {
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
     if (ultimosHorarios.length) {
-      const opcoes: ReplyOption[] = ultimosHorarios.slice(0, 10).map((h) => ({
-        id: `SLOT:${h.slotId}`,
-        titulo: h.inicio,
-        descricao: `${h.medico} · ${h.unidade}`,
-      }));
+      // Dois profissionais podem ter o mesmo horário: oferecer o mesmo rótulo
+      // duas vezes confunde o paciente (e a Meta rejeita títulos repetidos).
+      const vistos = new Set<string>();
+      const opcoes: ReplyOption[] = ultimosHorarios
+        .filter((h) => (vistos.has(h.inicio) ? false : (vistos.add(h.inicio), true)))
+        .slice(0, 10)
+        .map((h) => ({
+          id: `SLOT:${h.slotId}`,
+          titulo: h.inicio,
+          descricao: `${h.medico} · ${h.unidade}`,
+        }));
       return { texto: replyText, opcoes, rotuloOpcoes: "Ver horários" };
     }
 
