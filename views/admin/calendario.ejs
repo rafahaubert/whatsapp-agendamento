@@ -135,6 +135,32 @@
           "&end=" + encodeURIComponent(info.endStr) + (filter.value ? "&doctorId=" + encodeURIComponent(filter.value) : "");
         fetch(url).then(function (r) { return r.json(); }).then(success).catch(failure);
       },
+      eventContent: function (arg) {
+        var p = arg.event.extendedProps || {};
+        var emLista = arg.view.type.indexOf("list") === 0;
+        var wrap = document.createElement("div");
+        wrap.className = "ev";
+
+        var titulo = document.createElement("div");
+        titulo.className = "ev-t";
+        titulo.textContent = (!emLista && arg.timeText ? arg.timeText + " " : "") + arg.event.title;
+        wrap.appendChild(titulo);
+
+        if (p.medico) {
+          var sub = document.createElement("div");
+          sub.className = "ev-m";
+          sub.textContent = p.medico + (p.unidade && emLista ? " · " + p.unidade : "");
+          wrap.appendChild(sub);
+        }
+        return { domNodes: [wrap] };
+      },
+      eventDidMount: function (arg) {
+        var p = arg.event.extendedProps || {};
+        arg.el.title = arg.event.title +
+          (p.medico ? "\n" + p.medico : "") +
+          (p.unidade ? "\n" + p.unidade : "") +
+          (p.status ? "\n" + p.status : "");
+      },
       select: function (sel) { abrirNovo(sel.start); cal.unselect(); },
       eventClick: function (arg) {
         var p = arg.event.extendedProps || {};

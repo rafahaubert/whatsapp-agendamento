@@ -93,7 +93,17 @@
     /* ---- FullCalendar: integra com o tema (claro/escuro) ---- */
     .fc{--fc-border-color:var(--line);--fc-page-bg-color:var(--card);--fc-neutral-bg-color:var(--bg);
         --fc-today-bg-color:rgba(18,140,126,.07);--fc-now-indicator-color:#e0554a;
-        --fc-event-border-color:transparent;--fc-small-font-size:12px}
+        --fc-event-border-color:transparent;--fc-small-font-size:12px;
+        --fc-list-event-hover-bg-color:var(--bg)}
+    /* Visão em lista: texto legível e hover no tema */
+    .fc .fc-list-event-title a,.fc .fc-list-event-time{color:var(--ink)}
+    .fc .fc-list-event:hover td{background:var(--bg)}
+    .fc .fc-list-day-cushion{background:var(--bg);color:var(--muted)}
+    .fc .fc-list-empty{background:var(--card);color:var(--muted)}
+    /* Conteúdo do evento: paciente + médico embaixo */
+    .fc .ev{overflow:hidden;line-height:1.25}
+    .fc .ev-t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc .ev-m{font-size:11px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     @media (prefers-color-scheme: dark){ .fc{--fc-today-bg-color:rgba(0,168,132,.12)} }
     :root[data-theme="dark"] .fc{--fc-today-bg-color:rgba(0,168,132,.12)}
     .fc a{color:inherit;text-decoration:none}
