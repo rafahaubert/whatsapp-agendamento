@@ -34,6 +34,9 @@ import {
   listInbox,
   listThread,
   countPendentes,
+  listBlocks,
+  addBlock,
+  removeBlock,
   listUsers,
   createUser,
   setUserActive,
@@ -50,7 +53,7 @@ import {
   moveAppointment,
   cancelAppointment,
 } from "../domain/scheduling.js";
-import type { TenantConfig } from "../config/types.js";
+import type { TenantConfig, DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,9 +84,20 @@ function slugify(s: string): string {
 function parseConfig(body: any, timezone: string): TenantConfig {
   const days: TenantConfig["businessHours"]["days"] = {};
   for (let i = 0; i < 7; i++) {
-    days[i] = bool(body[`day_${i}_aberto`])
-      ? { open: body[`day_${i}_open`] || "08:00", close: body[`day_${i}_close`] || "18:00" }
-      : null;
+    if (!bool(body[`day_${i}_aberto`])) {
+      days[i] = null;
+      continue;
+    }
+    const inicioIntervalo = (body[`day_${i}_break_start`] ?? "").trim();
+    const fimIntervalo = (body[`day_${i}_break_end`] ?? "").trim();
+    days[i] = {
+      open: body[`day_${i}_open`] || "08:00",
+      close: body[`day_${i}_close`] || "18:00",
+      // Intervalo (almoço) é opcional: só entra se as duas pontas vierem preenchidas.
+      ...(inicioIntervalo && fimIntervalo
+        ? { breakStart: inicioIntervalo, breakEnd: fimIntervalo }
+        : {}),
+    };
   }
   return {
     branding: {
@@ -198,10 +212,11 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, conversas, pendentes] = await Promise.all([
+    const [agendamentos, conversas, pendentes, bloqueios] = await Promise.all([
       listAppointments(t.id, t.timezone),
       listConversations(t.id),
       countPendentes(t.id),
+      listBlocks(t.id, t.timezone),
     ]);
     res.render("admin/clinica", {
       t,
@@ -209,6 +224,7 @@ export function makeAdminRouter(): Router {
       agendamentos,
       conversas,
       pendentes,
+      bloqueios,
       googleEmail: serviceAccountEmail(),
       msg: req.query.msg ?? null,
       erro: req.query.erro ?? null,
@@ -453,11 +469,19 @@ export function makeAdminRouter(): Router {
     if (bool(req.body.herdar)) {
       await updateDoctorHours(req.params.id, req.params.docId, null);
     } else {
-      const days: Record<number, { open: string; close: string } | null> = {};
+      const days: Record<number, DiaAtendimento | null> = {};
       for (let i = 0; i < 7; i++) {
-        days[i] = bool(req.body[`d${i}_aberto`])
-          ? { open: req.body[`d${i}_open`] || "08:00", close: req.body[`d${i}_close`] || "18:00" }
-          : null;
+        if (!bool(req.body[`d${i}_aberto`])) {
+          days[i] = null;
+          continue;
+        }
+        const bs = String(req.body[`d${i}_break_start`] ?? "").trim();
+        const be = String(req.body[`d${i}_break_end`] ?? "").trim();
+        days[i] = {
+          open: req.body[`d${i}_open`] || "08:00",
+          close: req.body[`d${i}_close`] || "18:00",
+          ...(bs && be ? { breakStart: bs, breakEnd: be } : {}),
+        };
       }
       await updateDoctorHours(req.params.id, req.params.docId, days);
     }
@@ -471,6 +495,36 @@ export function makeAdminRouter(): Router {
     const anchor = { unit: "unidades", specialty: "especialidades", insurer: "convenios", healthPlan: "convenios", doctor: "medicos" }[entity];
     const r = await remove(req.params.id, entity, req.params.entId);
     res.redirect(clinicaUrl(req.params.id, r.ok ? undefined : { erro: r.erro }, anchor));
+  });
+
+  // ----- Férias, feriados e ausências -----
+  router.post("/clinicas/:id/bloqueios", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const r = await addBlock(
+      t.id,
+      {
+        doctorId: req.body.doctorId ? String(req.body.doctorId) : null,
+        startsAt: String(req.body.startsAt ?? ""),
+        endsAt: String(req.body.endsAt ?? ""),
+        reason: String(req.body.reason ?? ""),
+      },
+      t.timezone,
+    );
+
+    if (!r.ok) {
+      return res.redirect(clinicaUrl(req.params.id, { erro: r.erro }, "bloqueios"));
+    }
+    const msg = r.conflitos.length
+      ? `Bloqueio criado. ATENÇÃO: ${r.conflitos.length} consulta(s) já marcada(s) nesse período — ${r.conflitos.slice(0, 3).join("; ")}${r.conflitos.length > 3 ? "…" : ""}`
+      : "Bloqueio criado — gere os horários novamente";
+    res.redirect(clinicaUrl(req.params.id, { msg }, "bloqueios"));
+  });
+
+  router.post("/clinicas/:id/bloqueios/:blockId/excluir", async (req: Request, res: Response) => {
+    await removeBlock(req.params.id, req.params.blockId);
+    res.redirect(clinicaUrl(req.params.id, { msg: "Bloqueio removido" }, "bloqueios"));
   });
 
   // ----- Agenda -----

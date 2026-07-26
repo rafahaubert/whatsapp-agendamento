@@ -10,6 +10,18 @@
  * Regra de ouro: o que muda entre clínicas é CONFIGURAÇÃO, não código.
  */
 
+// ---------- Horário de um dia ----------
+/**
+ * Faixa de atendimento de um dia, com intervalo opcional (almoço).
+ * Sem `breakStart`/`breakEnd` o comportamento é o de antes: faixa contínua.
+ */
+export interface DiaAtendimento {
+  open: string; // "08:00"
+  close: string; // "18:00"
+  breakStart?: string; // "12:00"
+  breakEnd?: string; // "13:00"
+}
+
 // ---------- Comportamento / branding (Tenant.config) ----------
 export interface TenantConfig {
   branding: {
@@ -22,7 +34,7 @@ export interface TenantConfig {
   businessHours: {
     timezone: string; // "America/Sao_Paulo"
     /** 0=domingo ... 6=sábado. null = fechado. */
-    days: Record<number, { open: string; close: string } | null>;
+    days: Record<number, DiaAtendimento | null>;
   };
 
   booking: {

@@ -19,6 +19,49 @@ export async function loadClinicFiles(): Promise<ClinicFile[]> {
   return result;
 }
 
+/** "HH:MM" → minutos desde a meia-noite. */
+export function minutosDoDia(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/**
+ * O slot cai no intervalo (almoço)? Considera sobreposição, não só o início —
+ * um slot 11:45–12:15 com almoço 12:00–13:00 também é descartado.
+ */
+export function noIntervalo(
+  inicioMin: number,
+  fimMin: number,
+  dia: { breakStart?: string; breakEnd?: string },
+): boolean {
+  if (!dia.breakStart || !dia.breakEnd) return false;
+  const bs = minutosDoDia(dia.breakStart);
+  const be = minutosDoDia(dia.breakEnd);
+  if (be <= bs) return false; // intervalo inválido: ignora
+  return inicioMin < be && fimMin > bs;
+}
+
+export interface Bloqueio {
+  doctorId: string | null; // null = clínica inteira (feriado)
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/** O horário está dentro de férias/feriado (da clínica ou do profissional)? */
+export function estaBloqueado(
+  inicio: Date,
+  fim: Date,
+  doctorId: string,
+  bloqueios: Bloqueio[],
+): boolean {
+  return bloqueios.some(
+    (b) =>
+      (b.doctorId === null || b.doctorId === doctorId) &&
+      inicio < b.endsAt &&
+      fim > b.startsAt,
+  );
+}
+
 type SlotRow = {
   tenantId: string;
   unitId: string;
@@ -48,6 +91,13 @@ export async function regenerateSlots(
   });
 
   const now = DateTime.now().setZone(timezone);
+
+  // Férias/feriados que alcançam a janela sendo gerada.
+  const bloqueios = await prisma.block.findMany({
+    where: { tenantId, endsAt: { gte: now.toJSDate() } },
+    select: { doctorId: true, startsAt: true, endsAt: true },
+  });
+
   const rows: SlotRow[] = [];
 
   for (const doctor of doctors) {
@@ -74,19 +124,30 @@ export async function regenerateSlots(
           const close = base.set({ hour: ch, minute: cm });
           let cursor = base.set({ hour: oh, minute: om });
 
+          const duracao = config.booking.slotDurationMinutes;
+
           while (cursor < close) {
-            if (cursor > now) {
+            const fim = cursor.plus({ minutes: duracao });
+            const inicioMin = cursor.hour * 60 + cursor.minute;
+            const fimMin = inicioMin + duracao;
+
+            const valido =
+              cursor > now &&
+              !noIntervalo(inicioMin, fimMin, hours) &&
+              !estaBloqueado(cursor.toJSDate(), fim.toJSDate(), doctor.id, bloqueios);
+
+            if (valido) {
               rows.push({
                 tenantId,
                 unitId: unit.id,
                 doctorId: doctor.id,
                 specialtyId: spec.id,
                 startsAt: cursor.toJSDate(),
-                endsAt: cursor.plus({ minutes: config.booking.slotDurationMinutes }).toJSDate(),
+                endsAt: fim.toJSDate(),
                 status: SlotStatus.AVAILABLE,
               });
             }
-            cursor = cursor.plus({ minutes: config.booking.slotDurationMinutes });
+            cursor = fim;
           }
         }
       }

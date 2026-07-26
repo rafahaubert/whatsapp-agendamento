@@ -47,6 +47,7 @@ model Tenant {
   conversations Conversation[]
   messages      Message[]
   adminUsers    AdminUser[]
+  blocks        Block[]
 
   @@map("tenants")
 }
@@ -116,6 +117,7 @@ model Doctor {
   healthPlans  HealthPlan[] // m-n: convênios/planos que este médico aceita
   slots        Slot[]
   appointments Appointment[]
+  blocks       Block[]
 
   @@index([tenantId])
   @@map("doctors")
@@ -261,6 +263,26 @@ model Appointment {
   @@index([tenantId, status])
   @@index([patientId])
   @@map("appointments")
+}
+
+// =========================================================
+// BLOQUEIO — férias, feriados e ausências.
+// doctorId nulo = fecha a clínica inteira no período.
+// =========================================================
+model Block {
+  id        String   @id @default(cuid())
+  tenantId  String
+  doctorId  String?
+  startsAt  DateTime
+  endsAt    DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  doctor Doctor? @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startsAt])
+  @@map("blocks")
 }
 
 // =========================================================

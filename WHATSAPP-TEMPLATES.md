@@ -74,9 +74,12 @@ No plano free o serviço hiberna e o timer interno pode não rodar no horário. 
 **cron externo** chamando o endpoint protegido:
 
 ```
-POST https://SEU-APP.onrender.com/jobs/reminders
+POST https://SEU-APP.onrender.com/jobs/run
 Header: x-jobs-token: <valor de JOBS_TOKEN>
 ```
+
+> `/jobs/run` executa **lembretes + renovação da agenda** (recomendado).
+> `/jobs/reminders` continua existindo e roda só os lembretes.
 
 Defina `JOBS_TOKEN` nas variáveis de ambiente e agende no
 [cron-job.org](https://cron-job.org) (gratuito) a cada 15 minutos.

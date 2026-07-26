@@ -6,6 +6,7 @@ import { makeWhatsAppRouter } from "./channels/whatsapp/webhook.js";
 import { conversationEngine } from "./core/engine.js";
 import { makeAdminRouter } from "./admin/router.js";
 import { enviarLembretes } from "./jobs/reminders.js";
+import { renovarAgendas } from "./jobs/agenda.js";
 import { logger } from "./shared/logger.js";
 
 const app = express();
@@ -58,14 +59,17 @@ app.use("/admin", makeAdminRouter());
  * Protegido por JOBS_TOKEN — útil porque o plano free hiberna e o setInterval
  * abaixo pode não rodar no horário.
  */
-app.post("/jobs/reminders", async (req, res) => {
+app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
   const token = req.header("x-jobs-token") ?? req.query.token;
   if (!env.JOBS_TOKEN || token !== env.JOBS_TOKEN) return res.sendStatus(401);
   try {
-    const r = await enviarLembretes();
-    res.json({ ok: true, ...r });
+    // Lembretes sempre; a agenda só na rota unificada (mantém /jobs/reminders leve
+    // para quem já configurou o cron antigo).
+    const lembretes = await enviarLembretes();
+    const agenda = req.path === "/jobs/run" ? await renovarAgendas() : null;
+    res.json({ ok: true, lembretes, agenda });
   } catch (err) {
-    logger.error({ err }, "falha ao executar lembretes");
+    logger.error({ err }, "falha ao executar os jobs");
     res.status(500).json({ ok: false });
   }
 });
@@ -79,5 +83,17 @@ app.listen(env.PORT, () => {
       enviarLembretes().catch((err) => logger.error({ err }, "falha no ciclo de lembretes"));
     },
     10 * 60 * 1000,
+  ).unref();
+
+  // Agenda rolante: uma vez por dia (e uma vez ao subir, após 1 min).
+  setTimeout(() => {
+    renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
+  }, 60 * 1000).unref();
+
+  setInterval(
+    () => {
+      renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
+    },
+    24 * 60 * 60 * 1000,
   ).unref();
 });

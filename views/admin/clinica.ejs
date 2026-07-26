@@ -17,6 +17,7 @@
   <a href="#especialidades">Especialidades</a>
   <a href="#convenios">Convênios</a>
   <a href="#medicos">Médicos</a>
+  <a href="#bloqueios">Férias/Feriados</a>
   <a href="#agenda">Agenda</a>
   <a href="#ferramentas">Conversas</a>
   <a href="/admin/clinicas/<%= t.id %>/calendario">📅 Calendário</a>
@@ -52,8 +53,9 @@
   <input type="hidden" name="branding_clinicName" value="<%= t.name %>" />
 
   <h2>Horário de funcionamento</h2>
+  <p class="muted">O intervalo (almoço) é opcional — preenchendo os dois campos, o agente não oferece horários nesse período.</p>
   <table>
-    <thead><tr><th>Dia</th><th>Aberto</th><th>Abre</th><th>Fecha</th></tr></thead>
+    <thead><tr><th>Dia</th><th>Aberto</th><th>Abre</th><th>Fecha</th><th>Almoço de</th><th>até</th></tr></thead>
     <tbody>
       <% for (let i=0;i<7;i++){ const h = days[i]; %>
         <tr>
@@ -61,6 +63,8 @@
           <td class="checks"><input type="checkbox" name="day_<%= i %>_aberto" <%= h ? "checked" : "" %> /></td>
           <td><input type="time" name="day_<%= i %>_open" value="<%= h ? h.open : '08:00' %>" /></td>
           <td><input type="time" name="day_<%= i %>_close" value="<%= h ? h.close : '18:00' %>" /></td>
+          <td><input type="time" name="day_<%= i %>_break_start" value="<%= h && h.breakStart ? h.breakStart : '' %>" /></td>
+          <td><input type="time" name="day_<%= i %>_break_end" value="<%= h && h.breakEnd ? h.breakEnd : '' %>" /></td>
         </tr>
       <% } %>
     </tbody>
@@ -245,7 +249,7 @@
                 </label>
                 <p class="muted" style="margin:0 0 8px">Ao editar qualquer horário abaixo, esta opção é desmarcada automaticamente (vira agenda própria).</p>
                 <table>
-                  <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th></tr></thead>
+                  <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th><th>Almoço de</th><th>até</th></tr></thead>
                   <tbody>
                     <% for (var i = 0; i < 7; i++) { var hh = dh ? dh[i] : days[i]; %>
                       <tr>
@@ -253,6 +257,8 @@
                         <td class="checks"><input type="checkbox" name="d<%= i %>_aberto" <%= hh ? "checked" : "" %> /></td>
                         <td><input type="time" name="d<%= i %>_open" value="<%= hh ? hh.open : '08:00' %>" /></td>
                         <td><input type="time" name="d<%= i %>_close" value="<%= hh ? hh.close : '18:00' %>" /></td>
+                        <td><input type="time" name="d<%= i %>_break_start" value="<%= hh && hh.breakStart ? hh.breakStart : '' %>" /></td>
+                        <td><input type="time" name="d<%= i %>_break_end" value="<%= hh && hh.breakEnd ? hh.breakEnd : '' %>" /></td>
                       </tr>
                     <% } %>
                   </tbody>
@@ -307,6 +313,54 @@
       </div>
     </fieldset>
     <button class="btn sm">Adicionar médico</button>
+  </form>
+</div>
+
+<!-- ============ FÉRIAS E FERIADOS ============ -->
+<div class="card" id="bloqueios">
+  <h2>Férias, feriados e ausências</h2>
+  <p class="muted">Períodos em que não há atendimento. Pode ser da clínica inteira (feriado)
+    ou de um profissional (férias). Consultas já marcadas não são canceladas — você é avisado.</p>
+
+  <% if (bloqueios.length === 0) { %>
+    <p class="muted">Nenhum bloqueio cadastrado.</p>
+  <% } else { %>
+    <table>
+      <thead><tr><th>Quem</th><th>De</th><th>Até</th><th>Motivo</th><th></th></tr></thead>
+      <tbody>
+        <% bloqueios.forEach(function(b){ %>
+          <tr>
+            <td><%= b.quem %></td>
+            <td><%= b.inicio %></td>
+            <td><%= b.fim %></td>
+            <td class="muted"><%= b.motivo %></td>
+            <td style="text-align:right">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios/<%= b.id %>/excluir">
+                <button class="btn sm danger">Remover</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+
+  <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios" style="margin-top:12px">
+    <div class="grid2">
+      <label>Profissional
+        <select name="doctorId">
+          <option value="">Toda a clínica (feriado)</option>
+          <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
+        </select>
+      </label>
+      <label>Motivo (opcional)<input name="reason" placeholder="Férias, feriado, congresso…" /></label>
+    </div>
+    <div class="grid2">
+      <label>Início<input type="datetime-local" name="startsAt" required /></label>
+      <label>Fim<input type="datetime-local" name="endsAt" required /></label>
+    </div>
+    <button class="btn sm">Adicionar bloqueio</button>
+    <span class="muted">Depois, gere os horários novamente.</span>
   </form>
 </div>
 

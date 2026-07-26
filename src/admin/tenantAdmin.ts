@@ -373,3 +373,74 @@ export async function setUserPassword(id: string, passwordHash: string) {
 export async function deleteUser(id: string) {
   await prisma.adminUser.delete({ where: { id } });
 }
+
+// ---------- Bloqueios (férias, feriados, ausências) ----------
+
+export async function listBlocks(tenantId: string, timezone: string) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const blocks = await prisma.block.findMany({
+    where: { tenantId, endsAt: { gte: hoje } },
+    orderBy: { startsAt: "asc" },
+    include: { doctor: { select: { name: true } } },
+  });
+
+  return blocks.map((b) => ({
+    id: b.id,
+    quem: b.doctor?.name ?? "Toda a clínica",
+    inicio: formatDateTime(b.startsAt, timezone),
+    fim: formatDateTime(b.endsAt, timezone),
+    motivo: b.reason ?? "",
+  }));
+}
+
+/**
+ * Cria um bloqueio e avisa se ele cobre agendamentos já marcados — nunca
+ * cancela nada automaticamente; a recepção decide o que fazer.
+ */
+export async function addBlock(
+  tenantId: string,
+  d: { doctorId?: string | null; startsAt: string; endsAt: string; reason?: string },
+  timezone: string,
+): Promise<{ ok: true; conflitos: string[] } | { ok: false; erro: string }> {
+  const inicio = new Date(d.startsAt);
+  const fim = new Date(d.endsAt);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+    return { ok: false, erro: "Datas inválidas." };
+  }
+  if (fim <= inicio) return { ok: false, erro: "O fim precisa ser depois do início." };
+
+  await prisma.block.create({
+    data: {
+      tenantId,
+      doctorId: d.doctorId || null,
+      startsAt: inicio,
+      endsAt: fim,
+      reason: d.reason?.trim() || null,
+    },
+  });
+
+  // Consultas já marcadas dentro do período.
+  const agendados = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      ...(d.doctorId ? { doctorId: d.doctorId } : {}),
+      status: { notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW] },
+      slot: { startsAt: { gte: inicio, lt: fim } },
+    },
+    include: { patient: true, doctor: true, slot: true },
+    take: 50,
+  });
+
+  return {
+    ok: true,
+    conflitos: agendados.map(
+      (a) => `${a.patient.name} — ${formatDateTime(a.slot.startsAt, timezone)} (${a.doctor.name})`,
+    ),
+  };
+}
+
+export async function removeBlock(tenantId: string, id: string) {
+  await prisma.block.deleteMany({ where: { id, tenantId } });
+}
