@@ -233,13 +233,23 @@ export const conversationEngine: MessageHandler = {
       return { texto: replyText, opcoes, rotuloOpcoes: "Ver horários" };
     }
 
+    // Especialidades viram opções apenas quando o agente REALMENTE apresenta a
+    // lista. Se ele só consultou o catálogo para entender a necessidade do
+    // paciente (triagem), anexar a lista atrapalharia a conversa.
     if (ultimasEspecialidades.length) {
-      const opcoes: ReplyOption[] = ultimasEspecialidades.slice(0, 10).map((e) => ({
-        id: `ESP:${e.name}`,
-        titulo: e.name,
-        descricao: e.priceParticular ? `Particular: R$ ${e.priceParticular}` : undefined,
-      }));
-      return { texto: replyText, opcoes, rotuloOpcoes: "Ver especialidades" };
+      const texto = replyText.toLowerCase();
+      const citadas = ultimasEspecialidades.filter((e) =>
+        texto.includes(e.name.toLowerCase()),
+      ).length;
+
+      if (citadas >= 2) {
+        const opcoes: ReplyOption[] = ultimasEspecialidades.slice(0, 10).map((e) => ({
+          id: `ESP:${e.name}`,
+          titulo: e.name,
+          descricao: e.priceParticular ? `Particular: R$ ${e.priceParticular}` : undefined,
+        }));
+        return { texto: replyText, opcoes, rotuloOpcoes: "Ver especialidades" };
+      }
     }
 
     return { texto: replyText };

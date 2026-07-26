@@ -48,4 +48,19 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(fakeTenant({ maxOptionsOffered: 5 }));
     expect(prompt).toContain("até 5 opções");
   });
+
+  it("faz triagem e pergunta preferência de dia antes de buscar horários", () => {
+    const prompt = buildSystemPrompt(fakeTenant());
+    const posNecessidade = prompt.indexOf("ENTENDA A NECESSIDADE");
+    const posPreferencia = prompt.indexOf("PREFERÊNCIA DE DIA");
+    const posHorarios = prompt.indexOf("listar_horarios");
+
+    expect(posNecessidade).toBeGreaterThan(-1);
+    expect(posPreferencia).toBeGreaterThan(posNecessidade);
+    expect(posHorarios).toBeGreaterThan(posPreferencia);
+  });
+
+  it("proíbe perguntar qual profissional o paciente quer", () => {
+    expect(buildSystemPrompt(fakeTenant())).toContain("Não pergunte qual PROFISSIONAL");
+  });
 });
