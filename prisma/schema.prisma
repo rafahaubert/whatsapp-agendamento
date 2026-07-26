@@ -352,6 +352,9 @@ model Message {
   direction String // IN | OUT
   sentBy    String   @default("BOT") // BOT | HUMAN | PATIENT
   text      String
+  // Consumo do turno de IA (só nas respostas do bot) — base de custo por clínica.
+  inputTokens  Int?
+  outputTokens Int?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

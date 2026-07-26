@@ -78,6 +78,17 @@ export async function logMessage(
   direction: "IN" | "OUT",
   text: string,
   sentBy: "BOT" | "HUMAN" | "PATIENT",
+  tokens?: { input: number; output: number },
 ): Promise<void> {
-  await prisma.message.create({ data: { tenantId, phone, direction, text, sentBy } });
+  await prisma.message.create({
+    data: {
+      tenantId,
+      phone,
+      direction,
+      text,
+      sentBy,
+      inputTokens: tokens?.input ?? null,
+      outputTokens: tokens?.output ?? null,
+    },
+  });
 }

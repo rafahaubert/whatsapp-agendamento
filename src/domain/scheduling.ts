@@ -642,3 +642,24 @@ export async function confirmAppointment(tenant: ResolvedTenant, appointmentId: 
     inicio: formatDateTime(appt.slot.startsAt, tenant.timezone),
   };
 }
+
+/**
+ * Registra o desfecho da consulta (base da taxa de falta).
+ * `compareceu = false` grava NO_SHOW — a métrica que a clínica mais quer ver cair.
+ */
+export async function marcarComparecimento(
+  tenant: ResolvedTenant,
+  appointmentId: string,
+  compareceu: boolean,
+) {
+  const appt = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId: tenant.id },
+  });
+  if (!appt) return { erro: "Agendamento não encontrado." };
+
+  await prisma.appointment.update({
+    where: { id: appt.id },
+    data: { status: compareceu ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW },
+  });
+  return { status: compareceu ? "COMPARECEU" : "FALTOU", appointmentId: appt.id };
+}

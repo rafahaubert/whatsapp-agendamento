@@ -444,3 +444,31 @@ export async function addBlock(
 export async function removeBlock(tenantId: string, id: string) {
   await prisma.block.deleteMany({ where: { id, tenantId } });
 }
+
+/** Consultas passadas ainda sem desfecho — a recepção marca Compareceu/Faltou. */
+export async function listPendingAttendance(tenantId: string, timezone: string) {
+  const appts = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      status: {
+        in: [
+          AppointmentStatus.SCHEDULED,
+          AppointmentStatus.CONFIRMED,
+          AppointmentStatus.RESCHEDULED,
+        ],
+      },
+      slot: { endsAt: { lt: new Date() } },
+    },
+    include: { patient: true, doctor: true, specialty: true, slot: true },
+    orderBy: { slot: { startsAt: "desc" } },
+    take: 30,
+  });
+
+  return appts.map((a) => ({
+    id: a.id,
+    paciente: a.patient.name,
+    especialidade: a.specialty.name,
+    medico: a.doctor.name,
+    inicio: formatDateTime(a.slot.startsAt, timezone),
+  }));
+}

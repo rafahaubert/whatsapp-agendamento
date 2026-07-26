@@ -34,6 +34,7 @@ import {
   listInbox,
   listThread,
   countPendentes,
+  listPendingAttendance,
   listBlocks,
   addBlock,
   removeBlock,
@@ -52,7 +53,9 @@ import {
   createManualAppointment,
   moveAppointment,
   cancelAppointment,
+  marcarComparecimento,
 } from "../domain/scheduling.js";
+import { calcularMetricas } from "./metrics.js";
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
@@ -212,11 +215,12 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, conversas, pendentes, bloqueios] = await Promise.all([
+    const [agendamentos, conversas, pendentes, bloqueios, semDesfecho] = await Promise.all([
       listAppointments(t.id, t.timezone),
       listConversations(t.id),
       countPendentes(t.id),
       listBlocks(t.id, t.timezone),
+      listPendingAttendance(t.id, t.timezone),
     ]);
     res.render("admin/clinica", {
       t,
@@ -225,6 +229,7 @@ export function makeAdminRouter(): Router {
       conversas,
       pendentes,
       bloqueios,
+      semDesfecho,
       googleEmail: serviceAccountEmail(),
       msg: req.query.msg ?? null,
       erro: req.query.erro ?? null,
@@ -495,6 +500,31 @@ export function makeAdminRouter(): Router {
     const anchor = { unit: "unidades", specialty: "especialidades", insurer: "convenios", healthPlan: "convenios", doctor: "medicos" }[entity];
     const r = await remove(req.params.id, entity, req.params.entId);
     res.redirect(clinicaUrl(req.params.id, r.ok ? undefined : { erro: r.erro }, anchor));
+  });
+
+  // ----- Desfecho da consulta (base da taxa de falta) -----
+  router.post("/clinicas/:id/agendamentos/:apptId/desfecho", async (req: Request, res: Response) => {
+    const tenant = await findTenantById(req.params.id);
+    if (!tenant) return res.redirect("/admin");
+    const compareceu = String(req.body.compareceu) === "1";
+    await marcarComparecimento(tenant, req.params.apptId, compareceu);
+    res.redirect(
+      clinicaUrl(
+        req.params.id,
+        { msg: compareceu ? "Marcado como compareceu" : "Marcado como falta" },
+        "agenda",
+      ),
+    );
+  });
+
+  // ----- Métricas / ROI -----
+  router.get("/clinicas/:id/metricas", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const dias = [7, 30, 90].includes(num(req.query.dias, 30)) ? num(req.query.dias, 30) : 30;
+    const metricas = await calcularMetricas(t.id, t.parsedConfig, t.timezone, dias);
+    res.render("admin/metricas", { t, metricas, dias });
   });
 
   // ----- Férias, feriados e ausências -----

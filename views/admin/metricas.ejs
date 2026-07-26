@@ -1,0 +1,74 @@
+<%- include('partials/header') %>
+<%
+  function pct(v) { return v === null ? "—" : v.toFixed(0) + "%"; }
+  function num(v) { return (v || 0).toLocaleString("pt-BR"); }
+  var m = metricas;
+%>
+<p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
+<div class="row between" style="flex-wrap:wrap;gap:10px">
+  <h1>Métricas</h1>
+  <div class="row" style="gap:6px">
+    <% [7, 30, 90].forEach(function(d){ %>
+      <a class="btn sm <%= dias === d ? '' : 'ghost' %>" href="/admin/clinicas/<%= t.id %>/metricas?dias=<%= d %>">
+        <%= d %> dias
+      </a>
+    <% }) %>
+  </div>
+</div>
+
+<!-- Agendamentos -->
+<h2 style="margin-top:18px">Agendamentos</h2>
+<div class="cards">
+  <div class="card"><div class="metrica"><b><%= num(m.agendamentos) %></b><span>agendamentos criados</span></div></div>
+  <div class="card"><div class="metrica"><b><%= num(m.confirmados) %></b><span>confirmados pelo paciente</span></div></div>
+  <div class="card"><div class="metrica"><b><%= num(m.cancelados) %></b><span>cancelados</span></div></div>
+  <div class="card">
+    <div class="metrica">
+      <b class="<%= m.taxaFalta !== null && m.taxaFalta > 15 ? 'ruim' : 'bom' %>"><%= pct(m.taxaFalta) %></b>
+      <span>taxa de falta<br /><small class="muted"><%= num(m.faltaram) %> faltas · <%= num(m.compareceram) %> comparecimentos</small></span>
+    </div>
+  </div>
+</div>
+<% if (m.taxaFalta === null) { %>
+  <p class="muted">A taxa de falta aparece quando a recepção começar a marcar <strong>Compareceu / Faltou</strong>
+    nas consultas passadas (na aba Agenda da clínica).</p>
+<% } %>
+
+<!-- Lembretes -->
+<h2>Lembretes (anti-falta)</h2>
+<div class="cards">
+  <div class="card"><div class="metrica"><b><%= num(m.lembretesEnviados) %></b><span>lembretes enviados</span></div></div>
+  <div class="card"><div class="metrica"><b><%= num(m.lembretesConfirmados) %></b><span>confirmaram presença</span></div></div>
+  <div class="card"><div class="metrica"><b class="bom"><%= pct(m.taxaConfirmacao) %></b><span>taxa de confirmação</span></div></div>
+</div>
+
+<!-- Atendimento -->
+<h2>Atendimento pelo WhatsApp</h2>
+<div class="cards">
+  <div class="card"><div class="metrica"><b><%= num(m.conversas) %></b><span>conversas no período</span></div></div>
+  <div class="card"><div class="metrica"><b><%= num(m.mensagensRecebidas) %></b><span>mensagens recebidas</span></div></div>
+  <div class="card"><div class="metrica"><b><%= num(m.mensagensEnviadas) %></b><span>respostas enviadas</span></div></div>
+  <div class="card">
+    <div class="metrica">
+      <b class="bom"><%= pct(m.percentualForaHorario) %></b>
+      <span>chegaram fora do horário<br /><small class="muted"><%= num(m.foraDoHorario) %> mensagens — todas atendidas</small></span>
+    </div>
+  </div>
+</div>
+
+<% if (ehSuper) { %>
+  <h2>Consumo (visível só para o administrador)</h2>
+  <div class="cards">
+    <div class="card"><div class="metrica"><b><%= num(m.tokensEntrada) %></b><span>tokens de entrada</span></div></div>
+    <div class="card"><div class="metrica"><b><%= num(m.tokensSaida) %></b><span>tokens de saída</span></div></div>
+    <div class="card">
+      <div class="metrica">
+        <b>US$ <%= m.custoEstimadoUSD.toFixed(2) %></b>
+        <span>custo estimado de IA<br /><small class="muted">modelo <%= t.parsedConfig.ai.model %></small></span>
+      </div>
+    </div>
+  </div>
+  <p class="muted">Estimativa com base nos preços por milhão de tokens do modelo configurado —
+    confirme os valores atuais antes de usar em proposta comercial.</p>
+<% } %>
+<%- include('partials/footer') %>

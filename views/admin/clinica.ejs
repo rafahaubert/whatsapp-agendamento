@@ -20,6 +20,7 @@
   <a href="#bloqueios">Férias/Feriados</a>
   <a href="#agenda">Agenda</a>
   <a href="#ferramentas">Conversas</a>
+  <a href="/admin/clinicas/<%= t.id %>/metricas">📊 Métricas</a>
   <a href="/admin/clinicas/<%= t.id %>/calendario">📅 Calendário</a>
   <a href="/admin/clinicas/<%= t.id %>/inbox">💬 Caixa de entrada<%= pendentes ? " (" + pendentes + ")" : "" %></a>
 </nav>
@@ -396,6 +397,40 @@
                   <button class="btn sm danger">Cancelar</button>
                 </form>
               <% } %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+
+  <h2>Consultas passadas — marcar desfecho
+    <span class="muted">(<%= semDesfecho.length %>)</span></h2>
+  <p class="muted">Marcar o desfecho alimenta a <strong>taxa de falta</strong> nas métricas —
+    é o número que mostra o retorno do sistema para a clínica.</p>
+  <% if (semDesfecho.length === 0) { %>
+    <p class="muted">Nenhuma consulta pendente de marcação.</p>
+  <% } else { %>
+    <table>
+      <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Profissional</th><th></th></tr></thead>
+      <tbody>
+        <% semDesfecho.forEach(function(a){ %>
+          <tr>
+            <td><%= a.inicio %></td>
+            <td><%= a.paciente %></td>
+            <td><%= a.especialidade %></td>
+            <td><%= a.medico %></td>
+            <td>
+              <div class="inline" style="gap:6px;justify-content:flex-end">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                  <input type="hidden" name="compareceu" value="1" />
+                  <button class="btn sm ghost">Compareceu</button>
+                </form>
+                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                  <input type="hidden" name="compareceu" value="0" />
+                  <button class="btn sm danger">Faltou</button>
+                </form>
+              </div>
             </td>
           </tr>
         <% }) %>

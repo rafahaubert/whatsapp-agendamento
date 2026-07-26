@@ -150,6 +150,8 @@ export const conversationEngine: MessageHandler = {
     let replyText = tenant.config.branding.fallbackMessage;
     let ultimosHorarios: HorarioOferecido[] = [];
     let ultimasEspecialidades: { name: string; priceParticular?: string | null }[] = [];
+    // Consumo do turno inteiro (várias idas ao modelo) — base de custo por clínica.
+    const consumo = { input: 0, output: 0 };
 
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -161,6 +163,8 @@ export const conversationEngine: MessageHandler = {
           messages,
         });
         messages.push({ role: "assistant", content: response.content });
+        consumo.input += response.usage?.input_tokens ?? 0;
+        consumo.output += response.usage?.output_tokens ?? 0;
 
         if (response.stop_reason === "tool_use") {
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
@@ -215,7 +219,7 @@ export const conversationEngine: MessageHandler = {
     // A ferramenta pediu atendimento humano.
     if (ctx.handoffRequested) await setHandoff(tenant.id, message.from, true);
 
-    await logMessage(tenant.id, message.from, "OUT", replyText, "BOT");
+    await logMessage(tenant.id, message.from, "OUT", replyText, "BOT", consumo);
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
     if (ultimosHorarios.length) {
