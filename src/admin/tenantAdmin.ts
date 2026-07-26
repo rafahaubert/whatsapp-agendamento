@@ -4,7 +4,7 @@
  */
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
-import { AppointmentStatus } from "../shared/enums.js";
+import { AppointmentStatus, statusUI } from "../shared/enums.js";
 import { formatDateTime } from "../shared/datetime.js";
 import type { TenantConfig } from "../config/types.js";
 
@@ -154,6 +154,18 @@ export async function updateDoctorCalendarId(tenantId: string, doctorId: string,
   });
 }
 
+/** Salva a agenda própria do dentista. `null` = herda o horário da clínica. */
+export async function updateDoctorHours(
+  tenantId: string,
+  doctorId: string,
+  days: Record<number, { open: string; close: string } | null> | null,
+) {
+  await prisma.doctor.updateMany({
+    where: { id: doctorId, tenantId },
+    data: { workingHours: days ? JSON.stringify(days) : null },
+  });
+}
+
 /** Exclusão escopada por tenant. Retorna erro amigável se houver vínculos. */
 export async function remove(
   tenantId: string,
@@ -222,6 +234,8 @@ export async function listAppointments(tenantId: string, timezone: string) {
     unidade: a.unit.name,
     inicio: formatDateTime(a.slot.startsAt, timezone),
     status: a.status,
+    statusLabel: statusUI(a.status).label,
+    statusCss: statusUI(a.status).css,
     cancelado: a.status === AppointmentStatus.CANCELLED,
   }));
 }

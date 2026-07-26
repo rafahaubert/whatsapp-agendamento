@@ -18,6 +18,7 @@ import {
   addPlan,
   addDoctor,
   updateDoctorCalendarId,
+  updateDoctorHours,
   remove,
   generateAgenda,
   listAppointments,
@@ -151,8 +152,11 @@ export function makeAdminRouter(): Router {
   router.get("/clinicas/:id", async (req: Request, res: Response) => {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
-    const agendamentos = await listAppointments(t.id, t.timezone);
-    const conversas = await listConversations(t.id);
+    // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
+    const [agendamentos, conversas] = await Promise.all([
+      listAppointments(t.id, t.timezone),
+      listConversations(t.id),
+    ]);
     res.render("admin/clinica", {
       t,
       cfg: t.parsedConfig,
@@ -288,6 +292,23 @@ export function makeAdminRouter(): Router {
   router.post("/clinicas/:id/medicos/:docId/google", async (req: Request, res: Response) => {
     await updateDoctorCalendarId(req.params.id, req.params.docId, req.body.googleCalendarId);
     res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
+  });
+
+  router.post("/clinicas/:id/medicos/:docId/horarios", async (req: Request, res: Response) => {
+    if (bool(req.body.herdar)) {
+      await updateDoctorHours(req.params.id, req.params.docId, null);
+    } else {
+      const days: Record<number, { open: string; close: string } | null> = {};
+      for (let i = 0; i < 7; i++) {
+        days[i] = bool(req.body[`d${i}_aberto`])
+          ? { open: req.body[`d${i}_open`] || "08:00", close: req.body[`d${i}_close`] || "18:00" }
+          : null;
+      }
+      await updateDoctorHours(req.params.id, req.params.docId, days);
+    }
+    res.redirect(
+      clinicaUrl(req.params.id, { msg: "Agenda do profissional salva — gere os horários" }, "medicos"),
+    );
   });
 
   router.post("/clinicas/:id/excluir/:entity/:entId", async (req: Request, res: Response) => {

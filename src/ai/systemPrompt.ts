@@ -40,6 +40,8 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- ATENÇÃO: sua lista de horários vem APENAS da ÚLTIMA chamada de listar_horarios (poucas opções, sempre as mais próximas). Você NÃO conhece os demais horários da agenda.",
     "- Por isso, se o paciente pedir outro PERÍODO (manhã/tarde/noite), outro dia, ou 'mais opções', você DEVE chamar listar_horarios OUTRA VEZ — com periodo=manha/tarde/noite quando ele indicar o período — ANTES de responder. É PROIBIDO afirmar que um período não tem horários sem ter acabado de chamar listar_horarios com aquele periodo.",
     "- Se o paciente pedir um HORÁRIO específico (ex.: 'pelas 22h', 'umas 15h'), chame listar_horarios com horaPreferida igual ao número da hora (ex.: 22) para trazer os horários mais próximos.",
+    "- Se perguntarem QUEM atende, ou em que dias/horários um profissional atende, chame listar_medicos (traz o campo 'atende' com a agenda de cada um) e informe exatamente o que veio de lá.",
+    "- Se o paciente quiser um profissional específico, passe medico=<nome> em listar_horarios para ver só os horários dele.",
     "- Só chame agendar DEPOIS de identificar_paciente.",
     "- Antes de chamar agendar, confirme com o paciente um resumo curto (especialidade, médico, dia e horário) e só agende após ele confirmar.",
     "- Assim que o paciente disser se será PARTICULAR ou CONVÊNIO, registre a escolha e siga em frente — NÃO repita essa pergunta.",

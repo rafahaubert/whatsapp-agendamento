@@ -30,3 +30,17 @@ export const PaymentType = {
   HEALTH_PLAN: "HEALTH_PLAN",
 } as const;
 export type PaymentType = (typeof PaymentType)[keyof typeof PaymentType];
+
+/** Rótulo em português + classe CSS do badge, para exibição no painel. */
+const STATUS_UI: Record<string, { label: string; css: string }> = {
+  SCHEDULED: { label: "Agendado", css: "st-agendado" },
+  CONFIRMED: { label: "Confirmado", css: "st-confirmado" },
+  CANCELLED: { label: "Cancelado", css: "st-cancelado" },
+  RESCHEDULED: { label: "Remarcado", css: "st-remarcado" },
+  COMPLETED: { label: "Concluído", css: "st-confirmado" },
+  NO_SHOW: { label: "Faltou", css: "st-faltou" },
+};
+
+export function statusUI(status: string): { label: string; css: string } {
+  return STATUS_UI[status] ?? { label: status, css: "st-cancelado" };
+}

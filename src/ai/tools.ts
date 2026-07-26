@@ -32,6 +32,20 @@ export const tools: Anthropic.Tool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "listar_medicos",
+    description:
+      "Lista os profissionais da clínica com suas especialidades, unidades e HORÁRIOS DE ATENDIMENTO. Use quando perguntarem quem atende, ou em que dias/horários um profissional atende.",
+    input_schema: {
+      type: "object",
+      properties: {
+        especialidade: {
+          type: "string",
+          description: "Filtra por especialidade (opcional)",
+        },
+      },
+    },
+  },
+  {
     name: "identificar_paciente",
     description:
       "Identifica ou cadastra o paciente pelo nome completo e CPF. Chame assim que tiver ambos.",
@@ -65,6 +79,10 @@ export const tools: Anthropic.Tool[] = [
         horaPreferida: {
           type: "integer",
           description: "Hora aproximada preferida pelo paciente (0 a 23). Ex.: 22 para 'pelas 22h' (opcional)",
+        },
+        medico: {
+          type: "string",
+          description: "Nome do profissional, se o paciente pediu um específico (opcional)",
         },
       },
       required: ["especialidade"],
@@ -147,7 +165,11 @@ export async function executeTool(
         plano: input.plano,
         periodo: input.periodo,
         horaPreferida: input.horaPreferida,
+        medico: input.medico,
       });
+
+    case "listar_medicos":
+      return scheduling.listDoctors(t, input.especialidade);
     case "agendar":
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado. Use identificar_paciente antes." };
       return scheduling.bookAppointment(

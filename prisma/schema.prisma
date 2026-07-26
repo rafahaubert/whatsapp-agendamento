@@ -103,6 +103,7 @@ model Doctor {
   name             String
   crm              String?
   googleCalendarId String? // ID do calendário Google deste dentista (sync one-way)
+  workingHours     String? // JSON {"1":{"open":"08:00","close":"12:00"},...}; null = herda o horário da clínica
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

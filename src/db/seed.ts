@@ -51,12 +51,22 @@ export async function regenerateSlots(
   const rows: SlotRow[] = [];
 
   for (const doctor of doctors) {
+    // Agenda do dentista (se definida) tem prioridade sobre o horário da clínica.
+    let agenda = config.businessHours.days;
+    if (doctor.workingHours) {
+      try {
+        agenda = JSON.parse(doctor.workingHours) as typeof agenda;
+      } catch {
+        /* JSON inválido → mantém o horário da clínica */
+      }
+    }
+
     for (const unit of doctor.units) {
       for (const spec of doctor.specialties) {
         for (let day = 0; day < slotDays; day++) {
           const base = now.plus({ days: day }).startOf("day");
           const cfgDay = base.weekday === 7 ? 0 : base.weekday; // luxon 1=seg..7=dom → 0=dom..6=sáb
-          const hours = config.businessHours.days[cfgDay];
+          const hours = agenda[cfgDay];
           if (!hours) continue;
 
           const [oh, om] = hours.open.split(":").map(Number);

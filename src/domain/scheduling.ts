@@ -45,6 +45,64 @@ export async function listInsurers(tenantId: string) {
   return insurers.map((i) => ({ convenio: i.name, planos: i.plans.map((p) => p.name) }));
 }
 
+// ---------- Médicos e suas agendas ----------
+const DIAS_ABREV = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+/** "seg, ter, qua: 08:30 às 22:30 · sáb: 08:00 às 12:00" */
+export function resumoAgenda(days: Record<number, { open: string; close: string } | null>): string {
+  const grupos = new Map<string, number[]>();
+  for (let d = 0; d < 7; d++) {
+    const h = days[d];
+    if (!h) continue;
+    const chave = `${h.open} às ${h.close}`;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave)!.push(d);
+  }
+  if (grupos.size === 0) return "sem dias de atendimento definidos";
+  return [...grupos.entries()]
+    .map(([faixa, dias]) => `${dias.map((d) => DIAS_ABREV[d]).join(", ")}: ${faixa}`)
+    .join(" · ");
+}
+
+/** Médicos da clínica com especialidades, unidades e horário de atendimento. */
+export async function listDoctors(tenant: ResolvedTenant, especialidade?: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = { tenantId: tenant.id, isActive: true };
+  if (especialidade) {
+    const spec = await resolveSpecialty(tenant.id, especialidade);
+    if (!spec) return { erro: `Especialidade "${especialidade}" não encontrada.` };
+    where.specialties = { some: { id: spec.id } };
+  }
+
+  const doctors = await prisma.doctor.findMany({
+    where,
+    include: { specialties: true, units: true },
+    orderBy: { name: "asc" },
+  });
+
+  return {
+    medicos: doctors.map((d) => {
+      let agenda = tenant.config.businessHours.days;
+      let agendaPropria = false;
+      if (d.workingHours) {
+        try {
+          agenda = JSON.parse(d.workingHours);
+          agendaPropria = true;
+        } catch {
+          /* usa o horário da clínica */
+        }
+      }
+      return {
+        nome: d.name,
+        especialidades: d.specialties.map((s) => s.name),
+        unidades: d.units.map((u) => u.name),
+        atende: resumoAgenda(agenda),
+        agendaPropria,
+      };
+    }),
+  };
+}
+
 // ---------- Paciente ----------
 export async function findOrCreatePatient(
   tenantId: string,
@@ -82,6 +140,16 @@ async function resolveUnit(tenantId: string, name: string) {
   return all.find((u) => u.name.toLowerCase() === n) ?? all.find((u) => u.name.toLowerCase().includes(n));
 }
 
+async function resolveDoctor(tenantId: string, name: string) {
+  const all = await prisma.doctor.findMany({ where: { tenantId, isActive: true } });
+  const n = name.trim().toLowerCase().replace(/^(dr|dra)\.?\s+/, "");
+  return (
+    all.find((d) => d.name.toLowerCase() === n) ??
+    all.find((d) => d.name.toLowerCase().includes(n)) ??
+    all.find((d) => n.includes(d.name.toLowerCase().replace(/^(dr|dra)\.?\s+/, "")))
+  );
+}
+
 async function resolveHealthPlan(tenantId: string, name: string) {
   const all = await prisma.healthPlan.findMany({ where: { tenantId, isActive: true } });
   const n = name.trim().toLowerCase();
@@ -104,6 +172,7 @@ export async function listAvailableSlots(
     plano?: string;
     periodo?: string;
     horaPreferida?: number;
+    medico?: string;
   },
 ) {
   const tenantId = tenant.id;
@@ -128,6 +197,11 @@ export async function listAvailableSlots(
   if (opts.plano) {
     const plan = await resolveHealthPlan(tenantId, opts.plano);
     if (plan) where.doctor = { healthPlans: { some: { id: plan.id } } };
+  }
+  if (opts.medico) {
+    const doc = await resolveDoctor(tenantId, opts.medico);
+    if (!doc) return { erro: `Não encontrei o(a) profissional "${opts.medico}".` };
+    where.doctorId = doc.id;
   }
 
   // Busca uma janela maior e filtra por período / hora (local) antes de cortar em N.

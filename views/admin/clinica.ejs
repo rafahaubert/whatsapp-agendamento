@@ -194,6 +194,39 @@
             <% d.specialties.forEach(function(s){ %><span class="pill"><%= s.name %></span><% }) %>
             <% d.units.forEach(function(u){ %><span class="pill">📍 <%= u.name %></span><% }) %>
             <% d.healthPlans.forEach(function(p){ %><span class="pill">💳 <%= p.name %></span><% }) %>
+            <%
+              var dh = null;
+              if (d.workingHours) { try { dh = JSON.parse(d.workingHours); } catch (e) { dh = null; } }
+              var herda = !dh;
+            %>
+            <span class="pill" style="background:<%= herda ? 'transparent' : 'color-mix(in srgb,var(--brand) 15%,transparent)' %>;border:1px solid var(--line)">
+              🕐 <%= herda ? "horário da clínica" : "agenda própria" %>
+            </span>
+
+            <details style="margin-top:8px">
+              <summary class="muted" style="cursor:pointer">Horários de atendimento</summary>
+              <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/horarios" style="margin-top:8px">
+                <label class="checks" style="margin-bottom:6px">
+                  <input type="checkbox" name="herdar" <%= herda ? "checked" : "" %> /> Usar o horário de funcionamento da clínica
+                </label>
+                <table>
+                  <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th></tr></thead>
+                  <tbody>
+                    <% for (var i = 0; i < 7; i++) { var hh = dh ? dh[i] : days[i]; %>
+                      <tr>
+                        <td><%= dayNames[i] %></td>
+                        <td class="checks"><input type="checkbox" name="d<%= i %>_aberto" <%= hh ? "checked" : "" %> /></td>
+                        <td><input type="time" name="d<%= i %>_open" value="<%= hh ? hh.open : '08:00' %>" /></td>
+                        <td><input type="time" name="d<%= i %>_close" value="<%= hh ? hh.close : '18:00' %>" /></td>
+                      </tr>
+                    <% } %>
+                  </tbody>
+                </table>
+                <button class="btn sm" style="margin-top:8px">Salvar agenda</button>
+                <span class="muted">Depois, gere os horários novamente.</span>
+              </form>
+            </details>
+
             <% if (googleEmail) { %>
               <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/google" class="inline" style="margin-top:8px;gap:6px">
                 <input name="googleCalendarId" value="<%= d.googleCalendarId || '' %>" placeholder="Google Calendar ID (…@group.calendar.google.com)" />
@@ -266,7 +299,7 @@
             <td><%= a.especialidade %></td>
             <td><%= a.medico %></td>
             <td><%= a.unidade %></td>
-            <td><%= a.status %></td>
+            <td><span class="st <%= a.statusCss %>"><%= a.statusLabel %></span></td>
             <td style="text-align:right">
               <% if (!a.cancelado) { %>
                 <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/cancelar"
