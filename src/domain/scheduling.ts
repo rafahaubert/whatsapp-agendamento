@@ -164,6 +164,31 @@ const PERIODOS: Record<string, [number, number]> = {
   noite: [18, 24],
 };
 
+/**
+ * Um horário por faixa de tempo (regra pura, testável).
+ *
+ * Oferecer o mesmo horário com dois profissionais desperdiça as opções e
+ * confunde o paciente. Quando há empate, mantemos o `profissionalHabitual`
+ * (continuidade de tratamento); senão, o primeiro da ordem recebida.
+ */
+export function umPorHorario<T extends { startsAt: Date; doctorId: string }>(
+  slots: T[],
+  profissionalHabitual?: string | null,
+): T[] {
+  const porHorario = new Map<number, T>();
+  for (const s of slots) {
+    const chave = s.startsAt.getTime();
+    const atual = porHorario.get(chave);
+    const trocar =
+      !atual ||
+      (!!profissionalHabitual &&
+        s.doctorId === profissionalHabitual &&
+        atual.doctorId !== profissionalHabitual);
+    if (trocar) porHorario.set(chave, s);
+  }
+  return [...porHorario.values()];
+}
+
 export async function listAvailableSlots(
   tenant: ResolvedTenant,
   opts: {
@@ -173,6 +198,8 @@ export async function listAvailableSlots(
     periodo?: string;
     horaPreferida?: number;
     medico?: string;
+    /** Vem do contexto da conversa (não do modelo): usado para continuidade. */
+    pacienteId?: string;
   },
 ) {
   const tenantId = tenant.id;
@@ -233,7 +260,25 @@ export async function listAvailableSlots(
     );
   }
 
-  const escolhidos = filtrados.slice(0, tenant.config.booking.maxOptionsOffered);
+  // Continuidade: se o paciente já foi atendido, preferir o mesmo profissional.
+  let profissionalHabitual: string | null = null;
+  if (opts.pacienteId) {
+    const ultima = await prisma.appointment.findFirst({
+      where: {
+        tenantId,
+        patientId: opts.pacienteId,
+        status: { not: AppointmentStatus.CANCELLED },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { doctorId: true },
+    });
+    profissionalHabitual = ultima?.doctorId ?? null;
+  }
+
+  const escolhidos = umPorHorario(filtrados, profissionalHabitual).slice(
+    0,
+    tenant.config.booking.maxOptionsOffered,
+  );
 
   if (escolhidos.length === 0) {
     return {

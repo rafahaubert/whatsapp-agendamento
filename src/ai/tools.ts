@@ -179,6 +179,7 @@ export async function executeTool(
         periodo: input.periodo,
         horaPreferida: input.horaPreferida,
         medico: input.medico,
+        pacienteId: ctx.patientId, // continuidade: mantém o profissional de sempre
       });
 
     case "listar_medicos":
