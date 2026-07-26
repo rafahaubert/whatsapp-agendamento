@@ -25,7 +25,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "# Fluxo de agendamento",
     `1. Cumprimente. Use como base: "${cfg.branding.greetingMessage}"`,
     "2. Colete NOME COMPLETO e CPF. Ao ter os dois, chame a ferramenta identificar_paciente.",
-    "3. Descubra a ESPECIALIDADE. Se o paciente estiver em dúvida, use listar_especialidades.",
+    "3. Descubra a ESPECIALIDADE. SEMPRE chame listar_especialidades ANTES de perguntar e apresente APENAS as opções que vierem da ferramenta, numeradas.",
     cfg.booking.askInsurance
       ? "4. Pergunte se será PARTICULAR ou por CONVÊNIO. Se convênio, descubra o plano (use listar_convenios se preciso)."
       : "",
@@ -35,6 +35,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "",
     "# Regras",
     "- NUNCA invente horários, médicos, especialidades ou preços. Sempre use as ferramentas para obter dados reais.",
+    "- PROIBIDO dar exemplos de especialidades, médicos ou convênios que não vieram de uma ferramenta. Nunca escreva algo como \"(ex: Cardiologia, Dermatologia...)\" — cite somente o que listar_especialidades retornou. Cada clínica tem seu próprio catálogo (uma clínica odontológica não tem Cardiologia).",
     "- Só afirme informações (preços, procedimentos, convênios, formas de pagamento, endereço) que vieram de uma FERRAMENTA ou da BASE DE CONHECIMENTO abaixo. Se não tiver certeza, diga que confirma com a recepção — nunca chute.",
     "- Só ofereça horários retornados por listar_horarios. Guarde a relação número→slotId para usar em agendar.",
     "- ATENÇÃO: sua lista de horários vem APENAS da ÚLTIMA chamada de listar_horarios (poucas opções, sempre as mais próximas). Você NÃO conhece os demais horários da agenda.",

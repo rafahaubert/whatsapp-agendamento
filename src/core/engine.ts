@@ -36,6 +36,11 @@ function extrairHorarios(resultado: unknown): HorarioOferecido[] {
   return Array.isArray(r?.horarios) ? r.horarios : [];
 }
 
+/** listar_especialidades devolve um array simples de especialidades. */
+function extrairEspecialidades(resultado: unknown): { name: string; priceParticular?: string | null }[] {
+  return Array.isArray(resultado) && resultado[0]?.name ? resultado : [];
+}
+
 /**
  * Motor de conversa. Para cada mensagem recebida:
  *   1. resolve o conteúdo (texto, transcrição de áudio ou opção clicada);
@@ -123,6 +128,8 @@ export const conversationEngine: MessageHandler = {
         texto = "Quero remarcar minha consulta.";
       } else if (acao === "SLOT" && id) {
         texto = `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`;
+      } else if (acao === "ESP" && id) {
+        texto = `Quero ${id}.`;
       }
     }
 
@@ -142,6 +149,7 @@ export const conversationEngine: MessageHandler = {
 
     let replyText = tenant.config.branding.fallbackMessage;
     let ultimosHorarios: HorarioOferecido[] = [];
+    let ultimasEspecialidades: { name: string; priceParticular?: string | null }[] = [];
 
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -165,7 +173,13 @@ export const conversationEngine: MessageHandler = {
                 const horarios = extrairHorarios(result);
                 if (horarios.length) ultimosHorarios = horarios;
               }
-              if (block.name === "agendar") ultimosHorarios = []; // já escolheu
+              if (block.name === "listar_especialidades") {
+                ultimasEspecialidades = extrairEspecialidades(result);
+              }
+              if (block.name === "agendar") {
+                ultimosHorarios = []; // já escolheu
+                ultimasEspecialidades = [];
+              }
             } catch (err) {
               logger.error({ err, tool: block.name }, "erro ao executar ferramenta");
               result = { erro: "Falha ao executar a operação." };
@@ -203,15 +217,25 @@ export const conversationEngine: MessageHandler = {
 
     await logMessage(tenant.id, message.from, "OUT", replyText, "BOT");
 
-    // Horários viram opções clicáveis (botões até 3; lista acima disso).
-    const opcoes: ReplyOption[] = ultimosHorarios.slice(0, 10).map((h) => ({
-      id: `SLOT:${h.slotId}`,
-      titulo: h.inicio,
-      descricao: `${h.medico} · ${h.unidade}`,
-    }));
+    // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
+    if (ultimosHorarios.length) {
+      const opcoes: ReplyOption[] = ultimosHorarios.slice(0, 10).map((h) => ({
+        id: `SLOT:${h.slotId}`,
+        titulo: h.inicio,
+        descricao: `${h.medico} · ${h.unidade}`,
+      }));
+      return { texto: replyText, opcoes, rotuloOpcoes: "Ver horários" };
+    }
 
-    return opcoes.length
-      ? { texto: replyText, opcoes, rotuloOpcoes: "Ver horários" }
-      : { texto: replyText };
+    if (ultimasEspecialidades.length) {
+      const opcoes: ReplyOption[] = ultimasEspecialidades.slice(0, 10).map((e) => ({
+        id: `ESP:${e.name}`,
+        titulo: e.name,
+        descricao: e.priceParticular ? `Particular: R$ ${e.priceParticular}` : undefined,
+      }));
+      return { texto: replyText, opcoes, rotuloOpcoes: "Ver especialidades" };
+    }
+
+    return { texto: replyText };
   },
 };
