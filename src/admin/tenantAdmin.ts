@@ -327,6 +327,10 @@ export async function listAppointmentsRange(
     start: a.slot.startsAt.toISOString(),
     end: a.slot.endsAt.toISOString(),
     color: cor(a.status),
-    extendedProps: { medico: a.doctor.name, unidade: a.unit.name, status: a.status },
+    extendedProps: {
+      medico: a.doctor.name,
+      unidade: a.unit.name,
+      status: statusUI(a.status).label, // exibido no painel, em português
+    },
   }));
 }
