@@ -11,6 +11,9 @@ import {
   ehSuper,
   hashSenha,
   Role,
+  loginBloqueado,
+  registrarFalha,
+  limparTentativas,
 } from "./auth.js";
 import {
   listTenants,
@@ -154,14 +157,29 @@ export function makeAdminRouter(): Router {
   // ----- Login (rotas públicas) -----
   router.get("/login", (req: Request, res: Response) => {
     if (isLoggedIn(req)) return res.redirect("/admin");
-    res.render("admin/login", { erro: req.query.erro ? "Usuário ou senha inválidos." : null });
+    const erro =
+      req.query.erro === "bloqueado"
+        ? "Muitas tentativas. Aguarde alguns minutos e tente novamente."
+        : req.query.erro
+          ? "Usuário ou senha inválidos."
+          : null;
+    res.render("admin/login", { erro });
   });
 
   router.post("/login", async (req: Request, res: Response) => {
     const user = String(req.body.user ?? "");
     const password = String(req.body.password ?? "");
+    const chave = `${user.toLowerCase()}|${req.ip}`;
+
+    if (loginBloqueado(chave)) {
+      logger.warn({ user, ip: req.ip }, "login bloqueado por excesso de tentativas");
+      return res.redirect("/admin/login?erro=bloqueado");
+    }
+
     const autenticado = await autenticar(user, password);
+    if (!autenticado) registrarFalha(chave);
     if (autenticado) {
+      limparTentativas(chave);
       login(req, autenticado);
       // Usuário de clínica vai direto para a sua clínica.
       return res.redirect(

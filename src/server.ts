@@ -29,13 +29,23 @@ app.use(
 // Formulários do painel.
 app.use(express.urlencoded({ extended: true }));
 
+// Atrás do proxy do provedor (Render/Fly): necessário para o cookie `secure`
+// e para o IP real do cliente.
+const emProducao = env.NODE_ENV === "production";
+if (emProducao) app.set("trust proxy", 1);
+
 // Sessão do painel de administração.
 app.use(
   session({
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: "lax", maxAge: 1000 * 60 * 60 * 8 },
+    cookie: {
+      httpOnly: true, // fora do alcance de JavaScript
+      sameSite: "lax", // corta CSRF entre sites nos POSTs do painel
+      secure: emProducao, // só trafega por HTTPS em produção
+      maxAge: 1000 * 60 * 60 * 8,
+    },
   }),
 );
 

@@ -128,21 +128,33 @@ export async function addInsurer(tenantId: string, d: { name: string; code?: str
 }
 
 export async function addPlan(tenantId: string, insurerId: string, name: string) {
-  await prisma.healthPlan.create({ data: { tenantId, insurerId, name } });
+  // O convênio precisa ser DESTA clínica (o id vem de um formulário).
+  const insurer = await prisma.insurer.findFirst({ where: { id: insurerId, tenantId } });
+  if (!insurer) return;
+  await prisma.healthPlan.create({ data: { tenantId, insurerId: insurer.id, name } });
 }
 
 export async function addDoctor(
   tenantId: string,
   d: { name: string; crm?: string; specialtyIds: string[]; unitIds: string[]; planIds: string[] },
 ) {
+  // Os ids vêm de um formulário: só conecta o que pertence A ESTA clínica.
+  // Sem isso, um id forjado ligaria o profissional a uma unidade de outra
+  // clínica — e o nome/endereço dela vazaria para os pacientes.
+  const [specialties, units, plans] = await Promise.all([
+    prisma.specialty.findMany({ where: { tenantId, id: { in: d.specialtyIds } }, select: { id: true } }),
+    prisma.unit.findMany({ where: { tenantId, id: { in: d.unitIds } }, select: { id: true } }),
+    prisma.healthPlan.findMany({ where: { tenantId, id: { in: d.planIds } }, select: { id: true } }),
+  ]);
+
   await prisma.doctor.create({
     data: {
       tenantId,
       name: d.name,
       crm: d.crm || null,
-      specialties: { connect: d.specialtyIds.map((id) => ({ id })) },
-      units: { connect: d.unitIds.map((id) => ({ id })) },
-      healthPlans: { connect: d.planIds.map((id) => ({ id })) },
+      specialties: { connect: specialties.map((s) => ({ id: s.id })) },
+      units: { connect: units.map((u) => ({ id: u.id })) },
+      healthPlans: { connect: plans.map((p) => ({ id: p.id })) },
     },
   });
 }

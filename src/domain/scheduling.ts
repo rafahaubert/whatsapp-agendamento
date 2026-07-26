@@ -580,8 +580,15 @@ export async function createManualAppointment(
   });
   if ("erro" in paciente) return paciente;
 
-  const doctor = await prisma.doctor.findFirst({ where: { id: p.doctorId, tenantId: tenant.id } });
-  if (!doctor) return { erro: "Dentista não encontrado." };
+  // Todos os ids vêm de formulário: confirme que pertencem A ESTA clínica.
+  const [doctor, specialty, unit] = await Promise.all([
+    prisma.doctor.findFirst({ where: { id: p.doctorId, tenantId: tenant.id } }),
+    prisma.specialty.findFirst({ where: { id: p.specialtyId, tenantId: tenant.id } }),
+    prisma.unit.findFirst({ where: { id: p.unitId, tenantId: tenant.id } }),
+  ]);
+  if (!doctor) return { erro: "Profissional não encontrado." };
+  if (!specialty) return { erro: "Especialidade não encontrada." };
+  if (!unit) return { erro: "Unidade não encontrada." };
 
   const slot = await findOrCreateSlot(tenant.id, {
     doctorId: p.doctorId,

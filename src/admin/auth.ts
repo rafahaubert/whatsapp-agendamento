@@ -46,6 +46,40 @@ export async function verificarSenha(senha: string, guardada: string): Promise<b
   return safeEqual(derivada.toString("hex"), hash);
 }
 
+// ---------- Proteção contra força bruta ----------
+
+/**
+ * Limita tentativas de login por identificador (e-mail + IP). Em memória:
+ * suficiente para uma instância e sem dependência nova. Se um dia houver
+ * várias instâncias, trocar por um contador no banco/Redis.
+ */
+const TENTATIVAS_MAX = 8;
+const JANELA_MS = 15 * 60 * 1000;
+const tentativas = new Map<string, { n: number; ate: number }>();
+
+export function loginBloqueado(chave: string, agora = Date.now()): boolean {
+  const t = tentativas.get(chave);
+  if (!t) return false;
+  if (agora > t.ate) {
+    tentativas.delete(chave);
+    return false;
+  }
+  return t.n >= TENTATIVAS_MAX;
+}
+
+export function registrarFalha(chave: string, agora = Date.now()): void {
+  const t = tentativas.get(chave);
+  if (!t || agora > t.ate) {
+    tentativas.set(chave, { n: 1, ate: agora + JANELA_MS });
+    return;
+  }
+  t.n += 1;
+}
+
+export function limparTentativas(chave: string): void {
+  tentativas.delete(chave);
+}
+
 // ---------- Login ----------
 
 export interface UsuarioAutenticado {
