@@ -38,6 +38,9 @@ import {
   listThread,
   countPendentes,
   listPendingAttendance,
+  listPatients,
+  getPatient,
+  type OrdemPacientes,
   listBlocks,
   addBlock,
   removeBlock,
@@ -392,6 +395,34 @@ export function makeAdminRouter(): Router {
       `/admin/clinicas/${req.params.id}/inbox?telefone=${encodeURIComponent(telefone)}&msg=` +
         encodeURIComponent(ativar ? "Assumido pela recepção" : "Devolvido ao bot"),
     );
+  });
+
+  // ----- Pacientes -----
+  const ORDENS: OrdemPacientes[] = ["recentes", "consultas", "faltas", "sumidos"];
+
+  router.get("/clinicas/:id/pacientes", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const pedida = String(req.query.ordem ?? "");
+    const ordem: OrdemPacientes = ORDENS.includes(pedida as OrdemPacientes)
+      ? (pedida as OrdemPacientes)
+      : "recentes";
+    const q = String(req.query.q ?? "");
+    const pagina = Number.parseInt(String(req.query.pagina ?? "1"), 10) || 1;
+
+    const resultado = await listPatients(t.id, t.timezone, { q, ordem, pagina });
+    res.render("admin/pacientes", { t, q, ordem, ...resultado });
+  });
+
+  router.get("/clinicas/:id/pacientes/:pacienteId", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const paciente = await getPatient(t.id, req.params.pacienteId, t.timezone);
+    if (!paciente) return res.redirect(`/admin/clinicas/${t.id}/pacientes`);
+
+    res.render("admin/paciente", { t, paciente });
   });
 
   // ----- Calendário -----

@@ -1,0 +1,197 @@
+<%- include('partials/header', { tituloPagina: paciente.nome }) %>
+<%
+  var base = "/admin/clinicas/" + t.id;
+  var m = paciente.metricas;
+  function pct(v) { return v === null ? "—" : v.toFixed(v >= 10 ? 0 : 1).replace(".", ",") + "%"; }
+  function larg(v) { return v === null ? 0 : Math.max(0, Math.min(100, v)); }
+  // Mesmas faixas da tela de métricas da clínica, para a leitura não mudar de
+  // régua entre as duas telas.
+  function faixaFalta(v) { return v === null ? "m-info" : v > 15 ? "m-danger" : v > 10 ? "m-warn" : "m-ok"; }
+%>
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><a href="<%= base %>/pacientes">← Pacientes</a></p>
+    <h1><%= paciente.nome %></h1>
+  </div>
+  <div class="row tight">
+    <a class="btn sm ghost" href="<%= base %>/inbox?telefone=<%= encodeURIComponent(paciente.telefone) %>">
+      Ver conversa<%= paciente.conversa && paciente.conversa.aguardando ? " · aguardando" : "" %>
+    </a>
+    <a class="btn sm" href="<%= base %>/calendario">Agendar</a>
+  </div>
+</div>
+
+<!-- ============ IDENTIFICAÇÃO ============ -->
+<div class="card">
+  <div class="card-head"><h2>Dados</h2><span class="muted">paciente desde <%= paciente.clienteDesde %></span></div>
+  <div class="grid3">
+    <div><span class="muted">CPF</span><div><%= paciente.cpf %></div></div>
+    <div><span class="muted">Telefone</span><div><%= paciente.telefone %></div></div>
+    <div>
+      <span class="muted">Nascimento</span>
+      <div>
+        <%= paciente.nascimento || "—" %><% if (paciente.idade !== null) { %>
+          <span class="muted">· <%= paciente.idade %> anos</span><% } %>
+      </div>
+    </div>
+  </div>
+
+  <% if (paciente.convenios.length) { %>
+    <h3>Convênios</h3>
+    <div class="row tight">
+      <% paciente.convenios.forEach(function(c){ %>
+        <span class="pill">
+          <%= c.operadora %> · <%= c.plano %><% if (c.principal) { %> ★<% } %><%
+          %><% if (c.carteirinha) { %> — <%= c.carteirinha %><% } %><%
+          %><% if (c.validade) { %> (até <%= c.validade %>)<% } %>
+        </span>
+      <% }) %>
+    </div>
+  <% } else { %>
+    <h3>Convênios</h3>
+    <p class="muted" style="margin:0">Nenhuma carteirinha cadastrada — atendimentos como particular.</p>
+  <% } %>
+
+  <% if (paciente.filaEspera.length) { %>
+    <h3>Na fila de espera</h3>
+    <div class="row tight">
+      <% paciente.filaEspera.forEach(function(w){ %>
+        <span class="pill">⏳ <%= w.especialidade %><%= w.periodo ? " · " + w.periodo : "" %></span>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<!-- ============ MÉTRICAS ============ -->
+<h2>Histórico em números</h2>
+<div class="kpis">
+  <div class="kpi">
+    <span class="rot">Consultas</span>
+    <span class="val"><%= m.total %></span>
+    <span class="sub">
+      <% if (m.primeiraTexto) { %>desde <%= m.primeiraTexto %><% } else { %>nenhuma ainda<% } %>
+    </span>
+  </div>
+
+  <div class="kpi">
+    <span class="rot">Compareceu</span>
+    <span class="val"><%= m.compareceu %></span>
+    <span class="meter m-ok"><i style="width:<%= larg(m.taxaPresenca) %>%"></i></span>
+    <span class="sub"><b><%= pct(m.taxaPresenca) %></b> das <%= m.realizadas %> realizadas</span>
+  </div>
+
+  <div class="kpi">
+    <span class="rot">Faltas</span>
+    <span class="val"><%= m.faltas %></span>
+    <span class="meter <%= faixaFalta(m.taxaFalta) %>"><i style="width:<%= larg(m.taxaFalta) %>%"></i></span>
+    <span class="sub">
+      <b><%= pct(m.taxaFalta) %></b> de falta<%
+      %><% if (m.taxaFalta !== null && m.taxaFalta > 15) { %> — acima do aceitável<% } %>
+    </span>
+  </div>
+
+  <div class="kpi">
+    <span class="rot">Sem vir há</span>
+    <span class="val sm">
+      <%= m.diasSemVir === null ? "—" : m.diasSemVir + " dias" %>
+    </span>
+    <span class="sub">
+      <% if (m.agendados) { %>
+        <b><%= m.agendados %></b> consulta<%= m.agendados === 1 ? "" : "s" %> marcada<%= m.agendados === 1 ? "" : "s" %>
+      <% } else if (m.ultimaTexto) { %>
+        última em <%= m.ultimaTexto %> · sem retorno marcado
+      <% } else { %>
+        nunca compareceu
+      <% } %>
+    </span>
+  </div>
+</div>
+
+<div class="grid2" style="margin-top:12px">
+  <div class="card">
+    <div class="card-head"><h2>Como costuma vir</h2></div>
+    <div class="grid2">
+      <div>
+        <span class="muted">Especialidade mais frequente</span>
+        <div><%= m.especialidadeTop || "—" %></div>
+      </div>
+      <div>
+        <span class="muted">Profissional mais frequente</span>
+        <div><%= m.medicoTop || "—" %></div>
+      </div>
+    </div>
+    <h3>Forma de pagamento</h3>
+    <span class="split">
+      <i class="seg-ok" style="width:<%= m.total ? (m.convenio / m.total) * 100 : 0 %>%"></i>
+      <i class="seg-muted" style="width:<%= m.total ? (m.particular / m.total) * 100 : 0 %>%"></i>
+    </span>
+    <div class="legend">
+      <span><i class="seg-ok"></i>Convênio · <%= m.convenio %></span>
+      <span><i class="seg-muted"></i>Particular · <%= m.particular %></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Próxima consulta</h2></div>
+    <% if (paciente.proxima) { %>
+      <div style="font-size:15px;font-weight:600"><%= paciente.proxima.quando %></div>
+      <p class="muted" style="margin:4px 0 8px">
+        <%= paciente.proxima.especialidade %> · <%= paciente.proxima.medico %>
+      </p>
+      <span class="st <%= paciente.proxima.statusCss %>"><%= paciente.proxima.statusLabel %></span>
+    <% } else { %>
+      <div class="empty">Sem consulta marcada.</div>
+    <% } %>
+
+    <h3>Movimentação</h3>
+    <div class="row" style="gap:18px">
+      <span><b><%= m.cancelados %></b> <span class="muted">cancelados</span></span>
+      <span><b><%= m.remarcados %></b> <span class="muted">remarcados</span></span>
+    </div>
+    <% if (paciente.conversa) { %>
+      <p class="muted" style="margin:10px 0 0">
+        Última mensagem no WhatsApp em <%= paciente.conversa.ultimaEm %>.
+      </p>
+    <% } %>
+    <% if (paciente.ultimoRecall) { %>
+      <p class="muted" style="margin:4px 0 0">Última reativação enviada em <%= paciente.ultimoRecall %>.</p>
+    <% } %>
+  </div>
+</div>
+
+<!-- ============ HISTÓRICO ============ -->
+<div class="card">
+  <div class="card-head">
+    <h2>Todos os atendimentos</h2>
+    <span class="muted"><%= paciente.historico.length %> registro<%= paciente.historico.length === 1 ? "" : "s" %></span>
+  </div>
+  <% if (paciente.historico.length === 0) { %>
+    <div class="empty">Nenhum atendimento registrado.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Quando</th><th>Especialidade</th><th>Profissional</th><th>Unidade</th><th>Pagamento</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <% paciente.historico.forEach(function(h){ %>
+            <tr>
+              <td>
+                <%= h.quando %>
+                <% if (h.futuro) { %><span class="muted" style="font-size:11.5px"> · futura</span><% } %>
+              </td>
+              <td><%= h.especialidade %></td>
+              <td><%= h.medico %></td>
+              <td><%= h.unidade %></td>
+              <td><%= h.pagamento %></td>
+              <td><span class="st <%= h.statusCss %>"><%= h.statusLabel %></span></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<%- include('partials/footer') %>
