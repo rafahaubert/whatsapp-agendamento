@@ -9,3 +9,13 @@ export function formatDateTime(date: Date, timeZone: string): string {
     minute: "2-digit",
   }).format(date);
 }
+
+/** Só o dia, no fuso da clínica. Ex.: "seg., 28/07". */
+export function formatarDia(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone,
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+  }).format(date);
+}

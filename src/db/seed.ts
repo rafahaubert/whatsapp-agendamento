@@ -4,6 +4,12 @@ import { DateTime } from "luxon";
 import type { PrismaClient } from "@prisma/client";
 import type { ClinicFile, TenantConfig } from "../config/types.js";
 import { SlotStatus } from "../shared/enums.js";
+import { minutosDoDia, noIntervalo } from "../domain/horarios.js";
+
+// As regras puras de horário vivem em src/domain/horarios.ts (para o system
+// prompt poder usá-las sem arrastar o Prisma). Re-exportadas aqui porque o
+// gerador é o principal consumidor.
+export { minutosDoDia, noIntervalo };
 
 const CLINICS_DIR = path.resolve(process.cwd(), "config", "clinics");
 
@@ -17,28 +23,6 @@ export async function loadClinicFiles(): Promise<ClinicFile[]> {
     result.push(JSON.parse(raw) as ClinicFile);
   }
   return result;
-}
-
-/** "HH:MM" → minutos desde a meia-noite. */
-export function minutosDoDia(hhmm: string): number {
-  const [h, m] = hhmm.split(":").map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-/**
- * O slot cai no intervalo (almoço)? Considera sobreposição, não só o início —
- * um slot 11:45–12:15 com almoço 12:00–13:00 também é descartado.
- */
-export function noIntervalo(
-  inicioMin: number,
-  fimMin: number,
-  dia: { breakStart?: string; breakEnd?: string },
-): boolean {
-  if (!dia.breakStart || !dia.breakEnd) return false;
-  const bs = minutosDoDia(dia.breakStart);
-  const be = minutosDoDia(dia.breakEnd);
-  if (be <= bs) return false; // intervalo inválido: ignora
-  return inicioMin < be && fimMin > bs;
 }
 
 export interface Bloqueio {

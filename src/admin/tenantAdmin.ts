@@ -36,6 +36,7 @@ export function defaultConfig(name: string): TenantConfig {
       persona:
         "Você é um atendente cordial, objetivo e acolhedor de uma clínica médica no Brasil. Use português do Brasil, seja breve e evite jargões.",
     },
+    debounceSeconds: 8,
   };
 }
 
