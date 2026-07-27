@@ -24,18 +24,34 @@ Três planos, no bloco `.planos` do fechamento:
 
 | Plano | Valor | Corte | Cota |
 |---|---|---|---|
-| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Lembrete anti-falta. | 300 lembretes/mês |
-| Profissional | R$ 799/mês | Até 6 profissionais. Soma fila de espera, Google Agenda e métricas. | 1.000 envios/mês |
+| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Lembrete anti-falta. | 200 agendamentos/mês |
+| Profissional | R$ 799/mês | Até 6 profissionais. Soma fila de espera, Google Agenda e métricas. | 600 agendamentos/mês |
 | Clínica | Sob consulta | Multi-unidade, sem limite. Soma a reativação de pacientes. | sob medida |
 
-**A cota conta envios, não conversas.** Cada lembrete disparado vale 1 (o `reminders.ts` grava
-`reminderSentAt` e nunca duplica); a conversa que nasce dele — o paciente tocando em Confirmar,
-o agente respondendo — é mensagem de serviço, gratuita e ilimitada na Meta. Excedente:
-R$ 0,10/envio.
+**A cota é em agendamentos, não em mensagens** — o dono de clínica pensa em consulta, não em
+disparo. Excedente: R$ 1,50/agendamento. O custo da Meta é absorvido na mensalidade; o cliente
+nunca recebe fatura deles.
 
-Custo real por trás da cota (tarifas Meta Brasil): mensagem **utility** ≈ R$ 0,04 — 1.000
-lembretes custam ~R$ 40. Já o convite de retorno é **marketing** ≈ R$ 0,34, quase 9× mais
-caro, e por isso a reativação só entra no plano sob consulta (ver aviso no
+### Por que a cota não é em mensagens
+
+**A partir de 01/10/2026 a Meta cobra as mensagens de serviço** — as respostas do agente dentro
+da janela de 24h, gratuitas desde nov/2024. Anunciado em 01/07/2026, junto da plataforma Business
+Agent da própria Meta (cujo agente fica isento). Tarifa igual à utility, ~R$ 0,04 no Brasil, sem
+escalonamento por volume.
+
+Efeito por clínica: ~2.100 mensagens enviadas/mês passam a custar ~R$ 84. O custo Meta sobe de
+~R$ 12–40 para ~R$ 100–170, e a margem do Profissional cai de 71–81% para 65–69%.
+
+Duas consequências práticas:
+
+- Qualquer material que prometa "responder o paciente é gratuito" **expira em 01/10** — por isso
+  a cota saiu de mensagens.
+- A regra `"Faça UMA pergunta por mensagem"` do system prompt vira custo: cada quebra é
+  R$ 0,04. Vale reavaliar onde dá para juntar perguntas.
+
+Tarifas Meta Brasil por categoria: **utility** ≈ R$ 0,04 · **service** ≈ R$ 0,04 (a partir de
+01/10) · **marketing** ≈ R$ 0,34. O convite de retorno é marketing, quase 9× mais caro — por isso
+a reativação só entra no plano sob consulta (ver aviso no
 [`WHATSAPP-TEMPLATES.md`](../WHATSAPP-TEMPLATES.md)).
 
 Implantação **R$ 500** em qualquer plano. Contato **(51) 99767-0770** (o botão do rodapé abre

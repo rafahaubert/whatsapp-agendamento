@@ -104,8 +104,9 @@ Um só. Se não responder, deixa quieto por umas semanas.
 > lembrete anti-falta e a fila de espera) e **Clínica**, sob consulta, para quem tem mais de
 > uma unidade. A implantação é R$ 500, uma vez, em qualquer um. Sem fidelidade.
 >
-> Cada plano já vem com os lembretes inclusos (300/mês no Essencial, 1.000 no Profissional —
-> um por consulta). Você não recebe fatura da Meta nem precisa cadastrar cartão lá.
+> Está tudo incluso: as conversas do agente, os lembretes, os avisos de vaga. Você não recebe
+> fatura da Meta nem cadastra cartão lá. O que muda entre os planos é o volume de agendamentos
+> por mês — 200 no Essencial, 600 no Profissional.
 
 **"Qual plano eu preciso?"**
 > Se você sente falta na agenda, o Profissional — é ele que traz o lembrete anti-falta e a
@@ -113,14 +114,15 @@ Um só. Se não responder, deixa quieto por umas semanas.
 > só não conseguir responder o WhatsApp a tempo. Dá para começar no Essencial e subir depois,
 > sem nova implantação.
 
-**"300 lembretes são 300 conversas?"**
-> São 300 envios — um por consulta. A conversa que nasce dali é de graça: se a paciente toca em
-> "Remarcar" e vocês trocam dez mensagens, continua contando um. Só o disparo conta.
+**"O limite é de mensagens ou de consultas?"**
+> De consultas agendadas — 200/mês no Essencial, 600 no Profissional. Mensagem não conta:
+> o paciente pode trocar quantas quiser com o agente, e conversa que não vira consulta não
+> entra na conta.
 
 **"E se eu passar da cota?"**
-> Difícil — ela é dimensionada com folga para o porte de cada plano, e responder quem escreveu
-> para a clínica não consome nada. Se um mês estourar, são R$ 0,10 por envio extra e eu te
-> aviso antes de virar valor na fatura.
+> Difícil, ela é dimensionada com folga para o porte de cada plano. Se estourar, são R$ 1,50 por
+> agendamento extra — mas normalmente é sinal de que vale subir de plano, e eu te aviso antes de
+> virar valor na fatura.
 
 **"Vou pensar."**
 > Sem problema. Posso deixar o agente de teste montado com os dados da [clínica]? Você
