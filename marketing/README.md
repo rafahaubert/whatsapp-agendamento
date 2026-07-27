@@ -24,12 +24,14 @@ Três planos, no bloco `.planos` do fechamento:
 
 | Plano | Valor | Corte | Cota |
 |---|---|---|---|
-| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Lembrete anti-falta. | 300 msgs/mês |
-| Profissional | R$ 799/mês | Até 6 profissionais. Soma fila de espera, Google Agenda e métricas. | 1.000 msgs/mês |
+| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Lembrete anti-falta. | 300 lembretes/mês |
+| Profissional | R$ 799/mês | Até 6 profissionais. Soma fila de espera, Google Agenda e métricas. | 1.000 envios/mês |
 | Clínica | Sob consulta | Multi-unidade, sem limite. Soma a reativação de pacientes. | sob medida |
 
-**A cota cobre só o que a clínica inicia** — lembrete e aviso de vaga. Responder paciente é
-gratuito e ilimitado na Meta, então não entra na conta. Excedente: R$ 0,10/mensagem.
+**A cota conta envios, não conversas.** Cada lembrete disparado vale 1 (o `reminders.ts` grava
+`reminderSentAt` e nunca duplica); a conversa que nasce dele — o paciente tocando em Confirmar,
+o agente respondendo — é mensagem de serviço, gratuita e ilimitada na Meta. Excedente:
+R$ 0,10/envio.
 
 Custo real por trás da cota (tarifas Meta Brasil): mensagem **utility** ≈ R$ 0,04 — 1.000
 lembretes custam ~R$ 40. Já o convite de retorno é **marketing** ≈ R$ 0,34, quase 9× mais
