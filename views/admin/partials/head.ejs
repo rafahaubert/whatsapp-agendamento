@@ -139,11 +139,14 @@
     .conv{display:block;padding:10px;border-radius:9px;color:var(--ink);border:1px solid transparent}
     .conv:hover{background:var(--bg);text-decoration:none}
     .conv.sel{background:var(--bg);border-color:var(--brand)}
-    .thread{max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-top:12px;padding-right:4px}
-    .bolha{max-width:78%;padding:8px 11px;border-radius:12px;font-size:14px;line-height:1.4;white-space:pre-line}
-    .bolha.in{align-self:flex-start;background:var(--bg);border:1px solid var(--line);border-bottom-left-radius:4px}
-    .bolha.out{align-self:flex-end;background:color-mix(in srgb,var(--brand) 18%,transparent);border-bottom-right-radius:4px}
-    .bolha .meta{font-size:11px;color:var(--muted);margin-top:4px}
+    .thread{max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:5px;margin-top:12px;padding-right:4px}
+    .bolha{width:fit-content;max-width:min(62%,360px);padding:6px 8px 4px;border-radius:8px;font-size:14px;
+        line-height:1.35;box-shadow:0 1px 1px rgba(11,20,26,.13)}
+    .bolha .txt{white-space:pre-line;overflow-wrap:anywhere}
+    .bolha.in{align-self:flex-start;background:var(--bg);border:1px solid var(--line);border-top-left-radius:2px}
+    .bolha.out{align-self:flex-end;background:color-mix(in srgb,var(--brand) 18%,transparent);border-top-right-radius:2px}
+    .bolha .meta{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.2;text-align:right;white-space:nowrap}
+    @media (max-width:760px){.bolha{max-width:85%}}
 
     /* Dashboard de clínicas */
     .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;margin-top:16px}
