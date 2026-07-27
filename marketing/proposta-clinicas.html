@@ -959,8 +959,44 @@
   }
 
   @media print {
-    body { background: #fff; }
-    .secao { page-break-inside: avoid; }
+    /* proteger da quebra só o que cabe numa folha — em bloco alto
+       isso abriria um buraco e jogaria tudo para a página seguinte */
+    .vaza, .passo, .recurso, .pergunta, .preco-item, .calc,
+    .metricas, .cal-grade, .msg, .opts, .botoes, .cap { break-inside: avoid; }
+
+    h1, h2, h3 { break-after: avoid; }
+    .secao { padding: 46px 0; }
+    .heroi { padding: 32px 0 46px; }
+    .fecha-corpo { padding: 46px 0 32px; }
+
+    /* no papel não há duas colunas: o herói e a galeria viram fluxo único */
+    .heroi { display: block; }
+    .heroi-chat { margin-top: 30px; }
+    .fone { max-width: 440px; }
+    .prints { display: block; margin-top: 34px; }
+    .print { break-inside: avoid; margin-bottom: 32px; }
+    .print .fone { max-width: 460px; }
+    .print.largo .print-corpo { display: block; }
+    .print-dupla .fone { max-width: 100%; }
+
+    /* "digitando" é um instante da animação: no papel ficaria congelado */
+    .digitando { display: none; }
+
+    /* o fechamento ocupa a última folha inteira, em vez de terminar no meio */
+    .fechamento { break-before: page; min-height: 100vh; margin-top: 0; }
+
+    /* no papel não há rolagem: a conversa do topo abre inteira */
+    .fone-chat.rolando { height: auto; overflow: visible; }
+
+    /* e a agenda da semana precisa caber na largura da folha */
+    .cal-grade { min-width: 0; grid-template-columns: 42px repeat(7, minmax(0, 1fr)); }
+    .cal-ev { font-size: .58rem; padding: 2px 4px; }
+    .cal-rolagem { overflow: visible; }
+
+    /* as respostas do FAQ ficam abertas */
+    .pergunta .resposta { display: block; }
+    .pergunta summary::after,
+    .pergunta[open] summary::after { content: ""; }
   }
 </style>
 

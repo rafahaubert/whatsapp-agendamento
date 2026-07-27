@@ -34,3 +34,11 @@ As conversas são **demonstrações** do fluxo real do agente, com clínica e pa
 fictícios, e isso está dito no rodapé. Os números do painel são ilustrativos. Não há
 estatística de resultado inventada em lugar nenhum — se for incluir caso real, peça
 autorização da clínica antes.
+
+## PDF
+
+`proposta-clinicas.pdf` é a mesma página impressa em A4 (11 páginas), para quem prefere
+anexo a link. Para regerar depois de editar o HTML, imprima a página pelo navegador em A4,
+com "gráficos de plano de fundo" ligado e escala 78% — o `@media print` do arquivo já cuida
+do resto (abre a conversa do topo inteira, abre o FAQ, encaixa a agenda na folha e fecha
+numa última página inteira).
