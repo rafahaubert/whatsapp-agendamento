@@ -71,6 +71,8 @@
     --acento-suave: #d3dcd8;
     --perda: #8c4126;
     --perda-suave: #ded0c9;
+    --linha-meia: #c4c6c4;
+    --fora: rgba(22, 48, 41, .05);
     --chat-bg: #d9d7cf;
     --bub-bot: #ffffff;
     --bub-pac: #d4eec0;
@@ -105,7 +107,9 @@
       --acento-suave: #1c3a32;
       --perda: #d4906b;
       --perda-suave: #2f2019;
-      --chat-bg: #0c1815;
+      --linha-meia: #1d332d;
+    --fora: rgba(0, 0, 0, .4);
+    --chat-bg: #0c1815;
       --bub-bot: #1b2e28;
       --bub-pac: #14463a;
       --bub-ink: #dde4e0;
@@ -135,6 +139,8 @@
     --acento-suave: #1c3a32;
     --perda: #d4906b;
     --perda-suave: #2f2019;
+    --linha-meia: #1d332d;
+    --fora: rgba(0, 0, 0, .4);
     --chat-bg: #0c1815;
     --bub-bot: #1b2e28;
     --bub-pac: #14463a;
@@ -164,6 +170,8 @@
     --acento-suave: #d3dcd8;
     --perda: #8c4126;
     --perda-suave: #ded0c9;
+    --linha-meia: #c4c6c4;
+    --fora: rgba(22, 48, 41, .05);
     --chat-bg: #d9d7cf;
     --bub-bot: #ffffff;
     --bub-pac: #d4eec0;
@@ -605,36 +613,161 @@
   .metrica .num.alerta { color: var(--perda); }
   .metrica .nota { font-size: .71rem; color: var(--ink-3); display: block; margin-top: 7px; }
 
-  .agenda { padding: 18px; display: grid; gap: 8px; }
-  @media (min-width: 620px) { .agenda { grid-template-columns: repeat(3, 1fr); } }
+  /* ---------- calendário da semana (a tela de agenda do painel) ---------- */
+  .cal-barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
 
-  .col-dia { display: flex; flex-direction: column; gap: 6px; }
+  .cal-grupo { display: flex; align-items: center; gap: 5px; }
 
-  .col-dia .cab {
+  .cal-btn {
+    font-family: var(--fonte-corpo);
+    font-size: .75rem;
+    padding: 6px 11px;
+    border: 1px solid var(--line-forte);
+    border-radius: 7px;
+    background: var(--surface-2);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  .cal-btn.ativo { background: var(--acento); border-color: var(--acento); color: var(--surface); }
+  .cal-btn.acao { background: var(--acento); border-color: var(--acento); color: var(--surface); font-weight: 600; }
+  .cal-titulo { font-family: var(--fonte-geo); font-size: 1.02rem; font-weight: 500; }
+
+  .cal-rolagem { overflow-x: auto; }
+
+  .cal-grade {
+    display: grid;
+    grid-template-columns: 54px repeat(7, minmax(112px, 1fr));
+    grid-template-rows: auto 600px;
+    min-width: 838px;
+  }
+
+  .cal-canto { border-bottom: 1px solid var(--line); }
+
+  .cal-cab {
+    text-align: center;
+    padding: 9px 4px 8px;
+    border-left: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
     font-family: var(--fonte-geo);
-    font-size: .67rem;
+    font-size: .64rem;
     letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--ink-3);
-    padding-bottom: 5px;
-    border-bottom: 1px solid var(--line);
-    margin-bottom: 2px;
   }
 
-  .evento {
-    border-radius: 7px;
-    padding: 7px 9px;
-    font-size: .75rem;
-    line-height: 1.35;
-    background: var(--surface-2);
-    border-left: 3px solid var(--line-forte);
+  .cal-cab b {
+    display: block;
+    margin-top: 3px;
+    font-family: var(--fonte-corpo);
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
   }
 
-  .evento b { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .evento small { display: block; color: var(--ink-3); font-size: .69rem; }
-  .evento.confirmado { border-left-color: var(--acento); background: var(--acento-suave); }
-  .evento.faltou { border-left-color: var(--perda); background: var(--perda-suave); }
-  .evento.vago { border-left-style: dashed; color: var(--ink-3); }
+  .cal-cab.hoje b { color: var(--acento-txt); }
+  .cal-cab.fechado, .cal-cab.fechado b { color: var(--ink-3); }
+
+  .cal-hora {
+    height: 60px;
+    font-size: .63rem;
+    color: var(--ink-3);
+    text-align: right;
+    padding-right: 7px;
+    transform: translateY(-.45em);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cal-col {
+    position: relative;
+    border-left: 1px solid var(--line);
+    background-image:
+      repeating-linear-gradient(to bottom, transparent 0 59px, var(--line) 59px 60px),
+      repeating-linear-gradient(to bottom, transparent 0 29px, var(--linha-meia) 29px 30px);
+  }
+
+  .cal-fora, .cal-col.fechado::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: var(--fora);
+    pointer-events: none;
+  }
+
+  .cal-col.fechado::after { top: 0; bottom: 0; }
+  .cal-fora { top: calc(var(--i) * 1px); height: calc(var(--d) * 1px); }
+
+  .cal-ev {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    top: calc(var(--i) * 1px);
+    height: calc(var(--d) * 1px);
+    border-radius: 5px;
+    padding: 3px 6px;
+    overflow: hidden;
+    background: #128c7e;
+    color: #fff;
+    font-size: .63rem;
+    line-height: 1.24;
+  }
+
+  .cal-ev b,
+  .cal-ev span {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cal-ev b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cal-ev span { opacity: .85; }
+  .cal-ev.cancelado { background: #9aa5ab; }
+  .cal-ev.faltou { background: #c0392b; }
+
+  .cal-agora {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--i) * 1px);
+    border-top: 2px solid #c0392b;
+    z-index: 2;
+  }
+
+  .cal-agora::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: -5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #c0392b;
+  }
+
+  .cal-legenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 13px 18px;
+    border-top: 1px solid var(--line);
+    font-size: .78rem;
+    color: var(--ink-2);
+  }
+
+  .cal-legenda span { display: flex; align-items: center; gap: 7px; }
+  .cal-legenda i { width: 11px; height: 11px; border-radius: 3px; display: block; }
 
   /* ---------- recursos ---------- */
   .recursos {
@@ -1231,7 +1364,7 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
         <span class="ponto" aria-hidden="true"></span>
         <span class="ponto" aria-hidden="true"></span>
         <span class="ponto" aria-hidden="true"></span>
-        <span style="margin-left:8px;">Clínica Exemplo · últimos 30 dias</span>
+        <span style="margin-left:8px;">Clínica Exemplo · agenda e resultados</span>
       </div>
 
       <div class="metricas">
@@ -1257,31 +1390,106 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
         </div>
       </div>
 
-      <div class="agenda">
-        <div class="col-dia">
-          <span class="cab">Seg 28/07</span>
-          <div class="evento confirmado"><b>08:30</b> Marina Alves <small>Endodontia · Dra. Helena · confirmado</small></div>
-          <div class="evento confirmado"><b>09:00</b> João Prado <small>Ortodontia · Dr. Caio · confirmado</small></div>
-          <div class="evento"><b>10:00</b> Sofia Menezes <small>Odontopediatria · Dra. Helena</small></div>
-          <div class="evento vago"><b>11:00</b> livre</div>
+      <div class="cal-barra">
+        <div class="cal-grupo">
+          <span class="cal-btn">‹</span>
+          <span class="cal-btn">›</span>
+          <span class="cal-btn">hoje</span>
         </div>
-        <div class="col-dia">
-          <span class="cab">Ter 29/07</span>
-          <div class="evento confirmado"><b>08:00</b> Lucas Ferraz <small>Clínica Geral · Dra. Helena · confirmado</small></div>
-          <div class="evento"><b>09:30</b> Ana Beatriz <small>Implantodontia · Dr. Caio</small></div>
-          <div class="evento faltou"><b>10:30</b> Pedro Nunes <small>faltou · marcado pela recepção</small></div>
-          <div class="evento"><b>14:00</b> Célia Mendes <small>Clínica Geral · Dr. Caio</small></div>
-        </div>
-        <div class="col-dia">
-          <span class="cab">Qua 30/07</span>
-          <div class="evento"><b>09:00</b> Rafael Lima <small>Ortodontia · Dr. Caio</small></div>
-          <div class="evento confirmado"><b>14:00</b> Beatriz Rocha <small>fila de espera · confirmado</small></div>
-          <div class="evento"><b>15:00</b> Cleusa Barros <small>Clínica Geral · Dra. Helena</small></div>
-          <div class="evento vago"><b>16:00</b> livre</div>
+        <span class="cal-titulo">28 de julho – 2 de agosto de 2025</span>
+        <div class="cal-grupo">
+          <span class="cal-btn">Todos os dentistas ▾</span>
+          <span class="cal-btn acao">+ Novo agendamento</span>
         </div>
       </div>
+
+      <div class="cal-rolagem">
+        <div class="cal-grade">
+          <div class="cal-canto"></div>
+          <div class="cal-cab fechado">dom <b>27</b></div>
+          <div class="cal-cab">seg <b>28</b></div>
+          <div class="cal-cab">ter <b>29</b></div>
+          <div class="cal-cab hoje">qua <b>30</b></div>
+          <div class="cal-cab">qui <b>31</b></div>
+          <div class="cal-cab">sex <b>01</b></div>
+          <div class="cal-cab">sáb <b>02</b></div>
+
+          <div class="cal-horas">
+            <div class="cal-hora">08:00</div>
+            <div class="cal-hora">09:00</div>
+            <div class="cal-hora">10:00</div>
+            <div class="cal-hora">11:00</div>
+            <div class="cal-hora">12:00</div>
+            <div class="cal-hora">13:00</div>
+            <div class="cal-hora">14:00</div>
+            <div class="cal-hora">15:00</div>
+            <div class="cal-hora">16:00</div>
+            <div class="cal-hora">17:00</div>
+          </div>
+
+          <div class="cal-col fechado"></div>
+
+          <div class="cal-col">
+            <div class="cal-ev" style="--i:30;--d:30"><b>08:30 Marina Alves</b><span>Endodontia · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:60;--d:30"><b>09:00 João Prado</b><span>Ortodontia · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:120;--d:30"><b>10:00 Sofia Menezes</b><span>Odontopediatria · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:210;--d:30"><b>11:30 Antônio Reis</b><span>Clínica Geral · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:360;--d:30"><b>14:00 Marta Lopes</b><span>Ortodontia · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:450;--d:30"><b>15:30 Igor Pacheco</b><span>Implantodontia · Dr. Caio</span></div>
+          </div>
+
+          <div class="cal-col">
+            <div class="cal-ev" style="--i:0;--d:30"><b>08:00 Lucas Ferraz</b><span>Clínica Geral · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:90;--d:30"><b>09:30 Ana Beatriz</b><span>Implantodontia · Dr. Caio</span></div>
+            <div class="cal-ev faltou" style="--i:150;--d:30"><b>10:30 Pedro Nunes</b><span>faltou</span></div>
+            <div class="cal-ev" style="--i:360;--d:30"><b>14:00 Célia Mendes</b><span>Clínica Geral · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:480;--d:30"><b>16:00 Vinícius Sá</b><span>Endodontia · Dra. Helena</span></div>
+          </div>
+
+          <div class="cal-col">
+            <div class="cal-agora" style="--i:140" aria-hidden="true"></div>
+            <div class="cal-ev" style="--i:60;--d:30"><b>09:00 Rafael Lima</b><span>Ortodontia · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:120;--d:30"><b>10:00 Fernanda Dias</b><span>Clínica Geral · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:360;--d:30"><b>14:00 Beatriz Rocha</b><span>fila de espera · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:420;--d:30"><b>15:00 Cleusa Barros</b><span>Clínica Geral · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:540;--d:30"><b>17:00 Sérgio Antunes</b><span>Implantodontia · Dr. Caio</span></div>
+          </div>
+
+          <div class="cal-col">
+            <div class="cal-ev" style="--i:30;--d:30"><b>08:30 Helena Vaz</b><span>Odontopediatria · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:180;--d:30"><b>11:00 Otávio Prado</b><span>Ortodontia · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:390;--d:30"><b>14:30 Nara Belmonte</b><span>Clínica Geral · Dra. Helena</span></div>
+            <div class="cal-ev cancelado" style="--i:480;--d:30"><b>16:00 Ricardo Alves</b><span>cancelado</span></div>
+          </div>
+
+          <div class="cal-col">
+            <div class="cal-ev" style="--i:0;--d:30"><b>08:00 Juliana Reis</b><span>Clínica Geral · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:90;--d:30"><b>09:30 Tiago Moura</b><span>Endodontia · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:330;--d:30"><b>13:30 Paula Serra</b><span>Ortodontia · Dr. Caio</span></div>
+            <div class="cal-ev" style="--i:510;--d:30"><b>16:30 Elias Campos</b><span>Clínica Geral · Dra. Helena</span></div>
+          </div>
+
+          <div class="cal-col">
+            <div class="cal-fora" style="--i:240;--d:360"></div>
+            <div class="cal-ev" style="--i:30;--d:30"><b>08:30 Núbia Castro</b><span>Clínica Geral · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:90;--d:30"><b>09:30 Davi Menezes</b><span>Odontopediatria · Dra. Helena</span></div>
+            <div class="cal-ev" style="--i:180;--d:30"><b>11:00 Sandra Lopes</b><span>Ortodontia · Dr. Caio</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cal-legenda">
+        <span><i style="background:#128c7e"></i> Agendado / confirmado</span>
+        <span><i style="background:#c0392b"></i> Faltou</span>
+        <span><i style="background:#9aa5ab"></i> Cancelado</span>
+        <span style="color:var(--ink-3)">Clique num espaço vazio para agendar · arraste para mudar o horário</span>
+      </div>
     </div>
-    <p class="miudo" style="margin-top:14px;">Painel ilustrativo, com dados de exemplo.</p>
+    <p class="miudo" style="margin-top:14px;">
+      Painel ilustrativo, com dados de exemplo. Os indicadores são dos últimos 30 dias; a agenda
+      é a semana aberta. As áreas sombreadas são o que está fora do atendimento — domingo fechado
+      e sábado só até meio-dia, direto da configuração da clínica.
+    </p>
 
     <div class="recursos revela">
       <div class="recurso">
