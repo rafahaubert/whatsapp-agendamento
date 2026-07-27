@@ -1,33 +1,52 @@
-<%- include('partials/header') %>
+<%- include('partials/header', { tituloPagina: t.name }) %>
 <% const dayNames = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"]; %>
 <% const days = cfg.businessHours.days; %>
 <% const allPlans = t.insurers.flatMap(function(i){ return i.plans; }); %>
 
-<% if (typeof ehSuper !== "undefined" && ehSuper) { %><p><a href="/admin">← Clínicas</a></p><% } %>
-<div class="row between">
-  <h1><%= t.name %></h1>
-  <span class="muted"><%= t.slug %></span>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">
+      <% if (typeof ehSuper !== "undefined" && ehSuper) { %><a href="/admin">← Clínicas</a> ·<% } %>
+      <%= t.slug %>
+    </p>
+    <h1>
+      <%= t.name %>
+      <span class="badge <%= t.isActive ? 'on' : 'off' %>" style="vertical-align:middle;margin-left:6px">
+        <%= t.isActive ? 'Ativa' : 'Inativa' %>
+      </span>
+    </h1>
+  </div>
+  <div class="row tight">
+    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/metricas">Métricas</a>
+    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">Calendário</a>
+    <a class="btn sm" href="/admin/clinicas/<%= t.id %>/inbox">
+      Caixa de entrada<%= pendentes ? " · " + pendentes : "" %>
+    </a>
+  </div>
 </div>
+
 <% if (msg) { %><p class="ok"><%= msg %></p><% } %>
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
-<nav class="subnav">
+<nav class="tabs" aria-label="Seções da clínica">
   <a href="#config">Configuração</a>
   <a href="#unidades">Unidades</a>
   <a href="#especialidades">Especialidades</a>
   <a href="#convenios">Convênios</a>
-  <a href="#medicos">Médicos</a>
-  <a href="#bloqueios">Férias/Feriados</a>
+  <a href="#medicos">Profissionais</a>
+  <a href="#bloqueios">Férias e feriados</a>
   <a href="#agenda">Agenda</a>
   <a href="#ferramentas">Conversas</a>
-  <a href="/admin/clinicas/<%= t.id %>/metricas">📊 Métricas</a>
-  <a href="/admin/clinicas/<%= t.id %>/calendario">📅 Calendário</a>
-  <a href="/admin/clinicas/<%= t.id %>/inbox">💬 Caixa de entrada<%= pendentes ? " (" + pendentes + ")" : "" %></a>
 </nav>
 
 <!-- ============ CONFIGURAÇÃO ============ -->
 <form method="post" action="/admin/clinicas/<%= t.id %>" class="card" id="config">
-  <h2>Dados</h2>
+  <div class="card-head">
+    <h2>Configuração</h2>
+    <button class="btn sm">Salvar configuração</button>
+  </div>
+
+  <h2>Identificação</h2>
   <div class="grid2">
     <label>Nome<input name="name" value="<%= t.name %>" required /></label>
     <% if (ehSuper) { %>
@@ -35,15 +54,13 @@
     <% } else { %>
       <input type="hidden" name="whatsappPhoneNumberId" value="<%= t.whatsappPhoneNumberId %>" />
     <% } %>
-  </div>
-  <div class="grid2">
     <label>Fuso horário<input name="timezone" value="<%= t.timezone %>" /></label>
-    <% if (ehSuper) { %>
-      <label class="checks" style="align-self:end"><input type="checkbox" name="isActive" <%= t.isActive ? "checked" : "" %> /> Clínica ativa</label>
-    <% } else { %>
-      <input type="hidden" name="isActive" value="<%= t.isActive ? 'on' : '' %>" />
-    <% } %>
   </div>
+  <% if (ehSuper) { %>
+    <div class="checks"><label><input type="checkbox" name="isActive" <%= t.isActive ? "checked" : "" %> /> Clínica ativa</label></div>
+  <% } else { %>
+    <input type="hidden" name="isActive" value="<%= t.isActive ? 'on' : '' %>" />
+  <% } %>
 
   <h2>Mensagens</h2>
   <label>Saudação<textarea name="branding_greeting"><%= cfg.branding.greetingMessage %></textarea></label>
@@ -55,28 +72,28 @@
 
   <h2>Horário de funcionamento</h2>
   <p class="muted">O intervalo (almoço) é opcional — preenchendo os dois campos, o agente não oferece horários nesse período.</p>
-  <table>
-    <thead><tr><th>Dia</th><th>Aberto</th><th>Abre</th><th>Fecha</th><th>Almoço de</th><th>até</th></tr></thead>
-    <tbody>
-      <% for (let i=0;i<7;i++){ const h = days[i]; %>
-        <tr>
-          <td><%= dayNames[i] %></td>
-          <td class="checks"><input type="checkbox" name="day_<%= i %>_aberto" <%= h ? "checked" : "" %> /></td>
-          <td><input type="time" name="day_<%= i %>_open" value="<%= h ? h.open : '08:00' %>" /></td>
-          <td><input type="time" name="day_<%= i %>_close" value="<%= h ? h.close : '18:00' %>" /></td>
-          <td><input type="time" name="day_<%= i %>_break_start" value="<%= h && h.breakStart ? h.breakStart : '' %>" /></td>
-          <td><input type="time" name="day_<%= i %>_break_end" value="<%= h && h.breakEnd ? h.breakEnd : '' %>" /></td>
-        </tr>
-      <% } %>
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dia</th><th>Aberto</th><th>Abre</th><th>Fecha</th><th>Almoço de</th><th>até</th></tr></thead>
+      <tbody>
+        <% for (let i=0;i<7;i++){ const h = days[i]; %>
+          <tr>
+            <td><%= dayNames[i] %></td>
+            <td class="checks"><input type="checkbox" name="day_<%= i %>_aberto" <%= h ? "checked" : "" %> /></td>
+            <td><input type="time" name="day_<%= i %>_open" value="<%= h ? h.open : '08:00' %>" /></td>
+            <td><input type="time" name="day_<%= i %>_close" value="<%= h ? h.close : '18:00' %>" /></td>
+            <td><input type="time" name="day_<%= i %>_break_start" value="<%= h && h.breakStart ? h.breakStart : '' %>" /></td>
+            <td><input type="time" name="day_<%= i %>_break_end" value="<%= h && h.breakEnd ? h.breakEnd : '' %>" /></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
 
   <h2>Regras de agendamento</h2>
-  <div class="grid2">
+  <div class="grid3">
     <label>Duração do slot (min)<input type="number" name="booking_slotDurationMinutes" value="<%= cfg.booking.slotDurationMinutes %>" /></label>
     <label>Opções ofertadas<input type="number" name="booking_maxOptionsOffered" value="<%= cfg.booking.maxOptionsOffered %>" /></label>
-  </div>
-  <div class="grid2">
     <label>Janela de agendamento (dias)<input type="number" name="booking_advanceBookingDays" value="<%= cfg.booking.advanceBookingDays %>" /></label>
     <label>Espera antes de responder (s)
       <input type="number" name="debounceSeconds" min="0" max="60" value="<%= cfg.debounceSeconds == null ? 8 : cfg.debounceSeconds %>" />
@@ -99,8 +116,8 @@
             <option value="<%= m %>" <%= cfg.ai.model === m ? "selected" : "" %>><%= m %></option>
           <% }) %>
         </select>
+        <small>Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</small>
       </label>
-      <label>&nbsp;<span class="muted">Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</span></label>
     </div>
   <% } else { %>
     <input type="hidden" name="ai_model" value="<%= cfg.ai.model %>" />
@@ -114,19 +131,16 @@
   <div class="checks">
     <label><input type="checkbox" name="reminders_enabled" <%= rem.enabled ? "checked" : "" %> /> Ativar lembretes</label>
   </div>
-  <div class="grid2">
+  <div class="grid3">
     <label>Horas de antecedência<input type="number" name="reminders_hoursBefore" value="<%= rem.hoursBefore %>" /></label>
     <% if (ehSuper) { %>
       <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
+      <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
     <% } else { %>
       <input type="hidden" name="reminders_templateName" value="<%= rem.templateName %>" />
+      <input type="hidden" name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" />
     <% } %>
   </div>
-  <% if (ehSuper) { %>
-    <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
-  <% } else { %>
-    <input type="hidden" name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" />
-  <% } %>
 
   <h2>Fila de espera (aproveita cancelamentos)</h2>
   <% var wl = cfg.waitlist || { enabled: false, templateName: "", templateLang: "pt_BR" }; %>
@@ -152,42 +166,48 @@
   <div class="checks">
     <label><input type="checkbox" name="recall_enabled" <%= rc.enabled ? "checked" : "" %> /> Ativar reativação</label>
   </div>
-  <div class="grid2">
+  <div class="grid3">
     <label>Meses sem consulta<input type="number" name="recall_months" value="<%= rc.months %>" /></label>
     <% if (ehSuper) { %>
       <label>Nome do template<input name="recall_templateName" value="<%= rc.templateName %>" placeholder="retorno_consulta" /></label>
+      <label>Idioma do template<input name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" /></label>
     <% } else { %>
       <input type="hidden" name="recall_templateName" value="<%= rc.templateName %>" />
+      <input type="hidden" name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" />
     <% } %>
   </div>
-  <% if (ehSuper) { %>
-    <label>Idioma do template<input name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" /></label>
-  <% } else { %>
-    <input type="hidden" name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" />
-  <% } %>
 
   <h2>Base de conhecimento (FAQ)</h2>
   <label>Informações e perguntas frequentes que o agente pode usar para responder dúvidas gerais (procedimentos, formas de pagamento, localização, estacionamento…). O agente só afirma o que estiver aqui ou vier das ferramentas — se não souber, orienta a recepção.
-    <textarea name="knowledgeBase" style="min-height:150px" placeholder="Ex.: Formas de pagamento: cartão, PIX e dinheiro (particular parcelamos em até 6x). Endereço: Av. Pedro Adams Filho, 1678, com estacionamento próprio. Fazemos clareamento, implantes, próteses e ortodontia. Urgência 24h para dor."><%= cfg.knowledgeBase || '' %></textarea>
+    <textarea name="knowledgeBase" style="min-height:130px" placeholder="Ex.: Formas de pagamento: cartão, PIX e dinheiro (particular parcelamos em até 6x). Endereço: Av. Pedro Adams Filho, 1678, com estacionamento próprio. Fazemos clareamento, implantes, próteses e ortodontia. Urgência 24h para dor."><%= cfg.knowledgeBase || '' %></textarea>
   </label>
 
-  <div style="margin-top:16px"><button class="btn">Salvar configuração</button></div>
+  <div style="margin-top:14px"><button class="btn">Salvar configuração</button></div>
 </form>
 
-<!-- ============ CATÁLOGO ============ -->
+<!-- ============ UNIDADES ============ -->
 <div class="card" id="unidades">
-  <h2>Unidades</h2>
-  <table><tbody>
-    <% t.units.forEach(function(u){ %>
-      <tr>
-        <td><strong><%= u.name %></strong><br /><span class="muted"><%= u.address || "" %></span></td>
-        <td style="text-align:right">
-          <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/unit/<%= u.id %>"><button class="btn sm danger">Excluir</button></form>
-        </td>
-      </tr>
-    <% }) %>
-  </tbody></table>
-  <form method="post" action="/admin/clinicas/<%= t.id %>/unidades" class="inline" style="margin-top:10px">
+  <div class="card-head">
+    <h2>Unidades</h2>
+    <span class="muted"><%= t.units.length %> cadastrada<%= t.units.length === 1 ? "" : "s" %></span>
+  </div>
+  <% if (t.units.length === 0) { %>
+    <div class="empty">Nenhuma unidade cadastrada.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table><tbody>
+        <% t.units.forEach(function(u){ %>
+          <tr>
+            <td><strong><%= u.name %></strong><% if (u.address) { %><br /><span class="muted"><%= u.address %></span><% } %></td>
+            <td class="acoes">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/unit/<%= u.id %>"><button class="btn sm danger">Excluir</button></form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody></table>
+    </div>
+  <% } %>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/unidades" class="inline" style="margin-top:12px">
     <label>Nome<input name="name" required /></label>
     <label>Endereço<input name="address" /></label>
     <label>Telefone<input name="phone" /></label>
@@ -195,199 +215,250 @@
   </form>
 </div>
 
+<!-- ============ ESPECIALIDADES ============ -->
 <div class="card" id="especialidades">
-  <h2>Especialidades</h2>
-  <p class="muted">O valor particular é o que o agente informa quando o paciente pergunta o preço (deixe vazio se preferir informar só na recepção).</p>
-  <table>
-    <thead><tr><th>Especialidade</th><th>Valor particular</th><th></th></tr></thead>
-    <tbody>
-      <% t.specialties.forEach(function(s){ %>
-        <tr>
-          <td><%= s.name %></td>
-          <td>
-            <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades/<%= s.id %>/preco" class="inline" style="gap:6px">
-              <input name="preco" value="<%= s.priceParticular || '' %>" placeholder="ex.: 150,00" style="max-width:150px" />
-              <button class="btn sm ghost">Salvar</button>
-            </form>
-          </td>
-          <td style="text-align:right">
-            <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/specialty/<%= s.id %>"><button class="btn sm danger">Excluir</button></form>
-          </td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
-  <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades" class="inline" style="margin-top:10px">
+  <div class="card-head">
+    <h2>Especialidades</h2>
+    <span class="muted"><%= t.specialties.length %> cadastrada<%= t.specialties.length === 1 ? "" : "s" %></span>
+  </div>
+  <p class="muted" style="margin-top:0">O valor particular é o que o agente informa quando o paciente pergunta o preço (deixe vazio se preferir informar só na recepção).</p>
+  <% if (t.specialties.length === 0) { %>
+    <div class="empty">Nenhuma especialidade cadastrada.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Especialidade</th><th>Valor particular</th><th></th></tr></thead>
+        <tbody>
+          <% t.specialties.forEach(function(s){ %>
+            <tr>
+              <td><%= s.name %></td>
+              <td>
+                <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades/<%= s.id %>/preco" class="inline" style="gap:6px">
+                  <input name="preco" value="<%= s.priceParticular || '' %>" placeholder="ex.: 150,00" style="max-width:140px" />
+                  <button class="btn sm ghost">Salvar</button>
+                </form>
+              </td>
+              <td class="acoes">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/specialty/<%= s.id %>"><button class="btn sm danger">Excluir</button></form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades" class="inline" style="margin-top:12px">
     <label>Nova especialidade<input name="name" required /></label>
     <label>Valor particular (opcional)<input name="preco" placeholder="ex.: 150,00" /></label>
     <button class="btn sm">Adicionar</button>
   </form>
 </div>
 
+<!-- ============ CONVÊNIOS ============ -->
 <div class="card" id="convenios">
-  <h2>Convênios e planos</h2>
-  <% t.insurers.forEach(function(ins){ %>
-    <div style="margin-bottom:8px">
-      <strong><%= ins.name %></strong>
-      <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/insurer/<%= ins.id %>" style="display:inline">
-        <button class="link" style="color:var(--danger)">excluir</button>
-      </form>
-      <div>
-        <% ins.plans.forEach(function(p){ %>
-          <span class="pill"><%= p.name %>
-            <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/healthPlan/<%= p.id %>" style="display:inline">
-              <button class="link" style="color:var(--danger)">×</button>
-            </form>
-          </span>
+  <div class="card-head">
+    <h2>Convênios e planos</h2>
+    <span class="muted"><%= t.insurers.length %> convênio<%= t.insurers.length === 1 ? "" : "s" %> · <%= allPlans.length %> plano<%= allPlans.length === 1 ? "" : "s" %></span>
+  </div>
+  <% if (t.insurers.length === 0) { %>
+    <div class="empty">Nenhum convênio cadastrado.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table><tbody>
+        <% t.insurers.forEach(function(ins){ %>
+          <tr>
+            <td>
+              <strong><%= ins.name %></strong>
+              <div style="margin-top:4px">
+                <% if (ins.plans.length === 0) { %><span class="muted">sem planos</span><% } %>
+                <% ins.plans.forEach(function(p){ %>
+                  <span class="pill"><%= p.name %>
+                    <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/healthPlan/<%= p.id %>" style="display:inline">
+                      <button class="link" title="Remover plano">×</button>
+                    </form>
+                  </span>
+                <% }) %>
+              </div>
+            </td>
+            <td class="acoes">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/insurer/<%= ins.id %>">
+                <button class="btn sm danger">Excluir</button>
+              </form>
+            </td>
+          </tr>
         <% }) %>
-      </div>
+      </tbody></table>
     </div>
-  <% }) %>
-  <div class="grid2">
+  <% } %>
+  <div class="grid2" style="margin-top:12px">
     <form method="post" action="/admin/clinicas/<%= t.id %>/convenios" class="inline">
       <label>Novo convênio<input name="name" required /></label>
       <label>Código ANS<input name="code" /></label>
       <button class="btn sm">Adicionar convênio</button>
     </form>
     <% if (t.insurers.length) { %>
-    <form method="post" action="/admin/clinicas/<%= t.id %>/planos" class="inline">
-      <label>Plano em
-        <select name="insurerId">
-          <% t.insurers.forEach(function(ins){ %><option value="<%= ins.id %>"><%= ins.name %></option><% }) %>
-        </select>
-      </label>
-      <label>Nome do plano<input name="name" required /></label>
-      <button class="btn sm">Adicionar plano</button>
-    </form>
+      <form method="post" action="/admin/clinicas/<%= t.id %>/planos" class="inline">
+        <label>Plano em
+          <select name="insurerId">
+            <% t.insurers.forEach(function(ins){ %><option value="<%= ins.id %>"><%= ins.name %></option><% }) %>
+          </select>
+        </label>
+        <label>Nome do plano<input name="name" required /></label>
+        <button class="btn sm">Adicionar plano</button>
+      </form>
     <% } %>
   </div>
 </div>
 
+<!-- ============ PROFISSIONAIS ============ -->
 <div class="card" id="medicos">
-  <h2>Médicos</h2>
+  <div class="card-head">
+    <h2>Profissionais</h2>
+    <span class="muted"><%= t.doctors.length %> cadastrado<%= t.doctors.length === 1 ? "" : "s" %></span>
+  </div>
   <% if (googleEmail) { %>
-    <p class="muted">🔗 <strong>Google Calendar:</strong> compartilhe o calendário de cada dentista (permissão "Fazer alterações nos eventos") com <code><%= googleEmail %></code> e cole o <em>Calendar ID</em> dele abaixo.</p>
+    <p class="muted" style="margin-top:0"><strong>Google Calendar:</strong> compartilhe o calendário de cada profissional
+      (permissão "Fazer alterações nos eventos") com <code><%= googleEmail %></code> e cole o <em>Calendar ID</em> dele abaixo.</p>
   <% } %>
-  <table>
-    <tbody>
-      <% t.doctors.forEach(function(d){ %>
-        <tr>
-          <td>
-            <strong><%= d.name %></strong> <span class="muted"><%= d.crm || "" %></span><br />
-            <% d.specialties.forEach(function(s){ %><span class="pill"><%= s.name %></span><% }) %>
-            <% d.units.forEach(function(u){ %><span class="pill">📍 <%= u.name %></span><% }) %>
-            <% d.healthPlans.forEach(function(p){ %><span class="pill">💳 <%= p.name %></span><% }) %>
-            <%
-              var dh = null;
-              if (d.workingHours) { try { dh = JSON.parse(d.workingHours); } catch (e) { dh = null; } }
-              var herda = !dh;
-            %>
-            <span class="pill" style="background:<%= herda ? 'transparent' : 'color-mix(in srgb,var(--brand) 15%,transparent)' %>;border:1px solid var(--line)">
-              🕐 <%= herda ? "horário da clínica" : "agenda própria" %>
-            </span>
 
-            <details style="margin-top:8px">
-              <summary class="muted" style="cursor:pointer">Horários de atendimento</summary>
-              <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/horarios" style="margin-top:8px">
-                <label class="checks" style="margin-bottom:4px">
-                  <input type="checkbox" name="herdar" <%= herda ? "checked" : "" %> /> Usar o horário de funcionamento da clínica
-                </label>
-                <p class="muted" style="margin:0 0 8px">Ao editar qualquer horário abaixo, esta opção é desmarcada automaticamente (vira agenda própria).</p>
-                <table>
-                  <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th><th>Almoço de</th><th>até</th></tr></thead>
-                  <tbody>
-                    <% for (var i = 0; i < 7; i++) { var hh = dh ? dh[i] : days[i]; %>
-                      <tr>
-                        <td><%= dayNames[i] %></td>
-                        <td class="checks"><input type="checkbox" name="d<%= i %>_aberto" <%= hh ? "checked" : "" %> /></td>
-                        <td><input type="time" name="d<%= i %>_open" value="<%= hh ? hh.open : '08:00' %>" /></td>
-                        <td><input type="time" name="d<%= i %>_close" value="<%= hh ? hh.close : '18:00' %>" /></td>
-                        <td><input type="time" name="d<%= i %>_break_start" value="<%= hh && hh.breakStart ? hh.breakStart : '' %>" /></td>
-                        <td><input type="time" name="d<%= i %>_break_end" value="<%= hh && hh.breakEnd ? hh.breakEnd : '' %>" /></td>
-                      </tr>
-                    <% } %>
-                  </tbody>
-                </table>
-                <button class="btn sm" style="margin-top:8px">Salvar agenda</button>
-                <span class="muted">Depois, gere os horários novamente.</span>
-              </form>
-            </details>
+  <% if (t.doctors.length === 0) { %>
+    <div class="empty">Nenhum profissional cadastrado.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <% t.doctors.forEach(function(d){ %>
+            <tr>
+              <td>
+                <strong><%= d.name %></strong> <span class="muted"><%= d.crm || "" %></span>
+                <div style="margin-top:4px">
+                  <% d.specialties.forEach(function(s){ %><span class="pill"><%= s.name %></span><% }) %>
+                  <% d.units.forEach(function(u){ %><span class="pill">📍 <%= u.name %></span><% }) %>
+                  <% d.healthPlans.forEach(function(p){ %><span class="pill">💳 <%= p.name %></span><% }) %>
+                  <%
+                    var dh = null;
+                    if (d.workingHours) { try { dh = JSON.parse(d.workingHours); } catch (e) { dh = null; } }
+                    var herda = !dh;
+                  %>
+                  <span class="pill <%= herda ? '' : 'on' %>">🕐 <%= herda ? "horário da clínica" : "agenda própria" %></span>
+                </div>
 
-            <% if (googleEmail) { %>
-              <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/google" class="inline" style="margin-top:8px;gap:6px">
-                <input name="googleCalendarId" value="<%= d.googleCalendarId || '' %>" placeholder="Google Calendar ID (…@group.calendar.google.com)" />
-                <button class="btn sm ghost">Salvar calendário</button>
-              </form>
-            <% } %>
-          </td>
-          <td style="text-align:right">
-            <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/doctor/<%= d.id %>"><button class="btn sm danger">Excluir</button></form>
-          </td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+                <details style="margin-top:8px">
+                  <summary>Horários de atendimento</summary>
+                  <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/horarios" style="margin-top:8px">
+                    <div class="checks">
+                      <label><input type="checkbox" name="herdar" <%= herda ? "checked" : "" %> /> Usar o horário de funcionamento da clínica</label>
+                    </div>
+                    <p class="muted" style="margin:0 0 8px">Ao editar qualquer horário abaixo, esta opção é desmarcada automaticamente (vira agenda própria).</p>
+                    <div class="table-wrap">
+                      <table>
+                        <thead><tr><th>Dia</th><th>Atende</th><th>Início</th><th>Fim</th><th>Almoço de</th><th>até</th></tr></thead>
+                        <tbody>
+                          <% for (var i = 0; i < 7; i++) { var hh = dh ? dh[i] : days[i]; %>
+                            <tr>
+                              <td><%= dayNames[i] %></td>
+                              <td class="checks"><input type="checkbox" name="d<%= i %>_aberto" <%= hh ? "checked" : "" %> /></td>
+                              <td><input type="time" name="d<%= i %>_open" value="<%= hh ? hh.open : '08:00' %>" /></td>
+                              <td><input type="time" name="d<%= i %>_close" value="<%= hh ? hh.close : '18:00' %>" /></td>
+                              <td><input type="time" name="d<%= i %>_break_start" value="<%= hh && hh.breakStart ? hh.breakStart : '' %>" /></td>
+                              <td><input type="time" name="d<%= i %>_break_end" value="<%= hh && hh.breakEnd ? hh.breakEnd : '' %>" /></td>
+                            </tr>
+                          <% } %>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="row tight" style="margin-top:8px">
+                      <button class="btn sm">Salvar agenda</button>
+                      <span class="muted">Depois, gere os horários novamente.</span>
+                    </div>
+                  </form>
+                </details>
 
-  <form method="post" action="/admin/clinicas/<%= t.id %>/medicos" style="margin-top:12px">
+                <% if (googleEmail) { %>
+                  <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/google" class="inline" style="margin-top:8px;gap:6px">
+                    <input name="googleCalendarId" value="<%= d.googleCalendarId || '' %>" placeholder="Google Calendar ID (…@group.calendar.google.com)" />
+                    <button class="btn sm ghost">Salvar calendário</button>
+                  </form>
+                <% } %>
+              </td>
+              <td class="acoes" style="vertical-align:top">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/doctor/<%= d.id %>"><button class="btn sm danger">Excluir</button></form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+
+  <form method="post" action="/admin/clinicas/<%= t.id %>/medicos" style="margin-top:14px">
+    <h2>Novo profissional</h2>
     <div class="grid2">
       <label>Nome<input name="name" required /></label>
       <label>CRM<input name="crm" /></label>
     </div>
-    <fieldset>
-      <legend>Especialidades</legend>
-      <div class="checks">
-        <% t.specialties.forEach(function(s){ %>
-          <label><input type="checkbox" name="especialidades" value="<%= s.id %>" /> <%= s.name %></label>
-        <% }) %>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>Unidades</legend>
-      <div class="checks">
-        <% t.units.forEach(function(u){ %>
-          <label><input type="checkbox" name="unidades" value="<%= u.id %>" /> <%= u.name %></label>
-        <% }) %>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>Planos aceitos</legend>
-      <div class="checks">
-        <% allPlans.forEach(function(p){ %>
-          <label><input type="checkbox" name="planos" value="<%= p.id %>" /> <%= p.name %></label>
-        <% }) %>
-      </div>
-    </fieldset>
-    <button class="btn sm">Adicionar médico</button>
+    <div class="grid3">
+      <fieldset>
+        <legend>Especialidades</legend>
+        <div class="checks">
+          <% t.specialties.forEach(function(s){ %>
+            <label><input type="checkbox" name="especialidades" value="<%= s.id %>" /> <%= s.name %></label>
+          <% }) %>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Unidades</legend>
+        <div class="checks">
+          <% t.units.forEach(function(u){ %>
+            <label><input type="checkbox" name="unidades" value="<%= u.id %>" /> <%= u.name %></label>
+          <% }) %>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Planos aceitos</legend>
+        <div class="checks">
+          <% allPlans.forEach(function(p){ %>
+            <label><input type="checkbox" name="planos" value="<%= p.id %>" /> <%= p.name %></label>
+          <% }) %>
+        </div>
+      </fieldset>
+    </div>
+    <button class="btn sm" style="margin-top:8px">Adicionar profissional</button>
   </form>
 </div>
 
 <!-- ============ FÉRIAS E FERIADOS ============ -->
 <div class="card" id="bloqueios">
-  <h2>Férias, feriados e ausências</h2>
-  <p class="muted">Períodos em que não há atendimento. Pode ser da clínica inteira (feriado)
+  <div class="card-head">
+    <h2>Férias, feriados e ausências</h2>
+    <span class="muted"><%= bloqueios.length %> período<%= bloqueios.length === 1 ? "" : "s" %></span>
+  </div>
+  <p class="muted" style="margin-top:0">Períodos em que não há atendimento. Pode ser da clínica inteira (feriado)
     ou de um profissional (férias). Consultas já marcadas não são canceladas — você é avisado.</p>
 
   <% if (bloqueios.length === 0) { %>
-    <p class="muted">Nenhum bloqueio cadastrado.</p>
+    <div class="empty">Nenhum bloqueio cadastrado.</div>
   <% } else { %>
-    <table>
-      <thead><tr><th>Quem</th><th>De</th><th>Até</th><th>Motivo</th><th></th></tr></thead>
-      <tbody>
-        <% bloqueios.forEach(function(b){ %>
-          <tr>
-            <td><%= b.quem %></td>
-            <td><%= b.inicio %></td>
-            <td><%= b.fim %></td>
-            <td class="muted"><%= b.motivo %></td>
-            <td style="text-align:right">
-              <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios/<%= b.id %>/excluir">
-                <button class="btn sm danger">Remover</button>
-              </form>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quem</th><th>De</th><th>Até</th><th>Motivo</th><th></th></tr></thead>
+        <tbody>
+          <% bloqueios.forEach(function(b){ %>
+            <tr>
+              <td><%= b.quem %></td>
+              <td style="font-variant-numeric:tabular-nums"><%= b.inicio %></td>
+              <td style="font-variant-numeric:tabular-nums"><%= b.fim %></td>
+              <td class="muted"><%= b.motivo %></td>
+              <td class="acoes">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios/<%= b.id %>/excluir">
+                  <button class="btn sm danger">Remover</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 
   <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios" style="margin-top:12px">
@@ -399,102 +470,105 @@
         </select>
       </label>
       <label>Motivo (opcional)<input name="reason" placeholder="Férias, feriado, congresso…" /></label>
-    </div>
-    <div class="grid2">
       <label>Início<input type="datetime-local" name="startsAt" required /></label>
       <label>Fim<input type="datetime-local" name="endsAt" required /></label>
     </div>
-    <button class="btn sm">Adicionar bloqueio</button>
-    <span class="muted">Depois, gere os horários novamente.</span>
+    <div class="row tight" style="margin-top:10px">
+      <button class="btn sm">Adicionar bloqueio</button>
+      <span class="muted">Depois, gere os horários novamente.</span>
+    </div>
   </form>
 </div>
 
 <!-- ============ AGENDA ============ -->
 <div class="card" id="agenda">
-  <h2>Agenda</h2>
-  <p><a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">📅 Ver calendário</a></p>
+  <div class="card-head">
+    <h2>Agenda</h2>
+    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">Ver calendário</a>
+  </div>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
     <label>Gerar horários livres para os próximos<input type="number" name="days" value="7" style="max-width:90px" /> dias</label>
     <button class="btn sm">Gerar horários</button>
   </form>
-  <p class="muted">Regenera os horários LIVRES (preserva os já reservados) a partir do horário de funcionamento e dos médicos.</p>
+  <p class="muted">Regenera os horários LIVRES (preserva os já reservados) a partir do horário de funcionamento e dos profissionais.</p>
 
-  <h2>Próximos agendamentos <span class="muted">(<%= agendamentos.length %>)</span></h2>
+  <h2>Próximos agendamentos <span class="muted" style="font-weight:400">(<%= agendamentos.length %>)</span></h2>
   <% if (agendamentos.length === 0) { %>
-    <p class="muted">Nenhum agendamento futuro.</p>
+    <div class="empty">Nenhum agendamento futuro.</div>
   <% } else { %>
-    <table>
-      <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Médico</th><th>Unidade</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-        <% agendamentos.forEach(function(a){ %>
-          <tr>
-            <td><%= a.inicio %></td>
-            <td><%= a.paciente %></td>
-            <td><%= a.especialidade %></td>
-            <td><%= a.medico %></td>
-            <td><%= a.unidade %></td>
-            <td><span class="st <%= a.statusCss %>"><%= a.statusLabel %></span></td>
-            <td style="text-align:right">
-              <% if (!a.cancelado) { %>
-                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/cancelar"
-                      onsubmit="return confirm('Cancelar a consulta de <%= a.paciente %>?')">
-                  <button class="btn sm danger">Cancelar</button>
-                </form>
-              <% } %>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Profissional</th><th>Unidade</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <% agendamentos.forEach(function(a){ %>
+            <tr>
+              <td style="font-variant-numeric:tabular-nums;white-space:nowrap"><%= a.inicio %></td>
+              <td><strong><%= a.paciente %></strong></td>
+              <td class="muted"><%= a.especialidade %></td>
+              <td class="muted"><%= a.medico %></td>
+              <td class="muted"><%= a.unidade %></td>
+              <td><span class="st <%= a.statusCss %>"><%= a.statusLabel %></span></td>
+              <td class="acoes">
+                <% if (!a.cancelado) { %>
+                  <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/cancelar"
+                        onsubmit="return confirm('Cancelar a consulta de <%= a.paciente %>?')">
+                    <button class="btn sm danger">Cancelar</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 
-  <h2>Consultas passadas — marcar desfecho
-    <span class="muted">(<%= semDesfecho.length %>)</span></h2>
-  <p class="muted">Marcar o desfecho alimenta a <strong>taxa de falta</strong> nas métricas —
-    é o número que mostra o retorno do sistema para a clínica.</p>
+  <h2>Consultas passadas — marcar desfecho <span class="muted" style="font-weight:400">(<%= semDesfecho.length %>)</span></h2>
+  <p class="muted" style="margin-top:0">Marcar o desfecho alimenta a <strong>taxa de falta</strong> nas
+    <a href="/admin/clinicas/<%= t.id %>/metricas">métricas</a> — é o número que mostra o retorno do sistema para a clínica.</p>
   <% if (semDesfecho.length === 0) { %>
-    <p class="muted">Nenhuma consulta pendente de marcação.</p>
+    <div class="empty">Nenhuma consulta pendente de marcação.</div>
   <% } else { %>
-    <table>
-      <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Profissional</th><th></th></tr></thead>
-      <tbody>
-        <% semDesfecho.forEach(function(a){ %>
-          <tr>
-            <td><%= a.inicio %></td>
-            <td><%= a.paciente %></td>
-            <td><%= a.especialidade %></td>
-            <td><%= a.medico %></td>
-            <td>
-              <div class="inline" style="gap:6px;justify-content:flex-end">
-                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
-                  <input type="hidden" name="compareceu" value="1" />
-                  <button class="btn sm ghost">Compareceu</button>
-                </form>
-                <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
-                  <input type="hidden" name="compareceu" value="0" />
-                  <button class="btn sm danger">Faltou</button>
-                </form>
-              </div>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quando</th><th>Paciente</th><th>Especialidade</th><th>Profissional</th><th></th></tr></thead>
+        <tbody>
+          <% semDesfecho.forEach(function(a){ %>
+            <tr>
+              <td style="font-variant-numeric:tabular-nums;white-space:nowrap"><%= a.inicio %></td>
+              <td><strong><%= a.paciente %></strong></td>
+              <td class="muted"><%= a.especialidade %></td>
+              <td class="muted"><%= a.medico %></td>
+              <td class="acoes">
+                <div class="inline" style="gap:6px">
+                  <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                    <input type="hidden" name="compareceu" value="1" />
+                    <button class="btn sm ghost">Compareceu</button>
+                  </form>
+                  <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                    <input type="hidden" name="compareceu" value="0" />
+                    <button class="btn sm danger">Faltou</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 
   <h2>Novo agendamento (manual)</h2>
-  <p class="muted">Para encaixes feitos por telefone ou na recepção. Cria o paciente e o horário se ainda não existirem.</p>
+  <p class="muted" style="margin-top:0">Para encaixes feitos por telefone ou na recepção. Cria o paciente e o horário se ainda não existirem.</p>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos">
     <div class="grid2">
       <label>Data e hora<input type="datetime-local" name="startsAt" required /></label>
       <label>Paciente<input name="nome" required placeholder="Nome completo" /></label>
-    </div>
-    <div class="grid2">
       <label>CPF<input name="cpf" required placeholder="000.000.000-00" /></label>
       <label>Telefone (opcional)<input name="telefone" placeholder="+5551999999999" /></label>
     </div>
     <div class="grid2">
-      <label>Dentista
+      <label>Profissional
         <select name="doctorId" required>
           <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
         </select>
@@ -504,8 +578,6 @@
           <% t.specialties.forEach(function(s){ %><option value="<%= s.id %>"><%= s.name %></option><% }) %>
         </select>
       </label>
-    </div>
-    <div class="grid2">
       <label>Unidade
         <select name="unitId" required>
           <% t.units.forEach(function(u){ %><option value="<%= u.id %>"><%= u.name %></option><% }) %>
@@ -518,40 +590,46 @@
         </select>
       </label>
     </div>
-    <button class="btn sm">Criar agendamento</button>
+    <button class="btn sm" style="margin-top:10px">Criar agendamento</button>
   </form>
 </div>
 
 <!-- ============ CONVERSAS ============ -->
 <div class="card" id="ferramentas">
-  <h2>Conversas (memória do agente)</h2>
-  <p class="muted">Cada conversa guarda o histórico por telefone. "Reiniciar" apaga a memória — o próximo "oi" daquele número começa do zero (útil para testar).</p>
+  <div class="card-head">
+    <h2>Conversas (memória do agente)</h2>
+    <span class="muted"><%= conversas ? conversas.length : 0 %> registrada<%= conversas && conversas.length === 1 ? "" : "s" %></span>
+  </div>
+  <p class="muted" style="margin-top:0">Cada conversa guarda o histórico por telefone. "Reiniciar" apaga a memória — o próximo "oi" daquele número começa do zero (útil para testar).</p>
   <% if (!conversas || conversas.length === 0) { %>
-    <p class="muted">Nenhuma conversa ainda.</p>
+    <div class="empty">Nenhuma conversa ainda.</div>
   <% } else { %>
-    <table>
-      <thead><tr><th>Telefone</th><th>Última mensagem</th><th></th></tr></thead>
-      <tbody>
-        <% conversas.forEach(function(c){ %>
-          <tr>
-            <td><%= c.patientPhone %></td>
-            <td class="muted"><%= new Date(c.lastMessageAt).toLocaleString("pt-BR") %></td>
-            <td style="text-align:right">
-              <form method="post" action="/admin/clinicas/<%= t.id %>/conversa/reiniciar">
-                <input type="hidden" name="phone" value="<%= c.patientPhone %>" />
-                <button class="btn sm ghost">Reiniciar</button>
-              </form>
-            </td>
-          </tr>
-        <% }) %>
-      </tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Telefone</th><th>Última mensagem</th><th></th></tr></thead>
+        <tbody>
+          <% conversas.forEach(function(c){ %>
+            <tr>
+              <td style="font-variant-numeric:tabular-nums"><%= c.patientPhone %></td>
+              <td class="muted"><%= new Date(c.lastMessageAt).toLocaleString("pt-BR") %></td>
+              <td class="acoes">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/conversa/reiniciar">
+                  <input type="hidden" name="phone" value="<%= c.patientPhone %>" />
+                  <button class="btn sm ghost">Reiniciar</button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
   <% } %>
 </div>
+
 <script>
-  // Editar a agenda de um profissional desmarca "usar o horário da clínica" —
-  // senão o formulário salvaria null e a edição seria perdida.
   document.addEventListener("DOMContentLoaded", function () {
+    // Editar a agenda de um profissional desmarca "usar o horário da clínica" —
+    // senão o formulário salvaria null e a edição seria perdida.
     document.querySelectorAll('form[action$="/horarios"]').forEach(function (form) {
       var herdar = form.querySelector('input[name="herdar"]');
       if (!herdar) return;
@@ -563,6 +641,29 @@
           });
         });
     });
+
+    // Abas: marca a seção visível enquanto a página rola.
+    var abas = Array.prototype.slice.call(document.querySelectorAll(".tabs a[href^='#']"));
+    var secoes = abas
+      .map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); })
+      .filter(Boolean);
+    if (!secoes.length || !("IntersectionObserver" in window)) return;
+
+    var visiveis = new Set();
+    var obs = new IntersectionObserver(
+      function (entradas) {
+        entradas.forEach(function (e) {
+          if (e.isIntersecting) visiveis.add(e.target.id);
+          else visiveis.delete(e.target.id);
+        });
+        var ativa = secoes.filter(function (s) { return visiveis.has(s.id); })[0];
+        abas.forEach(function (a) {
+          a.classList.toggle("on", !!ativa && a.getAttribute("href") === "#" + ativa.id);
+        });
+      },
+      { rootMargin: "-96px 0px -60% 0px" },
+    );
+    secoes.forEach(function (s) { obs.observe(s); });
   });
 </script>
 <%- include('partials/footer') %>

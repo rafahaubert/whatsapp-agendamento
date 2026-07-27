@@ -1,23 +1,27 @@
-<%- include('partials/header') %>
-<p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
-<div class="row between" style="flex-wrap:wrap;gap:10px">
-  <h1>Caixa de entrada</h1>
-  <span class="muted">A recepção assume a conversa; enquanto isso o bot fica em silêncio.</span>
+<%- include('partials/header', { tituloPagina: "Caixa de entrada" }) %>
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
+    <h1>Caixa de entrada</h1>
+  </div>
+  <span class="muted" style="max-width:340px;text-align:right">
+    A recepção assume a conversa; enquanto isso o bot fica em silêncio.
+  </span>
 </div>
 <% if (msg) { %><p class="ok"><%= msg %></p><% } %>
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
 <div class="inbox">
   <!-- Lista de conversas -->
-  <div class="card" style="padding:8px">
+  <div class="card conv-lista">
     <% if (conversas.length === 0) { %>
-      <p class="muted" style="padding:10px">Nenhuma conversa ainda.</p>
+      <div class="empty">Nenhuma conversa ainda.</div>
     <% } %>
     <% conversas.forEach(function(c){ %>
       <a class="conv <%= c.telefone === telefone ? 'sel' : '' %>"
          href="/admin/clinicas/<%= t.id %>/inbox?telefone=<%= encodeURIComponent(c.telefone) %>">
         <div class="conv-topo">
-          <strong><%= c.telefone %></strong>
+          <strong style="font-variant-numeric:tabular-nums"><%= c.telefone %></strong>
           <span class="conv-hora"><%= c.ultimaEmTexto %></span>
         </div>
         <div class="conv-baixo">
@@ -32,28 +36,28 @@
   <!-- Conversa selecionada -->
   <div class="card">
     <% if (!telefone) { %>
-      <p class="muted">Selecione uma conversa ao lado.</p>
+      <div class="empty">Selecione uma conversa ao lado.</div>
     <% } else { %>
-      <div class="row between" style="flex-wrap:wrap;gap:8px">
-        <h2 style="margin:0"><%= telefone %></h2>
+      <div class="card-head">
+        <h2 style="font-variant-numeric:tabular-nums;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink)"><%= telefone %></h2>
         <form method="post" action="/admin/clinicas/<%= t.id %>/inbox/handoff">
           <input type="hidden" name="telefone" value="<%= telefone %>" />
           <input type="hidden" name="ativar" value="<%= atual && atual.aguardando ? '' : 'on' %>" />
-          <button class="btn sm <%= atual && atual.aguardando ? 'ghost' : 'danger' %>">
+          <button class="btn sm <%= atual && atual.aguardando ? 'ghost' : '' %>">
             <%= atual && atual.aguardando ? "Devolver ao bot" : "Assumir conversa" %>
           </button>
         </form>
       </div>
 
       <% if (atual && !atual.janelaAberta) { %>
-        <p class="erro" style="margin-top:10px">
+        <p class="erro">
           Passaram mais de 24h desde a última mensagem do paciente — a Meta bloqueia respostas livres.
           Só é possível retomar por template aprovado.
         </p>
       <% } %>
 
       <div class="thread">
-        <% if (thread.length === 0) { %><p class="muted">Sem mensagens registradas.</p><% } %>
+        <% if (thread.length === 0) { %><p class="muted" style="margin:auto">Sem mensagens registradas.</p><% } %>
         <% thread.forEach(function(m){ %>
           <div class="bolha <%= m.entrada ? 'in' : 'out' %>">
             <div class="txt"><%= m.texto %></div>

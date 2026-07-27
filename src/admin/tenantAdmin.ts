@@ -330,10 +330,14 @@ export async function listAppointmentsRange(
     take: 1000,
   });
 
-  const cor = (status: string) => {
-    if (status === AppointmentStatus.CANCELLED) return "#9aa5ab";
-    if (status === AppointmentStatus.NO_SHOW) return "#c0392b";
-    return "#128c7e";
+  // A cor vem de uma classe CSS (não de um hex fixo) para o evento acompanhar o
+  // tema claro/escuro do painel — os tokens vivem em views/admin/partials/head.ejs.
+  const classe = (status: string) => {
+    if (status === AppointmentStatus.CANCELLED) return "ev-cancelado";
+    if (status === AppointmentStatus.NO_SHOW) return "ev-faltou";
+    if (status === AppointmentStatus.CONFIRMED) return "ev-confirmado";
+    if (status === AppointmentStatus.RESCHEDULED) return "ev-remarcado";
+    return "ev-agendado";
   };
 
   return appts.map((a) => ({
@@ -341,7 +345,7 @@ export async function listAppointmentsRange(
     title: `${a.patient.name} · ${a.specialty.name}`,
     start: a.slot.startsAt.toISOString(),
     end: a.slot.endsAt.toISOString(),
-    color: cor(a.status),
+    classNames: [classe(a.status)],
     extendedProps: {
       medico: a.doctor.name,
       unidade: a.unit.name,

@@ -17,6 +17,15 @@ const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.resolve(process.cwd(), "views"));
 
+// Estáticos do painel (logos da marca, favicon). São imutáveis na prática —
+// vale um cache longo para não repetir download a cada navegação.
+app.use(
+  express.static(path.resolve(process.cwd(), "public"), {
+    maxAge: "7d",
+    index: false,
+  }),
+);
+
 // Webhook: precisa do corpo CRU (Buffer) para validar a assinatura HMAC.
 app.use(
   express.json({

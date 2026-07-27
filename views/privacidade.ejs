@@ -1,9 +1,17 @@
 <!doctype html>
 <html lang="pt-BR">
-<%- include('admin/partials/head') %>
+<%- include('admin/partials/head', { tituloPagina: "Política de Privacidade" }) %>
 <body>
+  <header class="topbar">
+    <span class="brand"><%- include('admin/partials/marca', { marcaVariante: "topo" }) %></span>
+  </header>
   <main class="container" style="max-width:760px">
-    <h1>Política de Privacidade</h1>
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">Documento público</p>
+        <h1>Política de Privacidade</h1>
+      </div>
+    </div>
     <p class="muted">
       Modelo base para o assistente de agendamento por WhatsApp. Revise e adapte
       com os dados e o jurídico da sua clínica antes do uso em produção.

@@ -1,4 +1,4 @@
-<%- include('partials/header') %>
+<%- include('partials/header', { tituloPagina: "Calendário" }) %>
 <%
   var days = cfg.businessHours.days || {};
   var abertos = Object.keys(days).filter(function(k){ return days[k]; });
@@ -11,12 +11,15 @@
   function menos1h(hhmm){ var h = parseInt(hhmm.split(":")[0], 10) - 1; return pad(h < 0 ? 0 : h) + ":00:00"; }
   function mais1h(hhmm){ var h = parseInt(hhmm.split(":")[0], 10) + 1; return (h >= 24 ? "24" : pad(h)) + ":00:00"; }
 %>
-<p><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
-<div class="row between" style="flex-wrap:wrap;gap:10px">
-  <h1>Calendário</h1>
-  <div class="row" style="gap:10px;flex-wrap:wrap">
-    <label style="margin:0;display:flex;align-items:center;gap:8px">Dentista
-      <select id="doctorFilter" style="width:auto">
+<div class="page-head">
+  <div>
+    <p class="eyebrow"><a href="/admin/clinicas/<%= t.id %>">← <%= t.name %></a></p>
+    <h1>Calendário</h1>
+  </div>
+  <!-- Uma linha de filtros acima de tudo que ela alcança. -->
+  <div class="row tight">
+    <label style="margin:0;display:flex;align-items:center;gap:7px;white-space:nowrap">Profissional
+      <select id="doctorFilter" style="width:auto;margin-top:0">
         <option value="">Todos</option>
         <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
       </select>
@@ -25,9 +28,19 @@
   </div>
 </div>
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
-<p class="muted">Clique num espaço livre para agendar · clique num agendamento para ver/cancelar · arraste para mudar o horário.</p>
 
-<div class="card"><div id="calendar"></div></div>
+<div class="card">
+  <div class="card-head">
+    <span class="muted">Clique num espaço livre para agendar · clique num agendamento para ver ou cancelar · arraste para mudar o horário.</span>
+    <span class="legend">
+      <span><i style="background:var(--info)"></i>agendado</span>
+      <span><i style="background:var(--ok)"></i>confirmado</span>
+      <span><i style="background:var(--muted)"></i>cancelado</span>
+      <span><i style="background:var(--danger)"></i>faltou</span>
+    </span>
+  </div>
+  <div id="calendar"></div>
+</div>
 
 <!-- Modal: novo agendamento -->
 <dialog id="dlgNovo">
@@ -41,7 +54,7 @@
     </div>
     <label>Telefone (opcional)<input name="telefone" placeholder="+5551999999999" /></label>
     <div class="grid2">
-      <label>Dentista
+      <label>Profissional
         <select name="doctorId" required>
           <% t.doctors.forEach(function(d){ %><option value="<%= d.id %>"><%= d.name %></option><% }) %>
         </select>
@@ -166,7 +179,7 @@
         var p = arg.event.extendedProps || {};
         var quando = arg.event.start ? arg.event.start.toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" }) : "";
         document.getElementById("infoTexto").textContent =
-          arg.event.title + "\n" + quando + "\nDentista: " + (p.medico || "") + "\nUnidade: " + (p.unidade || "") + "\nStatus: " + (p.status || "");
+          arg.event.title + "\n" + quando + "\nProfissional: " + (p.medico || "") + "\nUnidade: " + (p.unidade || "") + "\nStatus: " + (p.status || "");
         document.getElementById("formCancelar").action =
           "/admin/clinicas/" + clinicaId + "/agendamentos/" + arg.event.id + "/cancelar";
         dlgInfo.showModal();
