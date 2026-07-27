@@ -5,7 +5,7 @@
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
 import { AppointmentStatus, statusUI } from "../shared/enums.js";
-import { formatDateTime } from "../shared/datetime.js";
+import { formatDateTime, formatarHoraCurta } from "../shared/datetime.js";
 import type { TenantConfig } from "../config/types.js";
 
 /** Config padrão ao criar uma clínica nova. */
@@ -234,7 +234,7 @@ export async function resetConversation(tenantId: string, phone: string) {
 // ---------- Caixa de entrada (transbordo humano) ----------
 
 /** Conversas para o inbox: pendentes de atendimento humano primeiro. */
-export async function listInbox(tenantId: string) {
+export async function listInbox(tenantId: string, timezone: string) {
   const convs = await prisma.conversation.findMany({
     where: { tenantId },
     orderBy: [{ humanHandoff: "desc" }, { lastMessageAt: "desc" }],
@@ -257,6 +257,7 @@ export async function listInbox(tenantId: string) {
     telefone: c.patientPhone,
     aguardando: c.humanHandoff,
     ultimaEm: c.lastMessageAt,
+    ultimaEmTexto: formatarHoraCurta(c.lastMessageAt, timezone),
     previa: ultimas[i]?.text?.slice(0, 90) ?? "",
     ultimaDirecao: ultimas[i]?.direction ?? "",
     /** A Meta só permite resposta livre até 24h após a última mensagem do paciente. */
@@ -269,7 +270,7 @@ export async function countPendentes(tenantId: string): Promise<number> {
 }
 
 /** Histórico legível de uma conversa. */
-export async function listThread(tenantId: string, phone: string) {
+export async function listThread(tenantId: string, phone: string, timezone: string) {
   const msgs = await prisma.message.findMany({
     where: { tenantId, phone },
     orderBy: { createdAt: "asc" },
@@ -281,6 +282,7 @@ export async function listThread(tenantId: string, phone: string) {
     entrada: m.direction === "IN",
     autor: m.sentBy,
     quando: m.createdAt,
+    quandoTexto: formatarHoraCurta(m.createdAt, timezone),
   }));
 }
 

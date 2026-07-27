@@ -327,8 +327,8 @@ export function makeAdminRouter(): Router {
 
     const telefone = req.query.telefone ? String(req.query.telefone) : null;
     const [conversas, thread] = await Promise.all([
-      listInbox(t.id),
-      telefone ? listThread(t.id, telefone) : Promise.resolve([]),
+      listInbox(t.id, t.timezone),
+      telefone ? listThread(t.id, telefone, t.timezone) : Promise.resolve([]),
     ]);
     const atual = telefone ? conversas.find((c) => c.telefone === telefone) ?? null : null;
 
