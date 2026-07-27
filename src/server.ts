@@ -5,6 +5,7 @@ import { env } from "./config/env.js";
 import { makeWhatsAppRouter } from "./channels/whatsapp/webhook.js";
 import { conversationEngine } from "./core/engine.js";
 import { makeAdminRouter } from "./admin/router.js";
+import { carregarProposta } from "./marketing/proposta.js";
 import { enviarLembretes } from "./jobs/reminders.js";
 import { renovarAgendas } from "./jobs/agenda.js";
 import { enviarReativacoes } from "./jobs/recall.js";
@@ -49,6 +50,16 @@ app.get("/", (_req, res) => res.redirect("/admin"));
 // Política de privacidade (URL exigida para publicar o app na Meta).
 app.get("/privacidade", (_req, res) => res.render("privacidade"));
 
+// Proposta comercial, para mandar a potenciais clientes.
+app.get("/proposta", async (_req, res) => {
+  try {
+    res.type("html").send(await carregarProposta());
+  } catch (err) {
+    logger.error({ err }, "falha ao servir a proposta");
+    res.sendStatus(404);
+  }
+});
+
 // Canal WhatsApp → motor de conversa (Claude + ferramentas).
 app.use("/webhook/whatsapp", makeWhatsAppRouter(conversationEngine));
 
@@ -77,7 +88,10 @@ app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
 });
 
 app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp" }, "servidor no ar");
+  logger.info(
+    { port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp", proposta: "/proposta" },
+    "servidor no ar",
+  );
 
   // Verificação periódica dos lembretes (a cada 10 min) enquanto o processo vive.
   setInterval(

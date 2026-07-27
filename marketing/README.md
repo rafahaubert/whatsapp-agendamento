@@ -5,6 +5,19 @@
 | [`proposta-clinicas.html`](proposta-clinicas.html) | Página de uma só rolagem para mandar ao cliente: prints das conversas, calculadora de agenda ociosa, painel, perguntas e proposta. |
 | [`mensagens-prospeccao.md`](mensagens-prospeccao.md) | Mensagens prontas de primeiro contato, follow-up e respostas a objeções. |
 
+## Link para mandar ao cliente
+
+O próprio servidor publica a proposta em **`/proposta`** (ex.: `https://SEU-APP.onrender.com/proposta`).
+É o link que vale mandar: domínio seu, sem tela de acesso e sem a tarja de "conteúdo não
+verificado" que a hospedagem de artifacts coloca em volta.
+
+A rota lê este arquivo em tempo de execução e o envolve no `<!doctype>`/`<head>` que falta
+(ver `src/marketing/proposta.ts`) — sem isso o navegador cairia em modo quirks e a página
+abriria reduzida no celular. Editou o HTML? Basta um novo deploy; não há build separado.
+
+A rota é pública: quem tiver a URL vê os valores. Se quiser discrição, troque o caminho em
+`src/server.ts` por algo não óbvio.
+
 ## Valores e contato
 
 Já preenchidos: implantação **R$ 500**, mensalidade **R$ 990/mês**, contato
