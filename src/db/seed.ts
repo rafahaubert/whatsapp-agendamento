@@ -3,7 +3,7 @@ import path from "node:path";
 import { DateTime } from "luxon";
 import type { PrismaClient } from "@prisma/client";
 import type { ClinicFile, TenantConfig } from "../config/types.js";
-import { SlotStatus } from "../shared/enums.js";
+import { AppointmentStatus, SlotStatus } from "../shared/enums.js";
 import { minutosDoDia, noIntervalo } from "../domain/horarios.js";
 
 // As regras puras de horário vivem em src/domain/horarios.ts (para o system
@@ -46,6 +46,24 @@ export function estaBloqueado(
   );
 }
 
+export interface Ocupacao {
+  doctorId: string;
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/** O profissional já tem consulta ATIVA nesse horário? */
+export function estaOcupado(
+  inicio: Date,
+  fim: Date,
+  doctorId: string,
+  ocupacoes: Ocupacao[],
+): boolean {
+  return ocupacoes.some(
+    (o) => o.doctorId === doctorId && inicio < o.endsAt && fim > o.startsAt,
+  );
+}
+
 type SlotRow = {
   tenantId: string;
   unitId: string;
@@ -67,7 +85,17 @@ export async function regenerateSlots(
 ): Promise<number> {
   const { tenantId, timezone, config, slotDays } = params;
 
-  await prisma.slot.deleteMany({ where: { tenantId, status: SlotStatus.AVAILABLE } });
+  // Um slot preso a um agendamento não pode ser apagado (a FK
+  // appointments.slotId é RESTRICT) — era isso que derrubava a renovação
+  // inteira da agenda depois de um cancelamento. Marca como ocupado (o horário
+  // volta livre no slot novo gerado abaixo) e só apaga os slots realmente soltos.
+  await prisma.slot.updateMany({
+    where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { isNot: null } },
+    data: { status: SlotStatus.BOOKED },
+  });
+  await prisma.slot.deleteMany({
+    where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { is: null } },
+  });
 
   const doctors = await prisma.doctor.findMany({
     where: { tenantId, isActive: true },
@@ -75,6 +103,18 @@ export async function regenerateSlots(
   });
 
   const now = DateTime.now().setZone(timezone);
+
+  // Consultas ativas: o horário delas não pode voltar como slot livre, senão a
+  // renovação diária ofereceria de novo um horário já ocupado.
+  const consultas = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      status: { not: AppointmentStatus.CANCELLED },
+      slot: { endsAt: { gte: now.toJSDate() } },
+    },
+    select: { slot: { select: { doctorId: true, startsAt: true, endsAt: true } } },
+  });
+  const ocupacoes: Ocupacao[] = consultas.map((c) => c.slot);
 
   // Férias/feriados que alcançam a janela sendo gerada.
   const bloqueios = await prisma.block.findMany({
@@ -118,7 +158,8 @@ export async function regenerateSlots(
             const valido =
               cursor > now &&
               !noIntervalo(inicioMin, fimMin, hours) &&
-              !estaBloqueado(cursor.toJSDate(), fim.toJSDate(), doctor.id, bloqueios);
+              !estaBloqueado(cursor.toJSDate(), fim.toJSDate(), doctor.id, bloqueios) &&
+              !estaOcupado(cursor.toJSDate(), fim.toJSDate(), doctor.id, ocupacoes);
 
             if (valido) {
               rows.push({

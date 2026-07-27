@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { minutosDoDia, noIntervalo, estaBloqueado } from "../../src/db/seed.js";
+import { minutosDoDia, noIntervalo, estaBloqueado, estaOcupado } from "../../src/db/seed.js";
 
 describe("minutosDoDia", () => {
   it("converte HH:MM em minutos", () => {
@@ -61,5 +61,31 @@ describe("estaBloqueado (férias e feriados)", () => {
 
   it("sem bloqueios, nada é barrado", () => {
     expect(estaBloqueado(d("2026-08-05T10:00:00Z"), d("2026-08-05T10:30:00Z"), "dr1", [])).toBe(false);
+  });
+});
+
+describe("estaOcupado (consultas já marcadas)", () => {
+  const d = (iso: string) => new Date(iso);
+  const consulta = {
+    doctorId: "dr1",
+    startsAt: d("2026-08-05T13:00:00Z"),
+    endsAt: d("2026-08-05T13:30:00Z"),
+  };
+
+  it("barra o horário exato da consulta", () => {
+    expect(estaOcupado(d("2026-08-05T13:00:00Z"), d("2026-08-05T13:30:00Z"), "dr1", [consulta])).toBe(true);
+  });
+
+  it("barra qualquer sobreposição (consulta fora da grade)", () => {
+    expect(estaOcupado(d("2026-08-05T12:45:00Z"), d("2026-08-05T13:15:00Z"), "dr1", [consulta])).toBe(true);
+  });
+
+  it("não barra outro profissional no mesmo horário", () => {
+    expect(estaOcupado(d("2026-08-05T13:00:00Z"), d("2026-08-05T13:30:00Z"), "dr2", [consulta])).toBe(false);
+  });
+
+  it("horários encostados (fim = início) continuam livres", () => {
+    expect(estaOcupado(d("2026-08-05T12:30:00Z"), d("2026-08-05T13:00:00Z"), "dr1", [consulta])).toBe(false);
+    expect(estaOcupado(d("2026-08-05T13:30:00Z"), d("2026-08-05T14:00:00Z"), "dr1", [consulta])).toBe(false);
   });
 });
