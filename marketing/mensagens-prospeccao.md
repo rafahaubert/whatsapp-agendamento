@@ -3,8 +3,8 @@
 Material de apoio para enviar junto com a página
 [`proposta-clinicas.html`](proposta-clinicas.html).
 
-**Antes do primeiro envio, preencha na página:** telefone/link do WhatsApp, valor de
-implantação, valor da mensalidade e o prazo do agente de teste (procure por `[EDITE`).
+A página já está com os três planos, a implantação e o contato preenchidos. Para trocar
+qualquer valor, procure por `[EDITE` no HTML.
 
 ---
 
