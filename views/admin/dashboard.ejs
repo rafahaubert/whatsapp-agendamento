@@ -1,24 +1,31 @@
-<%- include('partials/header') %>
-<div class="row between">
-  <h1>Clínicas</h1>
+<%- include('partials/header', { tituloPagina: "Clínicas" }) %>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Painel</p>
+    <h1>Clínicas <span class="muted" style="font-weight:400">(<%= clinicas.length %>)</span></h1>
+  </div>
   <a class="btn" href="/admin/clinicas/nova">+ Nova clínica</a>
 </div>
 <% if (msg) { %><p class="ok"><%= msg %></p><% } %>
 
 <% if (clinicas.length === 0) { %>
-  <div class="card"><p class="muted">Nenhuma clínica ainda. Crie a primeira ou rode <code>npm run seed</code>.</p></div>
+  <div class="empty">
+    Nenhuma clínica ainda. Crie a primeira ou rode <code>npm run seed</code>.
+  </div>
 <% } else { %>
   <div class="cards">
     <% clinicas.forEach(function(c){ %>
       <a class="card" href="/admin/clinicas/<%= c.id %>">
-        <div class="row between">
-          <strong style="font-size:16px;color:var(--ink)"><%= c.name %></strong>
+        <div class="row between" style="gap:8px;flex-wrap:nowrap">
+          <strong style="font-size:15px;color:var(--ink);line-height:1.3"><%= c.name %></strong>
           <span class="badge <%= c.isActive ? 'on' : 'off' %>"><%= c.isActive ? 'Ativa' : 'Inativa' %></span>
         </div>
         <div class="muted" style="margin-top:2px"><%= c.slug %></div>
-        <div class="muted" style="margin-top:8px">📱 <%= c.whatsappPhoneNumberId %></div>
+        <div class="muted" style="margin-top:6px;font-variant-numeric:tabular-nums">
+          WhatsApp · <%= c.whatsappPhoneNumberId %>
+        </div>
         <div class="stat">
-          <div><b><%= c._count.doctors %></b><span>médicos</span></div>
+          <div><b><%= c._count.doctors %></b><span>profissionais</span></div>
           <div><b><%= c._count.slots %></b><span>horários</span></div>
         </div>
       </a>

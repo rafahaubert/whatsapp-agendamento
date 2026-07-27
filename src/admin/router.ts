@@ -200,11 +200,13 @@ export function makeAdminRouter(): Router {
   // ----- Daqui em diante, exige autenticação -----
   router.use(requireAuth);
 
-  // Disponibiliza o usuário logado para todas as views (menu, permissões).
+  // Disponibiliza o usuário logado para todas as views (menu, permissões) e o
+  // caminho atual (usado para marcar o item ativo na navegação do topo).
   router.use((req: Request, res: Response, next) => {
     const u = usuarioAtual(req);
     res.locals.usuario = u;
     res.locals.ehSuper = ehSuper(req);
+    res.locals.caminhoAtual = req.baseUrl + req.path;
     next();
   });
 
