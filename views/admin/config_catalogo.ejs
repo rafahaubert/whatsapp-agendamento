@@ -1,0 +1,136 @@
+<%- include('partials/header', { tituloPagina: "Unidades, especialidades e convênios" }) %>
+<% const allPlans = t.insurers.flatMap(function(i){ return i.plans; }); %>
+
+<div class="page-head">
+  <div>
+    <h1>Unidades, especialidades e convênios</h1>
+    <p class="muted" style="margin:4px 0 0">O catálogo que o agente oferece ao paciente.</p>
+  </div>
+</div>
+
+<% if (msg) { %><p class="ok"><%= msg %></p><% } %>
+<% if (erro) { %><p class="erro"><%= erro %></p><% } %>
+
+<div class="card" id="unidades">
+  <div class="card-head">
+    <h2>Unidades</h2>
+    <span class="muted"><%= t.units.length %> cadastrada<%= t.units.length === 1 ? "" : "s" %></span>
+  </div>
+  <% if (t.units.length === 0) { %>
+    <div class="empty">Nenhuma unidade cadastrada.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table><tbody>
+        <% t.units.forEach(function(u){ %>
+          <tr>
+            <td><strong><%= u.name %></strong><% if (u.address) { %><br /><span class="muted"><%= u.address %></span><% } %></td>
+            <td class="acoes">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/unit/<%= u.id %>"><button class="btn sm danger">Excluir</button></form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody></table>
+    </div>
+  <% } %>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/unidades" class="inline" style="margin-top:12px">
+    <label>Nome<input name="name" required /></label>
+    <label>Endereço<input name="address" /></label>
+    <label>Telefone<input name="phone" /></label>
+    <button class="btn sm">Adicionar</button>
+  </form>
+</div>
+
+<div class="card" id="especialidades">
+  <div class="card-head">
+    <h2>Especialidades</h2>
+    <span class="muted"><%= t.specialties.length %> cadastrada<%= t.specialties.length === 1 ? "" : "s" %></span>
+  </div>
+  <p class="muted" style="margin-top:0">O valor particular é o que o agente informa quando o paciente pergunta o preço (deixe vazio se preferir informar só na recepção).</p>
+  <% if (t.specialties.length === 0) { %>
+    <div class="empty">Nenhuma especialidade cadastrada.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Especialidade</th><th>Valor particular</th><th></th></tr></thead>
+        <tbody>
+          <% t.specialties.forEach(function(s){ %>
+            <tr>
+              <td><%= s.name %></td>
+              <td>
+                <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades/<%= s.id %>/preco" class="inline" style="gap:6px">
+                  <input name="preco" value="<%= s.priceParticular || '' %>" placeholder="ex.: 150,00" style="max-width:140px" />
+                  <button class="btn sm ghost">Salvar</button>
+                </form>
+              </td>
+              <td class="acoes">
+                <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/specialty/<%= s.id %>"><button class="btn sm danger">Excluir</button></form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/especialidades" class="inline" style="margin-top:12px">
+    <label>Nova especialidade<input name="name" required /></label>
+    <label>Valor particular (opcional)<input name="preco" placeholder="ex.: 150,00" /></label>
+    <button class="btn sm">Adicionar</button>
+  </form>
+</div>
+
+<div class="card" id="convenios">
+  <div class="card-head">
+    <h2>Convênios e planos</h2>
+    <span class="muted"><%= t.insurers.length %> convênio<%= t.insurers.length === 1 ? "" : "s" %> · <%= allPlans.length %> plano<%= allPlans.length === 1 ? "" : "s" %></span>
+  </div>
+  <% if (t.insurers.length === 0) { %>
+    <div class="empty">Nenhum convênio cadastrado.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table><tbody>
+        <% t.insurers.forEach(function(ins){ %>
+          <tr>
+            <td>
+              <strong><%= ins.name %></strong>
+              <div style="margin-top:4px">
+                <% if (ins.plans.length === 0) { %><span class="muted">sem planos</span><% } %>
+                <% ins.plans.forEach(function(p){ %>
+                  <span class="pill"><%= p.name %>
+                    <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/healthPlan/<%= p.id %>" style="display:inline">
+                      <button class="link" title="Remover plano">×</button>
+                    </form>
+                  </span>
+                <% }) %>
+              </div>
+            </td>
+            <td class="acoes">
+              <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/insurer/<%= ins.id %>">
+                <button class="btn sm danger">Excluir</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody></table>
+    </div>
+  <% } %>
+  <div class="grid2" style="margin-top:12px">
+    <form method="post" action="/admin/clinicas/<%= t.id %>/convenios" class="inline">
+      <label>Novo convênio<input name="name" required /></label>
+      <label>Código ANS<input name="code" /></label>
+      <button class="btn sm">Adicionar convênio</button>
+    </form>
+    <% if (t.insurers.length) { %>
+      <form method="post" action="/admin/clinicas/<%= t.id %>/planos" class="inline">
+        <label>Plano em
+          <select name="insurerId">
+            <% t.insurers.forEach(function(ins){ %><option value="<%= ins.id %>"><%= ins.name %></option><% }) %>
+          </select>
+        </label>
+        <label>Nome do plano<input name="name" required /></label>
+        <button class="btn sm">Adicionar plano</button>
+      </form>
+    <% } %>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

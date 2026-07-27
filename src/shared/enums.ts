@@ -44,3 +44,11 @@ const STATUS_UI: Record<string, { label: string; css: string }> = {
 export function statusUI(status: string): { label: string; css: string } {
   return STATUS_UI[status] ?? { label: status, css: "st-cancelado" };
 }
+
+/**
+ * Papel do usuário do painel. Mora aqui, e não em admin/auth, porque a regra de
+ * permissão precisa dele sem arrastar junto a configuração de ambiente e o
+ * cliente do banco que o módulo de autenticação carrega.
+ */
+export const Role = { SUPER: "SUPER", CLINIC: "CLINIC" } as const;
+export type Role = (typeof Role)[keyof typeof Role];

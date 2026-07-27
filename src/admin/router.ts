@@ -15,6 +15,7 @@ import {
   registrarFalha,
   limparTentativas,
 } from "./auth.js";
+import { podeGerenciarUsuarioDaClinica } from "./permissoes.js";
 import {
   listTenants,
   getTenant,
@@ -46,6 +47,9 @@ import {
   removeBlock,
   listUsers,
   createUser,
+  listUsersByTenant,
+  createTenantUser,
+  findAdminUser,
   setUserActive,
   setUserPassword,
   deleteUser,
@@ -62,6 +66,7 @@ import {
   marcarComparecimento,
 } from "../domain/scheduling.js";
 import { calcularMetricas } from "./metrics.js";
+import { parseConfig, blocosDoCorpo } from "./configForm.js";
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
@@ -89,70 +94,21 @@ function slugify(s: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseConfig(body: any, timezone: string): TenantConfig {
-  const days: TenantConfig["businessHours"]["days"] = {};
-  for (let i = 0; i < 7; i++) {
-    if (!bool(body[`day_${i}_aberto`])) {
-      days[i] = null;
-      continue;
-    }
-    const inicioIntervalo = (body[`day_${i}_break_start`] ?? "").trim();
-    const fimIntervalo = (body[`day_${i}_break_end`] ?? "").trim();
-    days[i] = {
-      open: body[`day_${i}_open`] || "08:00",
-      close: body[`day_${i}_close`] || "18:00",
-      // Intervalo (almoço) é opcional: só entra se as duas pontas vierem preenchidas.
-      ...(inicioIntervalo && fimIntervalo
-        ? { breakStart: inicioIntervalo, breakEnd: fimIntervalo }
-        : {}),
-    };
-  }
-  return {
-    branding: {
-      clinicName: body.branding_clinicName ?? "",
-      greetingMessage: body.branding_greeting ?? "",
-      fallbackMessage: body.branding_fallback ?? "",
-      closingMessage: body.branding_closing ?? "",
-    },
-    businessHours: { timezone, days },
-    booking: {
-      slotDurationMinutes: num(body.booking_slotDurationMinutes, 30),
-      maxOptionsOffered: num(body.booking_maxOptionsOffered, 3),
-      advanceBookingDays: num(body.booking_advanceBookingDays, 30),
-      allowCancellation: bool(body.booking_allowCancellation),
-      allowReschedule: bool(body.booking_allowReschedule),
-      askInsurance: bool(body.booking_askInsurance),
-      acceptParticular: bool(body.booking_acceptParticular),
-    },
-    ai: { model: body.ai_model ?? "claude-haiku-4-5", persona: body.ai_persona ?? "" },
-    debounceSeconds: num(body.debounceSeconds, 8),
-    knowledgeBase: (body.knowledgeBase ?? "").trim() || undefined,
-    reminders: {
-      enabled: bool(body.reminders_enabled),
-      hoursBefore: num(body.reminders_hoursBefore, 24),
-      templateName: (body.reminders_templateName ?? "").trim(),
-      templateLang: (body.reminders_templateLang ?? "pt_BR").trim() || "pt_BR",
-    },
-    waitlist: {
-      enabled: bool(body.waitlist_enabled),
-      templateName: (body.waitlist_templateName ?? "").trim(),
-      templateLang: (body.waitlist_templateLang ?? "pt_BR").trim() || "pt_BR",
-    },
-    recall: {
-      enabled: bool(body.recall_enabled),
-      months: num(body.recall_months, 6),
-      templateName: (body.recall_templateName ?? "").trim(),
-      templateLang: (body.recall_templateLang ?? "pt_BR").trim() || "pt_BR",
-    },
-  };
-}
-
-function clinicaUrl(id: string, params?: Record<string, string>, anchor?: string): string {
+/**
+ * URL de uma tela da clínica. `sub` é o caminho depois de /clinicas/:id — as
+ * configurações agora moram em páginas separadas, então cada redirect de POST
+ * precisa dizer para onde volta.
+ */
+function clinicaUrl(
+  id: string,
+  sub = "",
+  params?: Record<string, string>,
+  anchor?: string,
+): string {
   const qs =
     params && Object.keys(params).length ? "?" + new URLSearchParams(params).toString() : "";
   const frag = anchor ? `#${anchor}` : "";
-  return `/admin/clinicas/${id}${qs}${frag}`;
+  return `/admin/clinicas/${id}${sub}${qs}${frag}`;
 }
 
 export function makeAdminRouter(): Router {
@@ -251,7 +207,7 @@ export function makeAdminRouter(): Router {
         whatsappPhoneNumberId: req.body.whatsappPhoneNumberId,
         timezone: req.body.timezone || "America/Sao_Paulo",
       });
-      res.redirect(clinicaUrl(t.id, { msg: "Clínica criada" }));
+      res.redirect(clinicaUrl(t.id, "", { msg: "Clínica criada" }));
     } catch {
       res.render("admin/clinica_nova", {
         erro: "Não foi possível criar (slug ou número de WhatsApp já em uso?).",
@@ -259,34 +215,168 @@ export function makeAdminRouter(): Router {
     }
   });
 
+  /** Avisos vindos do redirect de um POST. */
+  function avisos(req: Request) {
+    return { msg: req.query.msg ?? null, erro: req.query.erro ?? null };
+  }
+
+  // ----- Início da clínica (dashboard) -----
+  // Era aqui que ficava a configuração; cair no formulário de ajustes não é o
+  // que a recepção quer ver ao abrir o painel.
   router.get("/clinicas/:id", async (req: Request, res: Response) => {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
+
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, conversas, pendentes, bloqueios, semDesfecho] = await Promise.all([
+    const [agendamentos, pendentes, semDesfecho, metricas] = await Promise.all([
       listAppointments(t.id, t.timezone),
-      listConversations(t.id),
       countPendentes(t.id),
-      listBlocks(t.id, t.timezone),
       listPendingAttendance(t.id, t.timezone),
+      calcularMetricas(t.id, t.parsedConfig, t.timezone, 30),
     ]);
-    res.render("admin/clinica", {
+
+    res.render("admin/inicio", {
       t,
       cfg: t.parsedConfig,
       agendamentos,
-      conversas,
       pendentes,
-      bloqueios,
       semDesfecho,
-      googleEmail: serviceAccountEmail(),
-      msg: req.query.msg ?? null,
-      erro: req.query.erro ?? null,
+      metricas,
+      ...avisos(req),
     });
+  });
+
+  // ----- Agendamentos -----
+  router.get("/clinicas/:id/agendamentos", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const [agendamentos, semDesfecho] = await Promise.all([
+      listAppointments(t.id, t.timezone),
+      listPendingAttendance(t.id, t.timezone),
+    ]);
+    res.render("admin/agendamentos", {
+      t,
+      cfg: t.parsedConfig,
+      agendamentos,
+      semDesfecho,
+      ...avisos(req),
+    });
+  });
+
+  // ----- Configurações (uma página por assunto) -----
+  router.get("/clinicas/:id/config", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    const conversas = await listConversations(t.id);
+    res.render("admin/config_dados", { t, cfg: t.parsedConfig, conversas, ...avisos(req) });
+  });
+
+  router.get("/clinicas/:id/config/catalogo", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    res.render("admin/config_catalogo", { t, cfg: t.parsedConfig, ...avisos(req) });
+  });
+
+  router.get("/clinicas/:id/config/equipe", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    const bloqueios = await listBlocks(t.id, t.timezone);
+    res.render("admin/config_equipe", {
+      t,
+      cfg: t.parsedConfig,
+      bloqueios,
+      googleEmail: serviceAccountEmail(),
+      ...avisos(req),
+    });
+  });
+
+  router.get("/clinicas/:id/config/templates", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    res.render("admin/config_templates", { t, cfg: t.parsedConfig, ...avisos(req) });
+  });
+
+  // ----- Usuários da clínica -----
+  // `requireTenant` já garante que o :id é a clínica de quem está logado. O que
+  // ele NÃO cobre é o alvo da ação, que vem do corpo do POST — daí a conferência
+  // de `podeGerenciarUsuarioDaClinica` em toda ação sobre um :userId.
+  const usuariosUrl = (id: string, chave: "msg" | "erro", texto: string) =>
+    clinicaUrl(id, "/config/usuarios", { [chave]: texto });
+
+  router.get("/clinicas/:id/config/usuarios", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    const usuarios = await listUsersByTenant(t.id);
+    res.render("admin/config_usuarios", { t, usuarios, ...avisos(req) });
+  });
+
+  router.post("/clinicas/:id/config/usuarios", async (req: Request, res: Response) => {
+    const senha = String(req.body.senha ?? "");
+    if (senha.length < 8) {
+      return res.redirect(
+        usuariosUrl(req.params.id, "erro", "A senha precisa ter ao menos 8 caracteres."),
+      );
+    }
+    try {
+      // Papel e clínica são fixados no servidor: o formulário não os escolhe.
+      await createTenantUser(req.params.id, {
+        email: String(req.body.email ?? ""),
+        name: String(req.body.nome ?? ""),
+        passwordHash: await hashSenha(senha),
+      });
+      res.redirect(usuariosUrl(req.params.id, "msg", "Usuário criado"));
+    } catch {
+      res.redirect(usuariosUrl(req.params.id, "erro", "E-mail já cadastrado."));
+    }
+  });
+
+  /** Carrega o alvo e aplica a trava; devolve null (e já redireciona) se barrar. */
+  async function alvoNaClinica(req: Request, res: Response) {
+    const alvo = await findAdminUser(req.params.userId);
+    if (!alvo) {
+      res.redirect(usuariosUrl(req.params.id, "erro", "Usuário não encontrado."));
+      return null;
+    }
+    const veredito = podeGerenciarUsuarioDaClinica(usuarioAtual(req), req.params.id, alvo);
+    if (!veredito.ok) {
+      logger.warn(
+        { ator: usuarioAtual(req).userId, alvo: alvo.id, clinica: req.params.id },
+        "tentativa barrada de gerenciar usuário",
+      );
+      res.redirect(usuariosUrl(req.params.id, "erro", veredito.motivo));
+      return null;
+    }
+    return alvo;
+  }
+
+  router.post("/clinicas/:id/config/usuarios/:userId/senha", async (req: Request, res: Response) => {
+    if (!(await alvoNaClinica(req, res))) return;
+    const senha = String(req.body.senha ?? "");
+    if (senha.length < 8) {
+      return res.redirect(
+        usuariosUrl(req.params.id, "erro", "A senha precisa ter ao menos 8 caracteres."),
+      );
+    }
+    await setUserPassword(req.params.userId, await hashSenha(senha));
+    res.redirect(usuariosUrl(req.params.id, "msg", "Senha redefinida"));
+  });
+
+  router.post("/clinicas/:id/config/usuarios/:userId/ativo", async (req: Request, res: Response) => {
+    if (!(await alvoNaClinica(req, res))) return;
+    await setUserActive(req.params.userId, bool(req.body.ativar));
+    res.redirect(usuariosUrl(req.params.id, "msg", "Acesso atualizado"));
+  });
+
+  router.post("/clinicas/:id/config/usuarios/:userId/excluir", async (req: Request, res: Response) => {
+    if (!(await alvoNaClinica(req, res))) return;
+    await deleteUser(req.params.userId);
+    res.redirect(usuariosUrl(req.params.id, "msg", "Usuário removido"));
   });
 
   router.post("/clinicas/:id/conversa/reiniciar", async (req: Request, res: Response) => {
     await resetConversation(req.params.id, String(req.body.phone ?? ""));
-    res.redirect(clinicaUrl(req.params.id, { msg: "Conversa reiniciada" }, "ferramentas"));
+    res.redirect(clinicaUrl(req.params.id, "/config", { msg: "Conversa reiniciada" }, "ferramentas"));
   });
 
   // ----- Usuários do painel (somente SUPER) -----
@@ -454,7 +544,7 @@ export function makeAdminRouter(): Router {
       return res.redirect(`/admin/clinicas/${req.params.id}/calendario${r.erro ? "?erro=" + encodeURIComponent(r.erro) : ""}`);
     }
     res.redirect(
-      clinicaUrl(req.params.id, r.erro ? { erro: r.erro } : { msg: "Agendamento criado" }, "agenda"),
+      clinicaUrl(req.params.id, "/agendamentos", r.erro ? { erro: r.erro } : { msg: "Agendamento criado" }),
     );
   });
 
@@ -467,7 +557,7 @@ export function makeAdminRouter(): Router {
       return res.redirect(`/admin/clinicas/${req.params.id}/calendario`);
     }
     res.redirect(
-      clinicaUrl(req.params.id, r.erro ? { erro: r.erro } : { msg: "Agendamento cancelado" }, "agenda"),
+      clinicaUrl(req.params.id, "/agendamentos", r.erro ? { erro: r.erro } : { msg: "Agendamento cancelado" }),
     );
   });
 
@@ -491,43 +581,60 @@ export function makeAdminRouter(): Router {
     res.json(eventos);
   });
 
+  /**
+   * Salva a configuração. Várias páginas postam aqui, cada uma com um pedaço:
+   * `_blocos` diz o que aquele formulário carrega e `parseConfig` mescla só
+   * isso sobre a config atual. Sem essa declaração, salvar uma página apagaria
+   * o que é editado nas outras — campo ausente e caixa desmarcada chegam iguais.
+   */
   router.post("/clinicas/:id", async (req: Request, res: Response) => {
-    const timezone = req.body.timezone || "America/Sao_Paulo";
-    const config = parseConfig(req.body, timezone);
-    await updateTenant(req.params.id, {
-      name: req.body.name,
-      whatsappPhoneNumberId: req.body.whatsappPhoneNumberId,
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+
+    const blocos = blocosDoCorpo(req.body);
+    const editaIdentificacao = blocos.includes("identificacao");
+    const timezone = editaIdentificacao ? req.body.timezone || t.timezone : t.timezone;
+
+    await updateTenant(t.id, {
+      name: editaIdentificacao ? req.body.name : t.name,
+      whatsappPhoneNumberId: editaIdentificacao
+        ? req.body.whatsappPhoneNumberId
+        : t.whatsappPhoneNumberId,
       timezone,
-      isActive: bool(req.body.isActive),
-      config,
+      isActive: editaIdentificacao ? bool(req.body.isActive) : t.isActive,
+      config: parseConfig(req.body, timezone, t.parsedConfig, blocos),
     });
-    res.redirect(clinicaUrl(req.params.id, { msg: "Configuração salva" }));
+
+    // `_voltar` traz a página que enviou o formulário, para o aviso aparecer nela.
+    const voltar = String(req.body._voltar ?? "/config");
+    const destino = voltar.startsWith("/config") ? voltar : "/config";
+    res.redirect(clinicaUrl(t.id, destino, { msg: "Configuração salva" }));
   });
 
   // ----- Catálogo -----
   router.post("/clinicas/:id/unidades", async (req: Request, res: Response) => {
     await addUnit(req.params.id, { name: req.body.name, address: req.body.address, phone: req.body.phone });
-    res.redirect(clinicaUrl(req.params.id, undefined, "unidades"));
+    res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "unidades"));
   });
 
   router.post("/clinicas/:id/especialidades", async (req: Request, res: Response) => {
     await addSpecialty(req.params.id, req.body.name, req.body.preco);
-    res.redirect(clinicaUrl(req.params.id, undefined, "especialidades"));
+    res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 
   router.post("/clinicas/:id/especialidades/:specId/preco", async (req: Request, res: Response) => {
     await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco);
-    res.redirect(clinicaUrl(req.params.id, undefined, "especialidades"));
+    res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 
   router.post("/clinicas/:id/convenios", async (req: Request, res: Response) => {
     await addInsurer(req.params.id, { name: req.body.name, code: req.body.code });
-    res.redirect(clinicaUrl(req.params.id, undefined, "convenios"));
+    res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "convenios"));
   });
 
   router.post("/clinicas/:id/planos", async (req: Request, res: Response) => {
     await addPlan(req.params.id, req.body.insurerId, req.body.name);
-    res.redirect(clinicaUrl(req.params.id, undefined, "convenios"));
+    res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "convenios"));
   });
 
   router.post("/clinicas/:id/medicos", async (req: Request, res: Response) => {
@@ -538,12 +645,12 @@ export function makeAdminRouter(): Router {
       unitIds: toArr(req.body.unidades),
       planIds: toArr(req.body.planos),
     });
-    res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
+    res.redirect(clinicaUrl(req.params.id, "/config/equipe", undefined, "medicos"));
   });
 
   router.post("/clinicas/:id/medicos/:docId/google", async (req: Request, res: Response) => {
     await updateDoctorCalendarId(req.params.id, req.params.docId, req.body.googleCalendarId);
-    res.redirect(clinicaUrl(req.params.id, undefined, "medicos"));
+    res.redirect(clinicaUrl(req.params.id, "/config/equipe", undefined, "medicos"));
   });
 
   router.post("/clinicas/:id/medicos/:docId/horarios", async (req: Request, res: Response) => {
@@ -567,15 +674,21 @@ export function makeAdminRouter(): Router {
       await updateDoctorHours(req.params.id, req.params.docId, days);
     }
     res.redirect(
-      clinicaUrl(req.params.id, { msg: "Agenda do profissional salva — gere os horários" }, "medicos"),
+      clinicaUrl(req.params.id, "/config/equipe", { msg: "Agenda do profissional salva — gere os horários" }, "medicos"),
     );
   });
 
   router.post("/clinicas/:id/excluir/:entity/:entId", async (req: Request, res: Response) => {
     const entity = req.params.entity as "unit" | "specialty" | "insurer" | "healthPlan" | "doctor";
-    const anchor = { unit: "unidades", specialty: "especialidades", insurer: "convenios", healthPlan: "convenios", doctor: "medicos" }[entity];
+    const destino = {
+      unit: ["/config/catalogo", "unidades"],
+      specialty: ["/config/catalogo", "especialidades"],
+      insurer: ["/config/catalogo", "convenios"],
+      healthPlan: ["/config/catalogo", "convenios"],
+      doctor: ["/config/equipe", "medicos"],
+    }[entity];
     const r = await remove(req.params.id, entity, req.params.entId);
-    res.redirect(clinicaUrl(req.params.id, r.ok ? undefined : { erro: r.erro }, anchor));
+    res.redirect(clinicaUrl(req.params.id, destino[0], r.ok ? undefined : { erro: r.erro }, destino[1]));
   });
 
   // ----- Desfecho da consulta (base da taxa de falta) -----
@@ -585,11 +698,9 @@ export function makeAdminRouter(): Router {
     const compareceu = String(req.body.compareceu) === "1";
     await marcarComparecimento(tenant, req.params.apptId, compareceu);
     res.redirect(
-      clinicaUrl(
-        req.params.id,
-        { msg: compareceu ? "Marcado como compareceu" : "Marcado como falta" },
-        "agenda",
-      ),
+      clinicaUrl(req.params.id, "/agendamentos", {
+        msg: compareceu ? "Marcado como compareceu" : "Marcado como falta",
+      }),
     );
   });
 
@@ -620,23 +731,23 @@ export function makeAdminRouter(): Router {
     );
 
     if (!r.ok) {
-      return res.redirect(clinicaUrl(req.params.id, { erro: r.erro }, "bloqueios"));
+      return res.redirect(clinicaUrl(req.params.id, "/config/equipe", { erro: r.erro }, "bloqueios"));
     }
     const msg = r.conflitos.length
       ? `Bloqueio criado. ATENÇÃO: ${r.conflitos.length} consulta(s) já marcada(s) nesse período — ${r.conflitos.slice(0, 3).join("; ")}${r.conflitos.length > 3 ? "…" : ""}`
       : "Bloqueio criado — gere os horários novamente";
-    res.redirect(clinicaUrl(req.params.id, { msg }, "bloqueios"));
+    res.redirect(clinicaUrl(req.params.id, "/config/equipe", { msg }, "bloqueios"));
   });
 
   router.post("/clinicas/:id/bloqueios/:blockId/excluir", async (req: Request, res: Response) => {
     await removeBlock(req.params.id, req.params.blockId);
-    res.redirect(clinicaUrl(req.params.id, { msg: "Bloqueio removido" }, "bloqueios"));
+    res.redirect(clinicaUrl(req.params.id, "/config/equipe", { msg: "Bloqueio removido" }, "bloqueios"));
   });
 
   // ----- Agenda -----
   router.post("/clinicas/:id/agenda/gerar", async (req: Request, res: Response) => {
     const n = await generateAgenda(req.params.id, num(req.body.days, 7));
-    res.redirect(clinicaUrl(req.params.id, { msg: `${n} horários gerados` }, "agenda"));
+    res.redirect(clinicaUrl(req.params.id, "/agendamentos", { msg: `${n} horários gerados` }));
   });
 
   return router;

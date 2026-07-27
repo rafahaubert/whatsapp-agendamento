@@ -1,0 +1,77 @@
+<%- include('partials/header', { tituloPagina: "Templates de mensagens" }) %>
+<div class="page-head">
+  <div>
+    <h1>Templates de mensagens</h1>
+    <p class="muted" style="margin:4px 0 0">As três automações que falam com o paciente sozinhas. Cada uma exige um template aprovado na Meta — veja <code>WHATSAPP-TEMPLATES.md</code>.</p>
+  </div>
+</div>
+
+<% if (msg) { %><p class="ok"><%= msg %></p><% } %>
+<% if (erro) { %><p class="erro"><%= erro %></p><% } %>
+
+<form method="post" action="/admin/clinicas/<%= t.id %>" class="card">
+  <div class="card-head">
+    <h2>Automações</h2>
+    <button class="btn sm">Salvar templates</button>
+  </div>
+  <%# Só as automações: salvar aqui não encosta no resto da configuração. %>
+  <input type="hidden" name="_blocos" value="lembrete fila reativacao" />
+  <input type="hidden" name="_voltar" value="/config/templates" />
+
+  <h2>Lembrete de consulta (reduz faltas)</h2>
+  <% var rem = cfg.reminders || { enabled: false, hoursBefore: 24, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Envia um lembrete automático antes da consulta, com botões Confirmar / Remarcar / Cancelar.
+    Exige um template aprovado na Meta — veja <code>WHATSAPP-TEMPLATES.md</code>.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="reminders_enabled" <%= rem.enabled ? "checked" : "" %> /> Ativar lembretes</label>
+  </div>
+  <div class="grid3">
+    <label>Horas de antecedência<input type="number" name="reminders_hoursBefore" value="<%= rem.hoursBefore %>" /></label>
+    <% if (ehSuper) { %>
+      <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
+      <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
+    <% } else { %>
+      <input type="hidden" name="reminders_templateName" value="<%= rem.templateName %>" />
+      <input type="hidden" name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" />
+    <% } %>
+  </div>
+
+  <h2>Fila de espera (aproveita cancelamentos)</h2>
+  <% var wl = cfg.waitlist || { enabled: false, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Sem horário disponível, o agente oferece a fila. Quando alguém cancela,
+    o primeiro da fila é avisado na hora — com botão para pegar a vaga.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="waitlist_enabled" <%= wl.enabled ? "checked" : "" %> /> Ativar fila de espera</label>
+  </div>
+  <% if (ehSuper) { %>
+    <div class="grid2">
+      <label>Nome do template<input name="waitlist_templateName" value="<%= wl.templateName %>" placeholder="vaga_disponivel" /></label>
+      <label>Idioma do template<input name="waitlist_templateLang" value="<%= wl.templateLang || 'pt_BR' %>" /></label>
+    </div>
+  <% } else { %>
+    <input type="hidden" name="waitlist_templateName" value="<%= wl.templateName %>" />
+    <input type="hidden" name="waitlist_templateLang" value="<%= wl.templateLang || 'pt_BR' %>" />
+  <% } %>
+
+  <h2>Reativação de pacientes (traz quem sumiu)</h2>
+  <% var rc = cfg.recall || { enabled: false, months: 6, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Convida de volta quem não vem há alguns meses (ex.: limpeza semestral).
+    Cada paciente recebe no máximo um convite a cada 90 dias.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="recall_enabled" <%= rc.enabled ? "checked" : "" %> /> Ativar reativação</label>
+  </div>
+  <div class="grid3">
+    <label>Meses sem consulta<input type="number" name="recall_months" value="<%= rc.months %>" /></label>
+    <% if (ehSuper) { %>
+      <label>Nome do template<input name="recall_templateName" value="<%= rc.templateName %>" placeholder="retorno_consulta" /></label>
+      <label>Idioma do template<input name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" /></label>
+    <% } else { %>
+      <input type="hidden" name="recall_templateName" value="<%= rc.templateName %>" />
+      <input type="hidden" name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" />
+    <% } %>
+  </div>
+
+  <div style="margin-top:14px"><button class="btn">Salvar templates</button></div>
+</form>
+
+<%- include('partials/footer') %>

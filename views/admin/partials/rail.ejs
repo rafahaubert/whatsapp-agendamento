@@ -7,7 +7,7 @@
   var u = typeof usuario !== "undefined" ? usuario : null;
 
   // Clínica em contexto: a página traz `t`; fora dela, o usuário de clínica tem
-  // a sua própria — assim o grupo não some ao visitar /admin/usuarios.
+  // a sua própria — assim o menu não some ao visitar uma tela da plataforma.
   var cid = (typeof t !== "undefined" && t && t.id) ? t.id : (u && u.tenantId ? u.tenantId : null);
   var base = cid ? "/admin/clinicas/" + cid : null;
 
@@ -15,22 +15,30 @@
   var pendCurto = pend > 99 ? "99+" : String(pend);
   var pendTexto = "Caixa de entrada" + (pend ? " · " + pend + " pendente" + (pend > 1 ? "s" : "") : "");
 
-  // Seção ativa. As sub-rotas vêm ANTES da raiz da clínica, que casaria como
-  // prefixo delas; "nova" também precisa vir antes, senão vira /clinicas/:id.
+  // Seção ativa. As sub-rotas vêm ANTES das raízes que casariam como prefixo
+  // delas — /config casa o começo de /config/catalogo, e /clinicas/:id casa o
+  // começo de tudo.
   var secao = "";
-  if (/^\/admin\/clinicas\/[^/]+\/inbox/.test(caminho)) secao = "inbox";
+  if (/^\/admin\/clinicas\/[^/]+\/config\/catalogo/.test(caminho)) secao = "catalogo";
+  else if (/^\/admin\/clinicas\/[^/]+\/config\/equipe/.test(caminho)) secao = "equipe";
+  else if (/^\/admin\/clinicas\/[^/]+\/config\/templates/.test(caminho)) secao = "templates";
+  else if (/^\/admin\/clinicas\/[^/]+\/config\/usuarios/.test(caminho)) secao = "usuarios-clinica";
+  else if (/^\/admin\/clinicas\/[^/]+\/config/.test(caminho)) secao = "dados";
+  else if (/^\/admin\/clinicas\/[^/]+\/inbox/.test(caminho)) secao = "inbox";
+  else if (/^\/admin\/clinicas\/[^/]+\/agendamentos/.test(caminho)) secao = "agendamentos";
   else if (/^\/admin\/clinicas\/[^/]+\/pacientes/.test(caminho)) secao = "pacientes";
   else if (/^\/admin\/clinicas\/[^/]+\/calendario/.test(caminho)) secao = "calendario";
   else if (/^\/admin\/clinicas\/[^/]+\/metricas/.test(caminho)) secao = "metricas";
   else if (/^\/admin\/clinicas\/nova/.test(caminho)) secao = "clinicas";
-  else if (/^\/admin\/clinicas\/[^/]+/.test(caminho)) secao = "config";
-  else if (/^\/admin\/usuarios/.test(caminho)) secao = "usuarios";
+  else if (/^\/admin\/clinicas\/[^/]+/.test(caminho)) secao = "inicio";
+  else if (/^\/admin\/usuarios/.test(caminho)) secao = "usuarios-plataforma";
   else if (/^\/admin\/?$/.test(caminho)) secao = "clinicas";
 
+  var emConfig = ["dados", "catalogo", "templates", "usuarios-clinica", "equipe"].indexOf(secao) >= 0;
   function marca(s) { return secao === s ? ' aria-current="page"' : ""; }
 %>
 <aside class="rail" id="rail">
-  <a href="/admin" class="rail-marca" aria-label="Haubert Agents — início">
+  <a href="<%= base || '/admin' %>" class="rail-marca" aria-label="Haubert Agents — início">
     <span class="mark" aria-hidden="true">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="314.66 803.4 450.67 313.04" fill="currentColor"><path d="M721.63 992.25C715.2 1005 706.51 1015.09 695.58 1022.55C684.66 1030.01 672.26 1035.38 658.39 1038.64C644.53 1041.9 630.31 1043.54 615.74 1043.54L615.11 1043.54L464.89 1043.54L464.26 1043.54C449.97 1043.54 435.96 1041.91 422.24 1038.64C408.51 1035.38 396.11 1030.02 385.05 1022.55C373.98 1015.1 365.15 1004.99 358.58 992.25C351.99 979.5 348.7 963.49 348.7 944.22C348.7 925.25 351.92 909.4 358.37 896.66C364.81 883.91 373.49 873.81 384.42 866.35C395.34 858.89 407.74 853.53 421.61 850.27C435.47 847 449.69 845.37 464.26 845.37L464.89 845.37L615.11 845.37L615.74 845.37C630.03 845.37 644.04 847 657.77 850.26C671.49 853.53 683.89 858.89 694.95 866.35C706.02 873.81 714.85 883.91 721.42 896.66C728.01 909.41 731.3 925.41 731.3 944.68C731.3 963.65 728.08 979.5 721.63 992.25M753.36 879.17C745.38 861.3 734.52 846.77 720.8 835.57C707.07 824.39 691.17 816.23 673.1 811.09C655.03 805.97 635.91 803.4 615.74 803.4L615.11 803.4L464.89 803.4L464.26 803.4C445.2 803.4 426.72 805.89 408.79 810.87C390.86 815.83 374.82 823.76 360.68 834.64C346.53 845.52 335.32 859.98 327.06 878.01C318.79 896.03 314.66 918.26 314.66 944.69C314.66 970.17 318.66 991.85 326.64 1009.73C334.62 1027.6 345.48 1042.14 359.2 1053.33C372.93 1064.52 388.83 1072.68 406.9 1077.81C424.97 1082.94 444.09 1085.5 464.26 1085.5L464.89 1085.5L615.11 1085.5L615.74 1085.5C634.8 1085.5 653.28 1083.01 671.21 1078.04C689.14 1073.07 705.18 1065.14 719.32 1054.26C733.47 1043.38 744.68 1028.93 752.94 1010.9C761.21 992.87 765.34 970.64 765.34 944.22C765.34 918.73 761.34 897.05 753.36 879.17Z"/><path d="M451.3 944.45C451.3 928.25 460.18 915.11 471.13 915.11C482.08 915.11 490.96 928.25 490.96 944.45C490.96 960.66 482.08 973.79 471.13 973.79C460.18 973.79 451.3 960.66 451.3 944.45Z"/><path d="M589.04 944.45C589.04 928.25 597.92 915.11 608.87 915.11C619.82 915.11 628.7 928.25 628.7 944.45C628.7 960.66 619.82 973.79 608.87 973.79C597.92 973.79 589.04 960.66 589.04 944.45Z"/><path d="M736.71 1034.9L619.28 1084.24C655.08 1083.56 691.39 1093.57 718.86 1116.44C711.76 1096.51 713.51 1076.01 722.83 1057.05C728.43 1046.13 736.04 1035.97 736.71 1034.9Z"/></svg>
     </span>
@@ -39,16 +47,11 @@
 
   <nav class="rail-nav" aria-label="Navegação do painel">
     <% if (base) { %>
-      <p class="rail-grp">Clínica</p>
+      <p class="rail-grp">Operacional</p>
 
-      <a class="rail-i" href="<%= base %>" title="Configuração"<%- marca("config") %>>
-        <span class="rail-ico"><%- include('icone', { nome: "config" }) %></span>
-        <span class="rail-lbl">Configuração</span>
-      </a>
-
-      <a class="rail-i" href="<%= base %>/calendario" title="Calendário"<%- marca("calendario") %>>
-        <span class="rail-ico"><%- include('icone', { nome: "calendario" }) %></span>
-        <span class="rail-lbl">Calendário</span>
+      <a class="rail-i" href="<%= base %>" title="Dashboard"<%- marca("inicio") %>>
+        <span class="rail-ico"><%- include('icone', { nome: "dashboard" }) %></span>
+        <span class="rail-lbl">Dashboard</span>
       </a>
 
       <a class="rail-i" href="<%= base %>/inbox" title="<%= pendTexto %>"
@@ -61,28 +64,69 @@
         <% if (pend) { %><span class="rail-cnt" aria-hidden="true"><%= pendCurto %></span><% } %>
       </a>
 
+      <a class="rail-i" href="<%= base %>/agendamentos" title="Agendamentos"<%- marca("agendamentos") %>>
+        <span class="rail-ico"><%- include('icone', { nome: "agendamentos" }) %></span>
+        <span class="rail-lbl">Agendamentos</span>
+      </a>
+
+      <a class="rail-i" href="<%= base %>/calendario" title="Calendário"<%- marca("calendario") %>>
+        <span class="rail-ico"><%- include('icone', { nome: "calendario" }) %></span>
+        <span class="rail-lbl">Calendário</span>
+      </a>
+
       <a class="rail-i" href="<%= base %>/pacientes" title="Pacientes"<%- marca("pacientes") %>>
         <span class="rail-ico"><%- include('icone', { nome: "pacientes" }) %></span>
         <span class="rail-lbl">Pacientes</span>
       </a>
 
-      <a class="rail-i" href="<%= base %>/metricas" title="Métricas"<%- marca("metricas") %>>
+      <p class="rail-grp">Análise</p>
+
+      <a class="rail-i" href="<%= base %>/metricas" title="Métricas e relatórios"<%- marca("metricas") %>>
         <span class="rail-ico"><%- include('icone', { nome: "metricas" }) %></span>
-        <span class="rail-lbl">Métricas</span>
+        <span class="rail-lbl">Métricas e relatórios</span>
       </a>
+
+      <%# Sem rótulo de grupo aqui: o próprio item "Configurações" é o grupo. %>
+      <%
+        var itensConfig = [
+          { s: "dados",            href: base + "/config",            rotulo: "Dados da clínica" },
+          { s: "catalogo",         href: base + "/config/catalogo",   rotulo: "Unidades e convênios" },
+          { s: "equipe",           href: base + "/config/equipe",     rotulo: "Profissionais e férias" },
+          { s: "templates",        href: base + "/config/templates",  rotulo: "Templates de mensagens" },
+          { s: "usuarios-clinica", href: base + "/config/usuarios",   rotulo: "Usuários e permissões" },
+        ];
+      %>
+      <%# Sem <details> aqui: são cinco links fixos, e o rail já expande no
+          hover. O triângulo do <summary> resiste a list-style:none, ::marker e
+          troca de display — não vale carregar a folha de estilo do navegador
+          por uma dobra que o próprio rail já faz. Os filhos aparecem e somem
+          pelo mesmo `--rail-lbl` que controla os rótulos. %>
+      <div class="rail-sub">
+        <a class="rail-i <%= emConfig ? "rail-i-dentro" : "" %>" href="<%= base %>/config"
+           title="Configurações"<%= emConfig ? ' aria-current="true"' : "" %>>
+          <span class="rail-ico"><%- include('icone', { nome: "config" }) %></span>
+          <span class="rail-lbl">Configurações</span>
+        </a>
+        <% itensConfig.forEach(function(i){ %>
+          <a class="rail-i rail-filho" href="<%= i.href %>" title="<%= i.rotulo %>"<%- marca(i.s) %>>
+            <span class="rail-lbl"><%= i.rotulo %></span>
+          </a>
+        <% }) %>
+      </div>
     <% } %>
 
     <% if (ehSup) { %>
-      <p class="rail-grp">Administração</p>
+      <%# Fora da árvore da clínica: são as telas da plataforma, que só o operador vê. %>
+      <p class="rail-grp">Plataforma</p>
 
-      <a class="rail-i" href="/admin" title="Clínicas"<%- marca("clinicas") %>>
+      <a class="rail-i" href="/admin" title="Todas as clínicas"<%- marca("clinicas") %>>
         <span class="rail-ico"><%- include('icone', { nome: "clinicas" }) %></span>
-        <span class="rail-lbl">Clínicas</span>
+        <span class="rail-lbl">Todas as clínicas</span>
       </a>
 
-      <a class="rail-i" href="/admin/usuarios" title="Usuários"<%- marca("usuarios") %>>
+      <a class="rail-i" href="/admin/usuarios" title="Todos os usuários"<%- marca("usuarios-plataforma") %>>
         <span class="rail-ico"><%- include('icone', { nome: "usuarios" }) %></span>
-        <span class="rail-lbl">Usuários</span>
+        <span class="rail-lbl">Todos os usuários</span>
       </a>
     <% } %>
   </nav>

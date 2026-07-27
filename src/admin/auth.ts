@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { env } from "../config/env.js";
 import { prisma } from "../db/client.js";
 import { logger } from "../shared/logger.js";
+import { Role } from "../shared/enums.js";
 
 const scrypt = promisify(crypto.scrypt) as (
   senha: string,
@@ -11,8 +12,9 @@ const scrypt = promisify(crypto.scrypt) as (
   tamanho: number,
 ) => Promise<Buffer>;
 
-export const Role = { SUPER: "SUPER", CLINIC: "CLINIC" } as const;
-export type Role = (typeof Role)[keyof typeof Role];
+// O papel mora em shared/enums para as regras de permissão não arrastarem
+// ambiente e banco junto. Re-exportado aqui por conveniência de quem já importa.
+export { Role } from "../shared/enums.js";
 
 export interface AdminSession {
   userId?: string;
