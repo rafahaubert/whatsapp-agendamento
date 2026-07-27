@@ -20,13 +20,21 @@ A rota é pública: quem tiver a URL vê os valores. Se quiser discrição, troq
 
 ## Valores e contato
 
-Já preenchidos: implantação **R$ 500**, mensalidade **R$ 990/mês**, contato
-**(51) 99767-0770** (o botão do rodapé abre `wa.me/5551997670770`). O prazo do agente de
-teste está em "3 dias úteis".
+Três planos, no bloco `.planos` do fechamento:
 
-Para trocar, procure por `[EDITE` no HTML. Uma ressalva: a classe `vazio` é o tracejado
-laranja de "falta preencher" — ao pôr um valor real, escreva `<span class="val">R$ 500</span>`
-sem o `<span class="vazio">` por dentro, senão o preço aparece com cara de campo em branco.
+| Plano | Valor | Corte |
+|---|---|---|
+| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Sem lembrete, fila ou reativação. |
+| Profissional | R$ 799/mês | 1 unidade, até 6 profissionais. Lembrete anti-falta + fila de espera. |
+| Clínica | Sob consulta | Multi-unidade, sem limite. Soma a reativação de pacientes. |
+
+Implantação **R$ 500** em qualquer plano. Contato **(51) 99767-0770** (o botão do rodapé abre
+`wa.me/5551997670770`), agente de teste em "3 dias úteis".
+
+O corte entre os planos é implementável: `reminders.enabled`, `waitlist.enabled` e
+`recall.enabled` são toggles por clínica no painel — não é diferenciação de fachada.
+
+Para trocar valores, procure por `[EDITE` no HTML.
 
 ## Identidade
 

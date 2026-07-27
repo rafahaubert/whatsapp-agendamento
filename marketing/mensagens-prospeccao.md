@@ -99,9 +99,19 @@ Um só. Se não responder, deixa quieto por umas semanas.
 > como está. Se depois quiser migrar o número principal, dá pra fazer.
 
 **"Quanto custa?"**
-> [implantação] uma vez e [mensalidade] por mês, sem fidelidade. Fora isso, só o custo da
-> Meta pelas mensagens que a clínica inicia (lembrete e convite de retorno) — centavos por
-> mensagem, e eu te mostro a conta antes de ligar.
+> Depende do tamanho da clínica. São três planos: **Essencial R$ 490/mês** (consultório de
+> um ou dois profissionais), **Profissional R$ 799/mês** (o mais escolhido — inclui o
+> lembrete anti-falta e a fila de espera) e **Clínica**, sob consulta, para quem tem mais de
+> uma unidade. A implantação é R$ 500, uma vez, em qualquer um. Sem fidelidade.
+>
+> Fora isso, só o custo da Meta pelas mensagens que a clínica inicia (lembrete e convite de
+> retorno) — centavos por mensagem, e eu te mostro a conta antes de ligar.
+
+**"Qual plano eu preciso?"**
+> Se você sente falta na agenda, o Profissional — é ele que traz o lembrete anti-falta e a
+> fila de espera, que é onde o sistema se paga. O Essencial resolve bem quando o problema é
+> só não conseguir responder o WhatsApp a tempo. Dá para começar no Essencial e subir depois,
+> sem nova implantação.
 
 **"Vou pensar."**
 > Sem problema. Posso deixar o agente de teste montado com os dados da [clínica]? Você
