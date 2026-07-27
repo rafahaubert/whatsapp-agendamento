@@ -5,7 +5,7 @@
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
 import { AppointmentStatus, statusUI } from "../shared/enums.js";
-import { formatDateTime, formatarHoraCurta } from "../shared/datetime.js";
+import { formatDateTime, formatarHoraCurta, formatarDia } from "../shared/datetime.js";
 import type { TenantConfig } from "../config/types.js";
 
 /** Config padrão ao criar uma clínica nova. */
@@ -490,4 +490,243 @@ export async function listPendingAttendance(tenantId: string, timezone: string) 
     medico: a.doctor.name,
     inicio: formatDateTime(a.slot.startsAt, timezone),
   }));
+}
+
+// =========================================================
+// PACIENTES — busca e ficha individual
+// =========================================================
+
+/** Consultas que já aconteceram: só elas entram no cálculo de falta. */
+const REALIZADOS = [AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW];
+
+export type OrdemPacientes = "recentes" | "consultas" | "faltas" | "sumidos";
+
+/**
+ * Lista paginada com busca. O termo casa contra nome, CPF ou telefone — a
+ * recepção digita o que tiver em mãos. O CPF é comparado só por dígitos, senão
+ * "123.456" nunca acharia "12345678900".
+ */
+export async function listPatients(
+  tenantId: string,
+  timezone: string,
+  opts: { q?: string; ordem?: OrdemPacientes; pagina?: number; porPagina?: number } = {},
+) {
+  const q = (opts.q ?? "").trim();
+  const ordem = opts.ordem ?? "recentes";
+  const porPagina = opts.porPagina ?? 25;
+  const pagina = Math.max(1, opts.pagina ?? 1);
+
+  const digitos = q.replace(/\D/g, "");
+  const where = {
+    tenantId,
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            ...(digitos ? [{ cpf: { contains: digitos } }, { phone: { contains: digitos } }] : []),
+          ],
+        }
+      : {}),
+  };
+
+  // "sumidos" e os rankings dependem de contagens por status, que o Prisma não
+  // ordena direto. Nas ordens agregadas buscamos o conjunto filtrado e ordenamos
+  // em memória; o painel é de uma clínica só, então o volume é tratável.
+  const agregada = ordem !== "recentes";
+  const total = await prisma.patient.count({ where });
+
+  const pacientes = await prisma.patient.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    ...(agregada ? {} : { skip: (pagina - 1) * porPagina, take: porPagina }),
+    ...(agregada ? { take: 500 } : {}),
+    include: {
+      appointments: { select: { status: true, slot: { select: { startsAt: true } } } },
+      insurances: { include: { healthPlan: { select: { name: true } } }, take: 1, orderBy: { isPrimary: "desc" } },
+    },
+  });
+
+  const agora = Date.now();
+  let linhas = pacientes.map((p) => {
+    const consultas = p.appointments.length;
+    const faltas = p.appointments.filter((a) => a.status === AppointmentStatus.NO_SHOW).length;
+    const realizadas = p.appointments.filter((a) => REALIZADOS.includes(a.status as never)).length;
+    const passadas = p.appointments
+      .map((a) => a.slot.startsAt)
+      .filter((d) => d.getTime() <= agora)
+      .sort((a, b) => b.getTime() - a.getTime());
+    const futuras = p.appointments
+      .map((a) => a.slot.startsAt)
+      .filter((d) => d.getTime() > agora)
+      .sort((a, b) => a.getTime() - b.getTime());
+    const ultima = passadas[0] ?? null;
+
+    return {
+      id: p.id,
+      nome: p.name,
+      cpf: formatarCpf(p.cpf),
+      telefone: p.phone,
+      convenio: p.insurances[0]?.healthPlan.name ?? null,
+      consultas,
+      faltas,
+      taxaFalta: realizadas ? (faltas / realizadas) * 100 : null,
+      ultimaEm: ultima,
+      ultimaTexto: ultima ? formatarDia(ultima, timezone) : null,
+      proximaTexto: futuras[0] ? formatDateTime(futuras[0], timezone) : null,
+      diasSemVir: ultima ? Math.floor((agora - ultima.getTime()) / 86400000) : null,
+    };
+  });
+
+  if (ordem === "consultas") linhas.sort((a, b) => b.consultas - a.consultas);
+  else if (ordem === "faltas") {
+    // Empate por número absoluto de faltas desempata pela taxa: 3 faltas em 4
+    // consultas é um problema maior que 3 em 40.
+    linhas.sort((a, b) => b.faltas - a.faltas || (b.taxaFalta ?? -1) - (a.taxaFalta ?? -1));
+  } else if (ordem === "sumidos") {
+    // Sem consulta futura marcada e sem vir há mais tempo primeiro. Quem nunca
+    // veio não é "sumido", é novo — fica de fora.
+    linhas = linhas.filter((l) => !l.proximaTexto && l.diasSemVir !== null);
+    linhas.sort((a, b) => (b.diasSemVir ?? 0) - (a.diasSemVir ?? 0));
+  }
+
+  const totalFiltrado = agregada ? linhas.length : total;
+  if (agregada) linhas = linhas.slice((pagina - 1) * porPagina, pagina * porPagina);
+
+  return {
+    linhas,
+    total: totalFiltrado,
+    pagina,
+    porPagina,
+    paginas: Math.max(1, Math.ceil(totalFiltrado / porPagina)),
+  };
+}
+
+/** Ficha completa de um paciente: dados, métricas e histórico. */
+export async function getPatient(tenantId: string, patientId: string, timezone: string) {
+  const p = await prisma.patient.findFirst({
+    where: { id: patientId, tenantId },
+    include: {
+      insurances: { include: { healthPlan: { include: { insurer: true } } } },
+      appointments: {
+        include: { doctor: true, specialty: true, unit: true, slot: true, healthPlan: true },
+        orderBy: { slot: { startsAt: "desc" } },
+      },
+      waitlist: { include: { specialty: true }, where: { status: "ACTIVE" } },
+    },
+  });
+  if (!p) return null;
+
+  const agora = Date.now();
+  const porStatus = (s: string) => p.appointments.filter((a) => a.status === s).length;
+  const faltas = porStatus(AppointmentStatus.NO_SHOW);
+  const compareceu = porStatus(AppointmentStatus.COMPLETED);
+  const realizadas = faltas + compareceu;
+
+  const ordenadas = [...p.appointments].sort(
+    (a, b) => a.slot.startsAt.getTime() - b.slot.startsAt.getTime(),
+  );
+  const passadas = ordenadas.filter((a) => a.slot.startsAt.getTime() <= agora);
+  const futuras = ordenadas.filter((a) => a.slot.startsAt.getTime() > agora);
+
+  // Especialidade e profissional mais frequentes — dizem de quem o paciente é.
+  const maisFrequente = (nomes: string[]) => {
+    const contagem = new Map<string, number>();
+    nomes.forEach((n) => contagem.set(n, (contagem.get(n) ?? 0) + 1));
+    let topo: string | null = null;
+    let max = 0;
+    contagem.forEach((qtd, nome) => {
+      if (qtd > max) { max = qtd; topo = nome; }
+    });
+    return topo;
+  };
+
+  const ultima = passadas[passadas.length - 1] ?? null;
+  const conversa = await prisma.conversation.findFirst({
+    where: { tenantId, patientPhone: p.phone },
+    select: { lastMessageAt: true, humanHandoff: true },
+  });
+
+  return {
+    id: p.id,
+    nome: p.name,
+    cpf: formatarCpf(p.cpf),
+    telefone: p.phone,
+    nascimento: p.birthDate ? formatarDia(p.birthDate, timezone) : null,
+    idade: p.birthDate ? calcularIdade(p.birthDate) : null,
+    clienteDesde: formatarDia(p.createdAt, timezone),
+    ultimoRecall: p.lastRecallAt ? formatarDia(p.lastRecallAt, timezone) : null,
+
+    convenios: p.insurances.map((i) => ({
+      plano: i.healthPlan.name,
+      operadora: i.healthPlan.insurer.name,
+      carteirinha: i.cardNumber,
+      principal: i.isPrimary,
+      validade: i.validThru ? formatarDia(i.validThru, timezone) : null,
+    })),
+
+    filaEspera: p.waitlist.map((w) => ({ especialidade: w.specialty.name, periodo: w.periodo })),
+
+    metricas: {
+      total: p.appointments.length,
+      compareceu,
+      faltas,
+      realizadas,
+      cancelados: porStatus(AppointmentStatus.CANCELLED),
+      remarcados: porStatus(AppointmentStatus.RESCHEDULED),
+      agendados: futuras.length,
+      taxaFalta: realizadas ? (faltas / realizadas) * 100 : null,
+      taxaPresenca: realizadas ? (compareceu / realizadas) * 100 : null,
+      particular: p.appointments.filter((a) => !a.healthPlanId).length,
+      convenio: p.appointments.filter((a) => a.healthPlanId).length,
+      primeiraTexto: passadas[0] ? formatarDia(passadas[0].slot.startsAt, timezone) : null,
+      ultimaTexto: ultima ? formatarDia(ultima.slot.startsAt, timezone) : null,
+      diasSemVir: ultima ? Math.floor((agora - ultima.slot.startsAt.getTime()) / 86400000) : null,
+      especialidadeTop: maisFrequente(p.appointments.map((a) => a.specialty.name)),
+      medicoTop: maisFrequente(p.appointments.map((a) => a.doctor.name)),
+    },
+
+    proxima: futuras[0]
+      ? {
+          quando: formatDateTime(futuras[0].slot.startsAt, timezone),
+          especialidade: futuras[0].specialty.name,
+          medico: futuras[0].doctor.name,
+          statusLabel: statusUI(futuras[0].status).label,
+          statusCss: statusUI(futuras[0].status).css,
+        }
+      : null,
+
+    historico: p.appointments.map((a) => ({
+      id: a.id,
+      quando: formatDateTime(a.slot.startsAt, timezone),
+      futuro: a.slot.startsAt.getTime() > agora,
+      especialidade: a.specialty.name,
+      medico: a.doctor.name,
+      unidade: a.unit.name,
+      pagamento: a.healthPlan ? a.healthPlan.name : "Particular",
+      statusLabel: statusUI(a.status).label,
+      statusCss: statusUI(a.status).css,
+    })),
+
+    conversa: conversa
+      ? {
+          ultimaEm: formatarDia(conversa.lastMessageAt, timezone),
+          aguardando: conversa.humanHandoff,
+        }
+      : null,
+  };
+}
+
+/** 12345678900 -> 123.456.789-00. Deixa passar o que não tiver 11 dígitos. */
+function formatarCpf(cpf: string): string {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  if (d.length !== 11) return cpf ?? "";
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+function calcularIdade(nascimento: Date): number {
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - nascimento.getFullYear();
+  const m = hoje.getMonth() - nascimento.getMonth();
+  if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) idade--;
+  return idade;
 }

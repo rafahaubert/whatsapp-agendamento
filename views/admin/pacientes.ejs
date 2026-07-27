@@ -1,0 +1,131 @@
+<%- include('partials/header', { tituloPagina: "Pacientes" }) %>
+<%
+  var base = "/admin/clinicas/" + t.id + "/pacientes";
+  function url(over) {
+    var p = { q: q, ordem: ordem, pagina: pagina };
+    for (var k in over) p[k] = over[k];
+    var partes = [];
+    if (p.q) partes.push("q=" + encodeURIComponent(p.q));
+    if (p.ordem && p.ordem !== "recentes") partes.push("ordem=" + p.ordem);
+    if (p.pagina && p.pagina > 1) partes.push("pagina=" + p.pagina);
+    return base + (partes.length ? "?" + partes.join("&") : "");
+  }
+  var ordens = [
+    { id: "recentes",  rotulo: "Mais recentes" },
+    { id: "consultas", rotulo: "Mais consultas" },
+    { id: "faltas",    rotulo: "Mais faltas" },
+    { id: "sumidos",   rotulo: "Sumidos" },
+  ];
+%>
+
+<div class="page-head">
+  <div>
+    <h1>Pacientes <span class="muted" style="font-weight:400">(<%= total %>)</span></h1>
+  </div>
+  <form method="get" action="<%= base %>" class="busca">
+    <% if (ordem !== "recentes") { %><input type="hidden" name="ordem" value="<%= ordem %>" /><% } %>
+    <input type="search" name="q" value="<%= q %>" placeholder="Nome, CPF ou telefone"
+           aria-label="Buscar paciente" />
+    <button class="btn sm">Buscar</button>
+    <% if (q) { %><a class="btn sm ghost" href="<%= base %>">Limpar</a><% } %>
+  </form>
+</div>
+
+<nav class="tabs" aria-label="Ordenar lista">
+  <% ordens.forEach(function(o){ %>
+    <a href="<%= url({ ordem: o.id, pagina: 1 }) %>" class="<%= ordem === o.id ? 'on' : '' %>"
+       <%= ordem === o.id ? 'aria-current="true"' : "" %>><%= o.rotulo %></a>
+  <% }) %>
+</nav>
+
+<% if (ordem === "sumidos") { %>
+  <p class="muted" style="margin:10px 0 0">
+    Quem já veio à clínica, não tem consulta marcada e está sem vir há mais tempo.
+    Base para reativação — quem nunca veio fica de fora, é paciente novo.
+  </p>
+<% } %>
+
+<div class="card">
+  <div class="card-head">
+    <h2><%= ordem === "sumidos" ? "Sem retorno" : "Lista" %></h2>
+    <span class="muted"><%= total %> paciente<%= total === 1 ? "" : "s" %></span>
+  </div>
+  <% if (linhas.length === 0) { %>
+    <div class="empty">
+      <% if (q) { %>
+        Nenhum paciente encontrado para “<%= q %>”.
+      <% } else { %>
+        Nenhum paciente ainda. Eles são criados sozinhos no primeiro agendamento pelo WhatsApp.
+      <% } %>
+    </div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Paciente</th>
+            <th>Contato</th>
+            <th class="num">Consultas</th>
+            <th class="num">Faltas</th>
+            <th>Última visita</th>
+            <th>Próxima</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% linhas.forEach(function(p){ %>
+            <tr>
+              <td>
+                <a href="<%= base %>/<%= p.id %>"><strong><%= p.nome %></strong></a>
+                <div class="muted" style="font-size:11.5px"><%= p.cpf %></div>
+              </td>
+              <td>
+                <%= p.telefone %>
+                <% if (p.convenio) { %>
+                  <div class="muted" style="font-size:11.5px"><%= p.convenio %></div>
+                <% } else { %>
+                  <div class="muted" style="font-size:11.5px">Particular</div>
+                <% } %>
+              </td>
+              <td class="num"><%= p.consultas %></td>
+              <td class="num">
+                <%= p.faltas %><% if (p.taxaFalta !== null && p.faltas) { %>
+                  <span class="muted" style="font-size:11.5px">
+                    (<%= p.taxaFalta.toFixed(0) %>%)</span>
+                <% } %>
+              </td>
+              <td>
+                <%= p.ultimaTexto || "—" %>
+                <%
+                  // Em "Sumidos" o tempo parado é o próprio critério da ordenação,
+                  // então aparece sempre; nas outras ordens só quando já é notável.
+                  var mostrarDias = p.diasSemVir !== null && !p.proximaTexto &&
+                                    (ordem === "sumidos" || p.diasSemVir > 180);
+                %>
+                <% if (mostrarDias) { %>
+                  <div class="muted" style="font-size:11.5px">há <%= p.diasSemVir %> dias</div>
+                <% } %>
+              </td>
+              <td><%= p.proximaTexto || "—" %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<% if (paginas > 1) { %>
+  <div class="row between" style="margin-top:12px">
+    <span class="muted">Página <%= pagina %> de <%= paginas %></span>
+    <span class="row tight">
+      <% if (pagina > 1) { %>
+        <a class="btn sm ghost" href="<%= url({ pagina: pagina - 1 }) %>">← Anterior</a>
+      <% } %>
+      <% if (pagina < paginas) { %>
+        <a class="btn sm ghost" href="<%= url({ pagina: pagina + 1 }) %>">Próxima →</a>
+      <% } %>
+    </span>
+  </div>
+<% } %>
+
+<%- include('partials/footer') %>

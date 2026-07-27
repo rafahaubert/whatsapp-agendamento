@@ -434,6 +434,20 @@
 
     .inline{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
     .inline > *{flex:1;min-width:120px}
+
+    /* Busca do cabeçalho de página (pacientes). O seletor global de input acima
+       carrega quatro `:not()` e venceria qualquer `.busca input`, forçando
+       width:100% — daí a cadeia repetida aqui para poder dimensionar o campo. */
+    .busca{display:flex;gap:6px;align-items:center}
+    .busca input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]){
+      width:250px;margin-top:0;
+    }
+    @media (max-width:560px){
+      .busca{width:100%}
+      .busca input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]){
+        width:auto;flex:1;min-width:0;
+      }
+    }
     .inline .btn{flex:0 0 auto;min-width:0}
     .inline label{margin:0}
 

@@ -19,6 +19,7 @@
   // prefixo delas; "nova" também precisa vir antes, senão vira /clinicas/:id.
   var secao = "";
   if (/^\/admin\/clinicas\/[^/]+\/inbox/.test(caminho)) secao = "inbox";
+  else if (/^\/admin\/clinicas\/[^/]+\/pacientes/.test(caminho)) secao = "pacientes";
   else if (/^\/admin\/clinicas\/[^/]+\/calendario/.test(caminho)) secao = "calendario";
   else if (/^\/admin\/clinicas\/[^/]+\/metricas/.test(caminho)) secao = "metricas";
   else if (/^\/admin\/clinicas\/nova/.test(caminho)) secao = "clinicas";
@@ -58,6 +59,11 @@
         </span>
         <span class="rail-lbl" aria-hidden="true">Caixa de entrada</span>
         <% if (pend) { %><span class="rail-cnt" aria-hidden="true"><%= pendCurto %></span><% } %>
+      </a>
+
+      <a class="rail-i" href="<%= base %>/pacientes" title="Pacientes"<%- marca("pacientes") %>>
+        <span class="rail-ico"><%- include('icone', { nome: "pacientes" }) %></span>
+        <span class="rail-lbl">Pacientes</span>
       </a>
 
       <a class="rail-i" href="<%= base %>/metricas" title="Métricas"<%- marca("metricas") %>>
