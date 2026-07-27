@@ -1,3 +1,57 @@
-  </main>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Tema: alterna claro/escuro e guarda a escolha; sem preferência salva, segue o sistema.
+    document.getElementById("btnTema").addEventListener("click", function () {
+      var raiz = document.documentElement;
+      var atual = raiz.getAttribute("data-theme");
+      if (!atual) {
+        atual = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      var novo = atual === "dark" ? "light" : "dark";
+      raiz.setAttribute("data-theme", novo);
+      try { localStorage.setItem("ha-tema", novo); } catch (e) {}
+    });
+
+    // Menu lateral. No desktop ele abre no hover e o botão de fixar o trava
+    // aberto; a escolha fica salva igual ao tema. No mobile vira gaveta.
+    (function () {
+      var raiz = document.documentElement;
+      var btnFixar = document.getElementById("btnFixarRail");
+      var btnMobile = document.getElementById("btnRailMobile");
+      var fundo = document.getElementById("railFundo");
+
+      function sincronizaFixar() {
+        var fixo = raiz.getAttribute("data-rail") === "fixo";
+        btnFixar.setAttribute("aria-pressed", fixo ? "true" : "false");
+        btnFixar.setAttribute("aria-label", fixo ? "Desafixar menu" : "Fixar menu aberto");
+      }
+
+      btnFixar.addEventListener("click", function () {
+        var fixo = raiz.getAttribute("data-rail") === "fixo";
+        if (fixo) raiz.removeAttribute("data-rail");
+        else raiz.setAttribute("data-rail", "fixo");
+        try { localStorage.setItem("ha-rail", fixo ? "solto" : "fixo"); } catch (e) {}
+        sincronizaFixar();
+      });
+      sincronizaFixar();
+
+      function gaveta(abrir) {
+        if (abrir) raiz.setAttribute("data-rail-mobile", "aberto");
+        else raiz.removeAttribute("data-rail-mobile");
+        btnMobile.setAttribute("aria-expanded", abrir ? "true" : "false");
+        fundo.hidden = !abrir;
+      }
+      btnMobile.addEventListener("click", function () {
+        gaveta(raiz.getAttribute("data-rail-mobile") !== "aberto");
+      });
+      fundo.addEventListener("click", function () { gaveta(false); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") gaveta(false);
+      });
+    })();
+  </script>
 </body>
 </html>
