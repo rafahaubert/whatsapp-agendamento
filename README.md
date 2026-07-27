@@ -78,9 +78,22 @@ Com o servidor rodando (`npm run dev`), acesse **http://localhost:3000/admin**.
 - **Usuário de clínica (CLINIC)** — enxerga **apenas a própria clínica**; campos técnicos
   (Phone Number ID, modelo de IA, nome do template) ficam ocultos.
 
-Enquanto não existir nenhum usuário cadastrado, o login por `ADMIN_USER`/`ADMIN_PASSWORD`
-funciona como SUPER. Crie o primeiro acesso em **/admin/usuarios** e, a partir daí, o login
-passa a ser pelo banco (senhas com hash scrypt). Pelo painel dá para,
+O login dos usuários cadastrados é o **e-mail** (senhas com hash scrypt); crie-os em
+**/admin/usuarios**. O `ADMIN_USER`/`ADMIN_PASSWORD` do ambiente continua valendo como
+SUPER — é a chave reserva do operador, para ninguém ficar trancado fora do painel. Um
+usuário do banco com o mesmo identificador tem prioridade sobre ela.
+
+Se ainda assim ninguém conseguir entrar (senha perdida, usuário desativado), há a saída
+pela linha de comando, apontando `DATABASE_URL` para o banco de produção:
+
+```bash
+npm run admin -- listar                          # quem existe e qual é o e-mail de login
+npm run admin -- senha <e-mail> <senha-nova>     # redefine a senha
+npm run admin -- criar <e-mail> <senha> [nome]   # cria um SUPER
+npm run admin -- ativar <e-mail>                 # reativa um acesso desativado
+```
+
+Pelo painel dá para,
 **sem editar arquivos**: criar/editar clínicas, ajustar textos, horário de
 funcionamento, regras e modelo de IA, gerenciar unidades/especialidades/convênios/médicos,
 gerar horários e ver os agendamentos. Os arquivos `config/clinics/*.json` seguem

@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import type { Request, Response, NextFunction } from "express";
 import { env } from "../config/env.js";
 import { prisma } from "../db/client.js";
+import { logger } from "../shared/logger.js";
 
 const scrypt = promisify(crypto.scrypt) as (
   senha: string,
@@ -90,38 +91,48 @@ export interface UsuarioAutenticado {
 }
 
 /**
- * Autentica pelo banco. Enquanto NÃO existir nenhum usuário cadastrado, aceita
- * as credenciais do ambiente como SUPER — assim ninguém fica trancado fora do
- * painel logo após o deploy.
+ * Autentica pelo banco (o identificador é o E-MAIL do usuário).
+ *
+ * As credenciais do ambiente (ADMIN_USER/ADMIN_PASSWORD) continuam valendo como
+ * SUPER mesmo depois de existirem usuários cadastrados: são a chave reserva do
+ * operador. Antes elas só funcionavam com a tabela vazia, então criar o
+ * primeiro usuário trancava todo mundo do lado de fora do painel — sem nenhuma
+ * forma de voltar a entrar. Um usuário do banco com o mesmo identificador tem
+ * prioridade, para que trocar a senha pelo painel valha de verdade.
  */
 export async function autenticar(
   email: string,
   senha: string,
 ): Promise<UsuarioAutenticado | null> {
-  const total = await prisma.adminUser.count();
-
-  if (total === 0) {
-    const ok = safeEqual(email, env.ADMIN_USER) && safeEqual(senha, env.ADMIN_PASSWORD);
-    return ok ? { userId: "bootstrap", nome: env.ADMIN_USER, role: Role.SUPER, tenantId: null } : null;
-  }
+  const identificador = email.trim();
 
   const user = await prisma.adminUser.findUnique({
-    where: { email: email.trim().toLowerCase() },
-  });
-  if (!user || !user.isActive) return null;
-  if (!(await verificarSenha(senha, user.passwordHash))) return null;
-
-  await prisma.adminUser.update({
-    where: { id: user.id },
-    data: { lastLoginAt: new Date() },
+    where: { email: identificador.toLowerCase() },
   });
 
-  return {
-    userId: user.id,
-    nome: user.name,
-    role: user.role as Role,
-    tenantId: user.tenantId,
-  };
+  if (user) {
+    if (!user.isActive) return null;
+    if (!(await verificarSenha(senha, user.passwordHash))) return null;
+
+    await prisma.adminUser.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return {
+      userId: user.id,
+      nome: user.name,
+      role: user.role as Role,
+      tenantId: user.tenantId,
+    };
+  }
+
+  if (safeEqual(identificador, env.ADMIN_USER) && safeEqual(senha, env.ADMIN_PASSWORD)) {
+    logger.warn({ user: env.ADMIN_USER }, "login pela credencial do ambiente (chave reserva)");
+    return { userId: "bootstrap", nome: env.ADMIN_USER, role: Role.SUPER, tenantId: null };
+  }
+
+  return null;
 }
 
 export function isLoggedIn(req: Request): boolean {
