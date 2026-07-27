@@ -123,6 +123,7 @@ function parseConfig(body: any, timezone: string): TenantConfig {
       acceptParticular: bool(body.booking_acceptParticular),
     },
     ai: { model: body.ai_model ?? "claude-haiku-4-5", persona: body.ai_persona ?? "" },
+    debounceSeconds: num(body.debounceSeconds, 8),
     knowledgeBase: (body.knowledgeBase ?? "").trim() || undefined,
     reminders: {
       enabled: bool(body.reminders_enabled),

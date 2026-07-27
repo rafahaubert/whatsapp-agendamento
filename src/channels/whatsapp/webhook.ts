@@ -6,9 +6,51 @@ import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from "./clien
 import { MAX_BOTOES, semOpcoesRepetidas } from "../format.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
 import { markMessageProcessed } from "../../db/idempotency.js";
+import { agruparMensagem, chaveConversa } from "../../core/inbox.js";
 import { logger } from "../../shared/logger.js";
-import type { MessageHandler } from "../types.js";
+import type { MessageHandler, Reply } from "../types.js";
 import type { WhatsAppWebhookBody } from "./types.js";
+
+/** Espera padrão antes de responder, quando a clínica não configurou uma. */
+const ESPERA_PADRAO_SEGUNDOS = 8;
+
+/** Envia a resposta do motor, com degradação para texto puro se o formato interativo falhar. */
+async function enviarResposta(
+  numeroClinica: string,
+  para: string,
+  reply: Reply,
+): Promise<void> {
+  try {
+    if (reply.opcoes?.length) {
+      // Até 3 opções cabem em botões; acima disso, lista interativa.
+      if (reply.opcoes.length <= MAX_BOTOES) {
+        // O botão já mostra dia e hora: repetir no texto duplica a mensagem.
+        await sendWhatsAppButtons(
+          numeroClinica,
+          para,
+          semOpcoesRepetidas(reply.texto, reply.opcoes),
+          reply.opcoes,
+        );
+      } else {
+        await sendWhatsAppList(numeroClinica, para, reply.texto, reply.opcoes, reply.rotuloOpcoes);
+      }
+    } else {
+      await sendWhatsAppText(numeroClinica, para, reply.texto);
+    }
+  } catch (err) {
+    // Nunca deixar o paciente sem resposta: se o formato interativo falhar,
+    // manda o mesmo conteúdo como texto simples.
+    logger.error({ err, to: para }, "falha ao enviar resposta — tentando texto");
+    const lista = (reply.opcoes ?? [])
+      .map((o, i) => `${i + 1}. ${o.titulo}${o.descricao ? ` — ${o.descricao}` : ""}`)
+      .join("\n");
+    await sendWhatsAppText(
+      numeroClinica,
+      para,
+      lista ? `${reply.texto}\n\n${lista}` : reply.texto,
+    ).catch((e) => logger.error({ err: e }, "falha também no envio de texto"));
+  }
+}
 
 /**
  * Router do canal WhatsApp. Recebe o `MessageHandler` por injeção — na Fase 1
@@ -71,57 +113,33 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
           continue;
         }
 
-        const reply = await handler.handle({
-          channel: "whatsapp",
-          tenant,
-          from: parsed.from,
-          messageId: parsed.messageId,
-          timestamp: parsed.timestamp,
-          text: parsed.text,
-          audioId: parsed.audioId,
-          payload: parsed.payload,
-          tipo: parsed.tipo,
-        });
-
-        if (!reply) continue;
-
-        const numero = tenant.whatsappPhoneNumberId;
-        try {
-          if (reply.opcoes?.length) {
-            // Até 3 opções cabem em botões; acima disso, lista interativa.
-            if (reply.opcoes.length <= MAX_BOTOES) {
-              // O botão já mostra dia e hora: repetir no texto duplica a mensagem.
-              await sendWhatsAppButtons(
-                numero,
-                parsed.from,
-                semOpcoesRepetidas(reply.texto, reply.opcoes),
-                reply.opcoes,
-              );
-            } else {
-              await sendWhatsAppList(
-                numero,
-                parsed.from,
-                reply.texto,
-                reply.opcoes,
-                reply.rotuloOpcoes,
-              );
+        // Não responde na hora: o paciente costuma picotar o pedido em várias
+        // mensagens. O lote é processado depois da janela de espera, e uma
+        // conversa por vez (ver src/core/inbox.ts).
+        const espera = (tenant.config.debounceSeconds ?? ESPERA_PADRAO_SEGUNDOS) * 1000;
+        agruparMensagem(
+          chaveConversa(tenant.id, parsed.from),
+          {
+            channel: "whatsapp",
+            tenant,
+            from: parsed.from,
+            messageId: parsed.messageId,
+            timestamp: parsed.timestamp,
+            text: parsed.text,
+            audioId: parsed.audioId,
+            payload: parsed.payload,
+            tipo: parsed.tipo,
+          },
+          espera,
+          async (lote) => {
+            try {
+              const reply = await handler.handle(lote);
+              if (reply) await enviarResposta(tenant.whatsappPhoneNumberId, parsed.from, reply);
+            } catch (err) {
+              logger.error({ err, to: parsed.from }, "falha ao processar o lote de mensagens");
             }
-          } else {
-            await sendWhatsAppText(numero, parsed.from, reply.texto);
-          }
-        } catch (err) {
-          // Nunca deixar o paciente sem resposta: se o formato interativo falhar,
-          // manda o mesmo conteúdo como texto simples.
-          logger.error({ err, to: parsed.from }, "falha ao enviar resposta — tentando texto");
-          const lista = (reply.opcoes ?? [])
-            .map((o, i) => `${i + 1}. ${o.titulo}${o.descricao ? ` — ${o.descricao}` : ""}`)
-            .join("\n");
-          await sendWhatsAppText(
-            numero,
-            parsed.from,
-            lista ? `${reply.texto}\n\n${lista}` : reply.texto,
-          ).catch((e) => logger.error({ err: e }, "falha também no envio de texto"));
-        }
+          },
+        );
       }
     } catch (err) {
       logger.error({ err }, "erro ao processar webhook do WhatsApp");

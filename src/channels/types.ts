@@ -39,9 +39,11 @@ export interface Reply {
 }
 
 /**
- * Contrato do motor de conversa. Recebe a mensagem já resolvida e devolve a
- * resposta (ou null para não responder — ex.: conversa em atendimento humano).
+ * Contrato do motor de conversa. Recebe o LOTE de mensagens da mesma conversa
+ * (o paciente costuma picotar o que quer dizer em várias mensagens seguidas) e
+ * devolve UMA resposta — ou null para não responder, ex.: conversa em
+ * atendimento humano.
  */
 export interface MessageHandler {
-  handle(message: IncomingMessage): Promise<Reply | null>;
+  handle(messages: IncomingMessage[]): Promise<Reply | null>;
 }

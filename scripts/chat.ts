@@ -41,16 +41,20 @@ async function main() {
     const text = (await rl.question("você: ")).trim();
     if (!text) continue;
 
-    const reply = await conversationEngine.handle({
-      channel: "whatsapp",
-      tenant,
-      from: phone,
-      messageId: randomUUID(),
-      timestamp: new Date(),
-      text,
-    });
+    const reply = await conversationEngine.handle([
+      {
+        channel: "whatsapp",
+        tenant,
+        from: phone,
+        messageId: randomUUID(),
+        timestamp: new Date(),
+        text,
+      },
+    ]);
 
-    console.log(`\nagente: ${reply}\n`);
+    console.log(`\nagente: ${reply?.texto ?? "(sem resposta)"}\n`);
+    for (const o of reply?.opcoes ?? []) console.log(`   [${o.titulo}] ${o.descricao ?? ""}`);
+    console.log();
   }
 }
 
