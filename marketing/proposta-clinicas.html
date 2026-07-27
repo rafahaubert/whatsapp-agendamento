@@ -925,24 +925,15 @@
   .motion .revela { opacity: 0; transform: translateY(10px); }
   .motion .revela.visivel { opacity: 1; transform: none; transition: opacity .5s ease, transform .5s ease; }
 
-  .motion .heroi-chat .msg,
-  .motion .heroi-chat .opts,
-  .motion .heroi-chat .dia,
-  .motion .heroi-chat .digitando {
-    opacity: 0;
-    animation: entra .34s ease forwards;
-    animation-delay: var(--d, 0s);
-  }
-
-  .motion .heroi-chat .digitando { animation: entra .3s ease forwards, sai .3s ease forwards var(--fim); }
+  /* A conversa do herói é revelada pelo JS, uma mensagem por vez. Nada de
+     esconder com opacity: o item ocuparia espaço e o quadro abriria vazio,
+     já rolado até o fim. Sem JS, a conversa aparece inteira. */
+  .oculto { display: none !important; }
+  .entrando { animation: entra .28s ease both; }
 
   @keyframes entra {
     from { opacity: 0; transform: translateY(7px) scale(.985); }
     to { opacity: 1; transform: none; }
-  }
-
-  @keyframes sai {
-    to { opacity: 0; height: 0; padding-top: 0; padding-bottom: 0; margin-top: -8px; }
   }
 
   .motion .digitando i { animation: pula 1.1s infinite ease-in-out; }
@@ -1038,35 +1029,35 @@
             <span class="fone-nome">Clínica Exemplo <span>online</span></span>
           </div>
           <div class="fone-chat rolando" id="chat-heroi">
-            <span class="dia" style="--d:0s">Sábado, 26 de julho</span>
+            <span class="dia">Sábado, 26 de julho</span>
 
-            <p class="msg pac" style="--d:.35s">boa noite, vcs atendem? tô com um dente doendo muito, quase não durmo<time>22:47 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">boa noite, vcs atendem? tô com um dente doendo muito, quase não durmo<time>22:47 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:1.1s">Olá! 👋 Sou o assistente virtual da Clínica Exemplo. Sinto muito pela dor — vamos resolver isso.
+            <p class="msg bot">Olá! 👋 Sou o assistente virtual da Clínica Exemplo. Sinto muito pela dor — vamos resolver isso.
 Para começar, qual é o seu nome completo?<time>22:47</time></p>
 
-            <p class="msg pac" style="--d:1.9s">Marina Alves de Souza<time>22:48 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">Marina Alves de Souza<time>22:48 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:2.4s">Obrigado, Marina. Pode me passar o seu CPF, por favor?<time>22:48</time></p>
+            <p class="msg bot">Obrigado, Marina. Pode me passar o seu CPF, por favor?<time>22:48</time></p>
 
-            <p class="msg pac" style="--d:3.1s">123.456.789-00<time>22:48 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">123.456.789-00<time>22:48 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:3.6s">Cadastro confirmado ✅
+            <p class="msg bot">Cadastro confirmado ✅
 Me conta rapidinho: a dor é ao mastigar, com gelado, ou é constante?<time>22:49</time></p>
 
-            <p class="msg pac" style="--d:4.4s">constante, latejando, faz dois dias<time>22:49 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">constante, latejando, faz dois dias<time>22:49 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:4.9s">Pelo que você descreveu, o ideal é uma avaliação em Endodontia. Posso seguir com isso?<time>22:49</time></p>
+            <p class="msg bot">Pelo que você descreveu, o ideal é uma avaliação em Endodontia. Posso seguir com isso?<time>22:49</time></p>
 
-            <p class="msg pac" style="--d:5.6s">pode sim<time>22:50 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">pode sim<time>22:50 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:6.1s">Tem algum dia melhor pra você? E prefere manhã, tarde ou noite?<time>22:50</time></p>
+            <p class="msg bot">Tem algum dia melhor pra você? E prefere manhã, tarde ou noite?<time>22:50</time></p>
 
-            <p class="msg pac" style="--d:6.8s">o mais cedo possível, de manhã<time>22:50 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">o mais cedo possível, de manhã<time>22:50 <span class="tick">✓✓</span></time></p>
 
-            <div class="digitando" style="--d:7.3s; --fim:8.1s" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="digitando" aria-hidden="true"><i></i><i></i><i></i></div>
 
-            <p class="msg bot" style="--d:8.2s">Consegui três horários de manhã:
+            <p class="msg bot">Consegui três horários de manhã:
 
 1️⃣ Segunda, 28/07 às 08:30
 2️⃣ Segunda, 28/07 às 09:00
@@ -1074,16 +1065,16 @@ Me conta rapidinho: a dor é ao mastigar, com gelado, ou é constante?<time>22:4
 
 É só tocar na opção abaixo.<time>22:50</time></p>
 
-            <div class="opts" style="--d:8.6s">
+            <div class="opts">
               <div class="opts-cab">Ver horários</div>
               <div class="opt">Segunda, 28/07 às 08:30 <small>Dra. Helena Prado · Unidade Centro</small></div>
               <div class="opt">Segunda, 28/07 às 09:00 <small>Dr. Caio Ribeiro · Unidade Centro</small></div>
               <div class="opt">Terça, 29/07 às 08:00 <small>Dra. Helena Prado · Unidade Centro</small></div>
             </div>
 
-            <p class="msg pac" style="--d:9.3s">Segunda, 28/07 às 08:30<time>22:51 <span class="tick">✓✓</span></time></p>
+            <p class="msg pac">Segunda, 28/07 às 08:30<time>22:51 <span class="tick">✓✓</span></time></p>
 
-            <p class="msg bot" style="--d:9.9s">Prontinho, Marina! Sua consulta está confirmada ✅
+            <p class="msg bot">Prontinho, Marina! Sua consulta está confirmada ✅
 
 🗓️ Segunda, 28/07 às 08:30
 👩‍⚕️ Dra. Helena Prado — Endodontia
@@ -1805,14 +1796,41 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
       document.querySelectorAll(".revela").forEach(function (el) { el.classList.add("visivel"); });
     }
 
-    /* ---------- o chat do herói rola sozinho, como um celular ---------- */
+    /* ---------- a conversa do herói se monta, uma mensagem por vez ----------
+       As três primeiras já entram visíveis: o quadro nunca aparece vazio.
+       O restante leva cerca de 4s, com o container crescendo e acompanhando. */
     var chat = document.getElementById("chat-heroi");
     if (!chat) return;
-    var passo = 0;
-    var relogio = setInterval(function () {
+
+    var VISIVEIS_DE_SAIDA = 3;
+    var INTERVALO = 230;
+    var PAUSA_DIGITANDO = 750;
+
+    var itens = Array.prototype.slice.call(chat.children);
+    if (itens.length <= VISIVEIS_DE_SAIDA) return;
+
+    for (var k = VISIVEIS_DE_SAIDA; k < itens.length; k++) itens[k].classList.add("oculto");
+
+    var proximo = VISIVEIS_DE_SAIDA;
+
+    function revelar() {
+      if (proximo >= itens.length) return;
+      var el = itens[proximo++];
+      el.classList.remove("oculto");
+      el.classList.add("entrando");
       chat.scrollTop = chat.scrollHeight;
-      passo += 0.2;
-      if (passo > 10.6) clearInterval(relogio);
-    }, 200);
+
+      // o "digitando" é um instante: some antes de a resposta chegar
+      if (el.classList.contains("digitando")) {
+        setTimeout(function () {
+          el.classList.add("oculto");
+          revelar();
+        }, PAUSA_DIGITANDO);
+        return;
+      }
+      setTimeout(revelar, INTERVALO);
+    }
+
+    setTimeout(revelar, 400);
   })();
 </script>
