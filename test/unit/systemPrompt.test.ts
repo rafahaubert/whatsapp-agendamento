@@ -117,6 +117,22 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Escolher um horário NÃO é confirmar");
   });
 
+  // O bot escrevia os horários no texto E o sistema mandava os mesmos botões.
+  it("com botões (até 3 opções), manda NÃO repetir os horários no texto", () => {
+    const prompt = buildSystemPrompt(fakeTenant({ maxOptionsOffered: 3 }, DIAS_PADRAO));
+    expect(prompt).toContain("NÃO escreva os horários no texto");
+    expect(prompt).not.toContain("escreva-os no texto numerados");
+    expect(prompt).not.toContain("opções, NUMERADAS");
+  });
+
+  // Acima de 3 vira lista interativa: o paciente só a vê depois de abrir.
+  it("com lista (mais de 3 opções), manda escrever os horários no texto", () => {
+    const prompt = buildSystemPrompt(fakeTenant({ maxOptionsOffered: 5 }, DIAS_PADRAO));
+    expect(prompt).toContain("escreva-os no texto numerados");
+    expect(prompt).toContain("opções, NUMERADAS");
+    expect(prompt).not.toContain("NÃO escreva os horários no texto");
+  });
+
   it("explica como pedir dia e horário exato em listar_horarios", () => {
     const prompt = buildSystemPrompt(fakeTenant({}, DIAS_PADRAO));
     expect(prompt).toContain("horaPreferida no formato HH:MM");

@@ -3,6 +3,7 @@ import { env } from "../../config/env.js";
 import { verifyWhatsAppSignature } from "./signature.js";
 import { parseWhatsAppWebhook } from "./parse.js";
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from "./client.js";
+import { MAX_BOTOES, semOpcoesRepetidas } from "../format.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
 import { markMessageProcessed } from "../../db/idempotency.js";
 import { agruparMensagem, chaveConversa } from "../../core/inbox.js";
@@ -22,8 +23,14 @@ async function enviarResposta(
   try {
     if (reply.opcoes?.length) {
       // Até 3 opções cabem em botões; acima disso, lista interativa.
-      if (reply.opcoes.length <= 3) {
-        await sendWhatsAppButtons(numeroClinica, para, reply.texto, reply.opcoes);
+      if (reply.opcoes.length <= MAX_BOTOES) {
+        // O botão já mostra dia e hora: repetir no texto duplica a mensagem.
+        await sendWhatsAppButtons(
+          numeroClinica,
+          para,
+          semOpcoesRepetidas(reply.texto, reply.opcoes),
+          reply.opcoes,
+        );
       } else {
         await sendWhatsAppList(numeroClinica, para, reply.texto, reply.opcoes, reply.rotuloOpcoes);
       }

@@ -1,5 +1,6 @@
 import type { ResolvedTenant } from "../db/tenantRepository.js";
 import { janelaAtendimento, rotularPeriodos } from "../domain/horarios.js";
+import { MAX_BOTOES } from "../channels/format.js";
 
 /**
  * Monta o system prompt a partir da configuração da clínica. Tudo o que varia
@@ -19,6 +20,11 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
   const janela = janelaAtendimento(cfg.businessHours.days, cfg.booking.slotDurationMinutes);
   const periodos = janela.periodos.length ? rotularPeriodos(janela.periodos) : "manhã ou tarde";
 
+  // Até MAX_BOTOES opções viram BOTÕES, que já mostram dia e hora ao paciente;
+  // acima disso vira lista interativa, que ele só vê depois de tocar em "Ver
+  // horários" — aí o texto precisa trazer os horários.
+  const usaBotoes = cfg.booking.maxOptionsOffered <= MAX_BOTOES;
+
   // Passos do fluxo, numerados na hora: com "Perguntar convênio" desligado o
   // passo some, e uma lista que pula do 4 para o 6 confunde o modelo.
   const passos = [
@@ -30,7 +36,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
       ? "Pergunte se será PARTICULAR ou por CONVÊNIO. Se convênio, descubra o plano (use listar_convenios se preciso)."
       : "",
     `Pergunte a PREFERÊNCIA DE DIA/PERÍODO antes de buscar a agenda: "Tem algum dia melhor pra você? E prefere ${periodos}?".`,
-    `Só então chame listar_horarios — repassando dia, periodo e/ou horaPreferida conforme a resposta — e ofereça até ${cfg.booking.maxOptionsOffered} opções, NUMERADAS.`,
+    `Só então chame listar_horarios — repassando dia, periodo e/ou horaPreferida conforme a resposta — e ofereça até ${cfg.booking.maxOptionsOffered} opções${usaBotoes ? "" : ", NUMERADAS"}.`,
     "Ao paciente escolher, faça um RESUMO curto (especialidade, profissional, dia e horário) e peça a confirmação, SOZINHA: \"Posso confirmar?\". Só chame agendar depois de um sim claro.",
     `Depois que agendar retornar sucesso, finalize com algo como: "${cfg.branding.closingMessage}"`,
   ]
@@ -62,7 +68,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "- Não pergunte qual PROFISSIONAL o paciente quer; escolha pela agenda. Só trate de profissional específico se o próprio paciente pedir (aí use medico= em listar_horarios).",
     "- Faça UMA pergunta por mensagem. Não peça necessidade, forma de pagamento e preferência de dia tudo junto.",
     "- Só afirme informações (preços, procedimentos, convênios, formas de pagamento, endereço) que vieram de uma FERRAMENTA ou da BASE DE CONHECIMENTO abaixo. Se não tiver certeza, diga que confirma com a recepção — nunca chute.",
-    "- Só ofereça horários retornados por listar_horarios. Guarde a relação número→slotId para usar em agendar.",
+    "- Só ofereça horários retornados por listar_horarios. Guarde a relação horário→slotId para usar em agendar (o paciente pode responder pelo horário, pelo botão ou por 'o primeiro').",
     "- ATENÇÃO: sua lista de horários vem APENAS da ÚLTIMA chamada de listar_horarios (poucas opções, sempre as mais próximas). Você NÃO conhece os demais horários da agenda.",
     "- Por isso, se o paciente pedir outro PERÍODO, outro dia, ou 'mais opções', você DEVE chamar listar_horarios OUTRA VEZ — com o periodo e/ou dia que ele indicou — ANTES de responder. É PROIBIDO afirmar que um dia ou período não tem horários sem ter acabado de chamar listar_horarios com aqueles parâmetros.",
     "",
@@ -96,7 +102,9 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     `- Use "${cfg.branding.fallbackMessage}" APENAS se o pedido fugir totalmente do escopo de agendamento — nunca por causa de erro de ferramenta.`,
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",
     "- Chame chamar_atendente quando o paciente pedir uma pessoa/recepção, reclamar, relatar urgência ou dor forte, ou pedir algo fora do agendamento. Depois disso, não continue o fluxo — apenas informe que a recepção vai responder.",
-    "- Ao listar horários, escreva-os no texto normalmente; o sistema também os envia como opções clicáveis.",
+    usaBotoes
+      ? "- NÃO escreva os horários no texto e NÃO faça lista numerada: o sistema já os envia como BOTÕES logo abaixo da sua mensagem, com dia e hora. Escreva só uma frase curta convidando a escolher (ex.: \"Tenho estes horários com a Dra. Ana 👇\"). Repetir os horários no texto duplica tudo e deixa a mensagem confusa."
+      : "- Ao listar horários, escreva-os no texto numerados; o sistema também os envia como lista clicável (o paciente só a vê depois de tocar no botão).",
     "- O paciente pode mandar várias mensagens seguidas: elas chegam juntas, separadas por quebra de linha. Responda a todas de uma vez, numa única mensagem.",
   ];
 
