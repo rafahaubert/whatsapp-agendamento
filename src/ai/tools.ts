@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ResolvedTenant } from "../db/tenantRepository.js";
 import { PaymentType } from "../shared/enums.js";
+import { ehConfirmacao } from "../shared/confirmacao.js";
 import * as scheduling from "../domain/scheduling.js";
 
 /**
@@ -14,10 +15,12 @@ export interface ConversationContext {
   patientId?: string;
   /** Ligado pela ferramenta chamar_atendente; o motor persiste ao fim do turno. */
   handoffRequested?: boolean;
+  /** Última fala do paciente neste turno — usada para exigir confirmação antes de agendar. */
+  ultimaMensagemPaciente?: string;
 }
 
-/** Definições das ferramentas expostas ao Claude (esquema JSON). */
-export const tools: Anthropic.Tool[] = [
+/** Catálogo completo. Use `buildTools(tenant)` — ele filtra o que a clínica não usa. */
+const TODAS: Anthropic.Tool[] = [
   {
     name: "listar_especialidades",
     description: "Lista as especialidades médicas oferecidas pela clínica.",
@@ -91,7 +94,9 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "listar_horarios",
     description:
-      "Busca horários livres de uma especialidade. Retorna no máximo o número de opções configurado pela clínica.",
+      "Busca horários livres de uma especialidade. Retorna no máximo o número de opções configurado pela clínica. " +
+      "Além de 'horarios', a resposta pode trazer: 'dia' (o dia a que as opções se referem), " +
+      "'exato' (false = o horário pedido NÃO está livre; as opções são as mais próximas) e 'aviso' (o que dizer ao paciente).",
     input_schema: {
       type: "object",
       properties: {
@@ -106,9 +111,15 @@ export const tools: Anthropic.Tool[] = [
           enum: ["manha", "tarde", "noite"],
           description: "Preferência de período do dia do paciente (opcional)",
         },
+        dia: {
+          type: "string",
+          description:
+            "Dia pedido pelo paciente. Aceita dia da semana (\"segunda\", \"sexta\"), \"hoje\", \"amanhã\" ou data (\"27/07\", \"2026-07-27\"). Passe SEMPRE que o paciente citar um dia (opcional)",
+        },
         horaPreferida: {
-          type: "integer",
-          description: "Hora aproximada preferida pelo paciente (0 a 23). Ex.: 22 para 'pelas 22h' (opcional)",
+          type: "string",
+          description:
+            "Horário pedido pelo paciente, no formato HH:MM. Ex.: \"16:30\" para 'às 16h30', \"22:00\" para 'pelas 22h'. NUNCA arredonde: 16h30 é \"16:30\" (opcional)",
         },
         medico: {
           type: "string",
@@ -121,7 +132,7 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "agendar",
     description:
-      "Agenda a consulta em um horário (slotId) previamente listado. Requer paciente já identificado.",
+      "Agenda a consulta em um horário (slotId) previamente listado. Requer paciente já identificado E uma confirmação explícita dele na última mensagem (\"sim\", \"pode agendar\"). Escolher um horário não é confirmar — a ferramenta recusa se o paciente ainda não tiver confirmado.",
     input_schema: {
       type: "object",
       properties: {
@@ -164,6 +175,32 @@ export const tools: Anthropic.Tool[] = [
   },
 ];
 
+/**
+ * Ferramentas que ESTA clínica expõe ao Claude.
+ *
+ * Quando a clínica não trabalha com convênio, deixar `listar_convenios` e o
+ * campo `paymentType: HEALTH_PLAN` no catálogo funciona como um convite para o
+ * modelo perguntar sobre convênio — mesmo com o prompt mandando não perguntar.
+ * A porta se fecha aqui, removendo o que não faz sentido.
+ */
+export function buildTools(tenant: ResolvedTenant): Anthropic.Tool[] {
+  if (tenant.config.booking.askInsurance) return TODAS;
+
+  return TODAS.filter((t) => t.name !== "listar_convenios").map((t) => {
+    if (t.name !== "agendar") return t;
+    return {
+      ...t,
+      input_schema: {
+        type: "object",
+        properties: {
+          slotId: { type: "string", description: "ID do horário vindo de listar_horarios" },
+        },
+        required: ["slotId"],
+      },
+    };
+  });
+}
+
 /** Executa uma ferramenta chamada pelo Claude, sempre no escopo do tenant. */
 export async function executeTool(
   name: string,
@@ -194,6 +231,7 @@ export async function executeTool(
         unidade: input.unidade,
         plano: input.plano,
         periodo: input.periodo,
+        dia: input.dia,
         horaPreferida: input.horaPreferida,
         medico: input.medico,
         pacienteId: ctx.patientId, // continuidade: mantém o profissional de sempre
@@ -215,15 +253,25 @@ export async function executeTool(
         instrucao:
           "Avise ao paciente, de forma acolhedora, que a recepção foi notificada e vai responder em instantes. Não continue o agendamento.",
       };
-    case "agendar":
+    case "agendar": {
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado. Use identificar_paciente antes." };
+      // Trava real: já aconteceu de o agente agendar enquanto o paciente ainda
+      // fazia perguntas. Sem um "sim" claro na última fala dele, não agenda.
+      if (!ehConfirmacao(ctx.ultimaMensagemPaciente)) {
+        return {
+          erro:
+            "O paciente ainda NÃO confirmou. Faça um resumo curto (especialidade, profissional, dia e horário), " +
+            "pergunte apenas \"Posso confirmar?\" e só chame agendar depois de um sim claro.",
+        };
+      }
       return scheduling.bookAppointment(
         t,
         ctx.patientId,
         input.slotId,
-        input.paymentType ?? PaymentType.PARTICULAR,
-        input.plano,
+        t.config.booking.askInsurance ? (input.paymentType ?? PaymentType.PARTICULAR) : PaymentType.PARTICULAR,
+        t.config.booking.askInsurance ? input.plano : undefined,
       );
+    }
     case "listar_meus_agendamentos":
       if (!ctx.patientId) return { erro: "Paciente ainda não identificado." };
       return scheduling.listPatientAppointments(t, ctx.patientId);

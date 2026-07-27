@@ -76,7 +76,13 @@
     <label>Duração do slot (min)<input type="number" name="booking_slotDurationMinutes" value="<%= cfg.booking.slotDurationMinutes %>" /></label>
     <label>Opções ofertadas<input type="number" name="booking_maxOptionsOffered" value="<%= cfg.booking.maxOptionsOffered %>" /></label>
   </div>
-  <label>Janela de agendamento (dias)<input type="number" name="booking_advanceBookingDays" value="<%= cfg.booking.advanceBookingDays %>" /></label>
+  <div class="grid2">
+    <label>Janela de agendamento (dias)<input type="number" name="booking_advanceBookingDays" value="<%= cfg.booking.advanceBookingDays %>" /></label>
+    <label>Espera antes de responder (s)
+      <input type="number" name="debounceSeconds" min="0" max="60" value="<%= cfg.debounceSeconds == null ? 8 : cfg.debounceSeconds %>" />
+      <small>Agrupa mensagens seguidas do paciente numa resposta só.</small>
+    </label>
+  </div>
   <div class="checks">
     <label><input type="checkbox" name="booking_allowCancellation" <%= cfg.booking.allowCancellation ? "checked" : "" %> /> Permitir cancelamento</label>
     <label><input type="checkbox" name="booking_allowReschedule" <%= cfg.booking.allowReschedule ? "checked" : "" %> /> Permitir remarcação</label>

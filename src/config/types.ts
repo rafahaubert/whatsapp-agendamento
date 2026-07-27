@@ -57,6 +57,14 @@ export interface TenantConfig {
   };
 
   /**
+   * Segundos de espera antes de responder. O paciente costuma picotar o pedido
+   * em duas ou três mensagens seguidas; esperar um pouco agrupa tudo numa
+   * resposta só, em vez de responder por cima de quem ainda está digitando.
+   * Padrão: 8.
+   */
+  debounceSeconds?: number;
+
+  /**
    * Base de conhecimento / FAQ da clínica (texto livre) — injetada no prompt para
    * o agente responder perguntas gerais (procedimentos, pagamento, localização…).
    */

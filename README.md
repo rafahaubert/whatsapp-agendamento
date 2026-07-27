@@ -42,6 +42,8 @@ WhatsApp Agent/
 │   ├── channels/whatsapp/     # webhook, assinatura, parse, envio
 │   ├── ai/                    # Claude: anthropic, systemPrompt, tools
 │   ├── core/engine.ts         # Motor de conversa (loop de tool use + memória)
+│   ├── core/inbox.ts          # Agrupa mensagens seguidas + fila por conversa
+│   ├── domain/horarios.ts     # Regras puras de horário (períodos, dia, seleção)
 │   ├── domain/scheduling.ts   # Regras de negócio (agendar, cancelar, remarcar)
 │   ├── db/                    # Prisma, repositórios, seed reutilizável
 │   └── server.ts              # Entrypoint (webhook HTTP)
@@ -107,6 +109,25 @@ válidos como **seed inicial / import** (`npm run seed`).
 3. Comportamento e catálogo vêm de `config/clinics/<slug>.json`.
 
 **Novo cliente = novo JSON + registro de tenant. Nenhuma linha de código muda.**
+
+---
+
+## Agrupamento de mensagens (uma resposta por vez)
+
+O paciente costuma picotar o pedido ("teria que ser mais tarde" + "me manda outras
+opções"). Cada mensagem chega num POST separado da Meta, então o agente espera
+alguns segundos antes de responder e trata o conjunto como **um único turno** —
+o campo *Espera antes de responder* no painel (`debounceSeconds`, padrão 8s).
+
+Além de evitar a resposta dobrada, cada conversa roda **uma execução por vez**
+(`src/core/inbox.ts`): sem isso duas mensagens simultâneas viravam duas execuções
+paralelas, cada uma lendo e sobrescrevendo o mesmo histórico.
+
+> Esse estado vive em memória, como o serviço roda hoje: **uma instância**
+> (`min_machines_running = 1` no fly.toml; plano free do Render também).
+> Ao escalar para várias instâncias, isto precisa migrar para um lock/fila
+> compartilhados (Redis ou o próprio Postgres). Se o processo reiniciar dentro
+> da janela de espera, o lote pendente se perde.
 
 ---
 

@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic } from "../ai/anthropic.js";
 import { buildSystemPrompt } from "../ai/systemPrompt.js";
-import { tools, executeTool, type ConversationContext } from "../ai/tools.js";
+import { buildTools, executeTool, type ConversationContext } from "../ai/tools.js";
 import {
   loadConversation,
   saveConversation,
@@ -41,111 +41,156 @@ function extrairEspecialidades(resultado: unknown): { name: string; priceParticu
   return Array.isArray(resultado) && resultado[0]?.name ? resultado : [];
 }
 
+/** O que uma mensagem recebida vira depois de resolvida (texto, áudio, opção). */
+interface Resolvida {
+  /** Texto utilizável pelo modelo, ou null se não deu para ler. */
+  texto: string | null;
+  /** O que registrar no log da caixa de entrada. */
+  log: string;
+  /** Aviso pronto quando não deu para ler (áudio ininteligível, imagem…). */
+  aviso?: string;
+}
+
+async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
+  const texto = message.text?.trim() || null;
+
+  if (message.audioId) {
+    try {
+      const midia = await baixarMidia(message.audioId);
+      const transcrito = midia ? await transcreverAudio(midia.buffer, midia.mimeType) : null;
+      if (transcrito) {
+        logger.info({ from: message.from }, "áudio transcrito");
+        return { texto: transcrito, log: transcrito };
+      }
+    } catch (err) {
+      logger.error({ err, from: message.from }, "falha ao processar áudio");
+    }
+    return {
+      texto: null,
+      log: "[áudio]",
+      aviso: isTranscricaoConfigurada()
+        ? "Não consegui entender o áudio 😕 Pode escrever, por favor?"
+        : "Ainda não consigo ouvir áudios 😅 Pode escrever sua mensagem, por favor?",
+    };
+  }
+
+  if (!texto && !message.payload) {
+    // Imagem, documento, figurinha…
+    return {
+      texto: null,
+      log: `[${message.tipo ?? "mídia"}]`,
+      aviso: "Consigo ler mensagens de texto e áudio 🙂 Pode me escrever o que precisa?",
+    };
+  }
+
+  // Botões do lembrete e opções clicáveis viram texto para o modelo.
+  if (message.payload) {
+    const [acao, id] = message.payload.split(":");
+    if (acao === "REMARCAR" && id) return { texto: "Quero remarcar minha consulta.", log: texto ?? message.payload };
+    if (acao === "SLOT" && id) {
+      return { texto: `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`, log: texto ?? message.payload };
+    }
+    if (acao === "ESP" && id) return { texto: `Quero ${id}.`, log: texto ?? message.payload };
+  }
+
+  return { texto, log: texto ?? message.payload ?? "" };
+}
+
 /**
- * Motor de conversa. Para cada mensagem recebida:
- *   1. resolve o conteúdo (texto, transcrição de áudio ou opção clicada);
+ * Motor de conversa. Para cada LOTE de mensagens da mesma conversa:
+ *   1. resolve o conteúdo de cada uma (texto, transcrição de áudio ou opção);
  *   2. trata atalhos determinísticos (lembrete, atendente) sem chamar o modelo;
  *   3. roda o loop de tool use com o Claude sobre as ferramentas de domínio;
  *   4. persiste histórico/estado e devolve a resposta (com opções, se houver).
+ *
+ * O lote vem de src/core/inbox.ts: o paciente costuma mandar duas ou três
+ * mensagens seguidas, e todas devem virar UMA resposta só.
  */
 export const conversationEngine: MessageHandler = {
-  async handle(message: IncomingMessage): Promise<Reply | null> {
-    const tenant = message.tenant;
-    const conversa = await loadConversation(tenant.id, message.from);
+  async handle(mensagens: IncomingMessage[]): Promise<Reply | null> {
+    const primeira = mensagens[0];
+    if (!primeira) return null;
 
-    // ---------- 1. Conteúdo da mensagem ----------
-    let texto = message.text?.trim() || null;
+    const tenant = primeira.tenant;
+    const from = primeira.from;
+    const conversa = await loadConversation(tenant.id, from);
 
-    if (message.audioId) {
-      try {
-        const midia = await baixarMidia(message.audioId);
-        const transcrito = midia ? await transcreverAudio(midia.buffer, midia.mimeType) : null;
-        if (transcrito) {
-          texto = transcrito;
-          logger.info({ from: message.from }, "áudio transcrito");
-        }
-      } catch (err) {
-        logger.error({ err, from: message.from }, "falha ao processar áudio");
-      }
-
-      if (!texto) {
-        await logMessage(tenant.id, message.from, "IN", "[áudio]", "PATIENT");
-        const aviso = isTranscricaoConfigurada()
-          ? "Não consegui entender o áudio 😕 Pode escrever, por favor?"
-          : "Ainda não consigo ouvir áudios 😅 Pode escrever sua mensagem, por favor?";
-        await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
-        return { texto: aviso };
-      }
+    // ---------- 1. Conteúdo do lote ----------
+    const resolvidas: Resolvida[] = [];
+    for (const m of mensagens) {
+      const r = await resolverConteudo(m);
+      await logMessage(tenant.id, from, "IN", r.log, "PATIENT");
+      resolvidas.push(r);
     }
 
-    if (!texto && !message.payload) {
-      // Imagem, documento, figurinha…
-      await logMessage(tenant.id, message.from, "IN", `[${message.tipo ?? "mídia"}]`, "PATIENT");
-      const aviso = "Consigo ler mensagens de texto e áudio 🙂 Pode me escrever o que precisa?";
-      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+    const textos = resolvidas.map((r) => r.texto).filter((t): t is string => Boolean(t));
+
+    // Nada legível no lote: responde o aviso da primeira que falhou.
+    if (textos.length === 0) {
+      const aviso = resolvidas.find((r) => r.aviso)?.aviso;
+      if (!aviso) return null;
+      if (conversa.humanHandoff) return null;
+      await logMessage(tenant.id, from, "OUT", aviso, "BOT");
       return { texto: aviso };
     }
 
-    await logMessage(tenant.id, message.from, "IN", texto ?? message.payload ?? "", "PATIENT");
+    let texto = textos.join("\n");
+    const naoLido = resolvidas.find((r) => !r.texto && r.aviso);
+    if (naoLido) {
+      texto += "\n(o paciente enviou também uma mensagem que não consegui ler — peça para reenviar por escrito)";
+    }
 
     // ---------- 2. Atendimento humano em andamento: bot silencia ----------
     if (conversa.humanHandoff) {
-      logger.info({ from: message.from }, "conversa em atendimento humano — bot não respondeu");
+      logger.info({ from }, "conversa em atendimento humano — bot não respondeu");
       return null;
     }
 
     // ---------- 3. Atalhos determinísticos ----------
-    if (texto && PEDE_ATENDENTE.test(texto)) {
-      await setHandoff(tenant.id, message.from, true);
+    if (textos.some((t) => PEDE_ATENDENTE.test(t))) {
+      await setHandoff(tenant.id, from, true);
       const aviso = "Certo! Já avisei a recepção — em instantes alguém da equipe fala com você. 🙂";
-      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+      await logMessage(tenant.id, from, "OUT", aviso, "BOT");
       return { texto: aviso };
     }
 
-    // Botões do lembrete: CONFIRMAR / CANCELAR / REMARCAR + id do agendamento.
-    if (message.payload) {
-      const [acao, id] = message.payload.split(":");
+    // Botões do lembrete: CONFIRMAR / CANCELAR + id do agendamento.
+    for (const m of mensagens) {
+      if (!m.payload) continue;
+      const [acao, id] = m.payload.split(":");
 
       if (acao === "CONFIRMAR" && id) {
         const r = (await confirmAppointment(tenant, id)) as { erro?: string; inicio?: string };
-        const resposta = r.erro
-          ? r.erro
-          : `Presença confirmada! ✅ Te esperamos ${r.inicio}. Até breve!`;
-        await logMessage(tenant.id, message.from, "OUT", resposta, "BOT");
+        const resposta = r.erro ? r.erro : `Presença confirmada! ✅ Te esperamos ${r.inicio}. Até breve!`;
+        await logMessage(tenant.id, from, "OUT", resposta, "BOT");
         return { texto: resposta };
       }
 
       if (acao === "CANCELAR" && id) {
         const r = (await cancelAppointment(tenant, id)) as { erro?: string };
-        const resposta = r.erro
-          ? r.erro
-          : "Consulta cancelada. 👍 Se quiser remarcar, é só me chamar!";
-        await logMessage(tenant.id, message.from, "OUT", resposta, "BOT");
+        const resposta = r.erro ? r.erro : "Consulta cancelada. 👍 Se quiser remarcar, é só me chamar!";
+        await logMessage(tenant.id, from, "OUT", resposta, "BOT");
         return { texto: resposta };
-      }
-
-      if (acao === "REMARCAR" && id) {
-        texto = "Quero remarcar minha consulta.";
-      } else if (acao === "SLOT" && id) {
-        texto = `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`;
-      } else if (acao === "ESP" && id) {
-        texto = `Quero ${id}.`;
       }
     }
 
     // ---------- 4. Conversa com o Claude ----------
     const messages: Anthropic.MessageParam[] = [
       ...conversa.history,
-      { role: "user", content: texto ?? "" },
+      { role: "user", content: texto },
     ];
 
     const ctx: ConversationContext = {
       tenant,
-      phone: message.from,
+      phone: from,
       patientId: conversa.state.patientId,
+      // A trava de confirmação de `agendar` olha para tudo o que o paciente
+      // acabou de dizer — o "sim" pode vir seguido de um "obrigado".
+      ultimaMensagemPaciente: textos.join("\n"),
     };
     const model = tenant.config.ai.model || DEFAULT_MODEL;
     const system = buildSystemPrompt(tenant);
+    const tools = buildTools(tenant);
 
     let replyText = tenant.config.branding.fallbackMessage;
     let ultimosHorarios: HorarioOferecido[] = [];
@@ -180,7 +225,7 @@ export const conversationEngine: MessageHandler = {
               if (block.name === "listar_especialidades") {
                 ultimasEspecialidades = extrairEspecialidades(result);
               }
-              if (block.name === "agendar") {
+              if (block.name === "agendar" && !(result as { erro?: string })?.erro) {
                 ultimosHorarios = []; // já escolheu
                 ultimasEspecialidades = [];
               }
@@ -208,18 +253,19 @@ export const conversationEngine: MessageHandler = {
         break;
       }
     } catch (err) {
-      logger.error({ err, tenant: tenant.slug, from: message.from }, "erro na conversa com o Claude");
+      logger.error({ err, tenant: tenant.slug, from }, "erro na conversa com o Claude");
       const aviso = tenant.config.branding.fallbackMessage;
-      await logMessage(tenant.id, message.from, "OUT", aviso, "BOT");
+      // O turno falhou, mas o que já foi consumido até aqui foi cobrado.
+      await logMessage(tenant.id, from, "OUT", aviso, "BOT", consumo);
       return { texto: aviso };
     }
 
-    await saveConversation(tenant.id, message.from, messages, { patientId: ctx.patientId });
+    await saveConversation(tenant.id, from, messages, { patientId: ctx.patientId });
 
     // A ferramenta pediu atendimento humano.
-    if (ctx.handoffRequested) await setHandoff(tenant.id, message.from, true);
+    if (ctx.handoffRequested) await setHandoff(tenant.id, from, true);
 
-    await logMessage(tenant.id, message.from, "OUT", replyText, "BOT", consumo);
+    await logMessage(tenant.id, from, "OUT", replyText, "BOT", consumo);
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
     if (ultimosHorarios.length) {
