@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { DateTime } from "luxon";
 import { prisma } from "../../src/db/client.js";
-import { seedClinic } from "../../src/db/seed.js";
+import { seedClinic, regenerateSlots } from "../../src/db/seed.js";
 import * as scheduling from "../../src/domain/scheduling.js";
 import { executeTool } from "../../src/ai/tools.js";
 import { SlotStatus } from "../../src/shared/enums.js";
@@ -208,7 +208,140 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("scheduling (integração)", () 
     };
     expect(cancel.status).toBe("CANCELADO");
 
-    const slot = await prisma.slot.findUnique({ where: { id: slotId } });
-    expect(slot?.status).toBe(SlotStatus.AVAILABLE);
+    // O slot do agendamento cancelado continua preso a ele (histórico + FK)…
+    const antigo = await prisma.slot.findUniqueOrThrow({ where: { id: slotId } });
+    expect(antigo.status).toBe(SlotStatus.BOOKED);
+
+    // …e o horário volta para a agenda como um slot NOVO, livre.
+    const livre = await prisma.slot.findFirst({
+      where: {
+        tenantId: tenant.id,
+        doctorId: antigo.doctorId,
+        startsAt: antigo.startsAt,
+        status: SlotStatus.AVAILABLE,
+      },
+    });
+    expect(livre).not.toBeNull();
+    expect(livre?.id).not.toBe(slotId);
+
+    // REGRESSÃO: reagendar o horário liberado estourava P2002 (slotId único).
+    const rebook = (await scheduling.bookAppointment(
+      tenant,
+      p.patientId,
+      livre!.id,
+      "PARTICULAR",
+    )) as { status?: string; erro?: string };
+    expect(rebook.erro).toBeUndefined();
+    expect(rebook.status).toBe("AGENDADO");
+
+    await scheduling.cancelAppointment(tenant, appt.appointmentId);
+  });
+
+  it("REGRESSÃO: renovar a agenda depois de um cancelamento não quebra (FK slotId)", async () => {
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Beltrano de Teste",
+      cpf: "168.995.350-09",
+      phone: "+5551976707700",
+    })) as { patientId: string };
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    const appt = (await scheduling.bookAppointment(
+      tenant,
+      p.patientId,
+      slots.horarios[0].slotId,
+      "PARTICULAR",
+    )) as { appointmentId: string };
+    await scheduling.cancelAppointment(tenant, appt.appointmentId);
+
+    // Era aqui que a renovação diária morria: slot.deleteMany() no slot preso
+    // ao agendamento cancelado violava appointments_slotId_fkey (RESTRICT).
+    await expect(
+      regenerateSlots(prisma, {
+        tenantId: tenant.id,
+        timezone: tenant.timezone,
+        config: tenant.config,
+        slotDays: 3,
+      }),
+    ).resolves.toBeGreaterThan(0);
+  });
+
+  it("renovar a agenda conserta slot antigo que ficou livre com agendamento preso", async () => {
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Legado de Teste",
+      cpf: "111.444.777-35",
+      phone: "+5551976707702",
+    })) as { patientId: string };
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    const slotId = slots.horarios[0].slotId;
+    const appt = (await scheduling.bookAppointment(tenant, p.patientId, slotId, "PARTICULAR")) as {
+      appointmentId: string;
+    };
+
+    // Estado que o banco de produção herdou do comportamento antigo: o
+    // cancelamento devolvia o slot para AVAILABLE sem soltar o agendamento.
+    await prisma.appointment.update({
+      where: { id: appt.appointmentId },
+      data: { status: "CANCELLED" },
+    });
+    await prisma.slot.update({ where: { id: slotId }, data: { status: SlotStatus.AVAILABLE } });
+
+    await regenerateSlots(prisma, {
+      tenantId: tenant.id,
+      timezone: tenant.timezone,
+      config: tenant.config,
+      slotDays: 3,
+    });
+
+    // O slot preso sobrevive (marcado como ocupado)…
+    const antigo = await prisma.slot.findUniqueOrThrow({ where: { id: slotId } });
+    expect(antigo.status).toBe(SlotStatus.BOOKED);
+
+    // …e o horário volta a ser oferecido num slot livre de verdade.
+    const livre = await prisma.slot.findFirst({
+      where: {
+        tenantId: tenant.id,
+        status: SlotStatus.AVAILABLE,
+        doctorId: antigo.doctorId,
+        startsAt: antigo.startsAt,
+      },
+    });
+    expect(livre).not.toBeNull();
+    expect(livre?.id).not.toBe(slotId);
+  });
+
+  it("REGRESSÃO: renovar a agenda não reabre horário de consulta ativa", async () => {
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Sicrano de Teste",
+      cpf: "111.444.777-35",
+      phone: "+5551976707701",
+    })) as { patientId: string };
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    await scheduling.bookAppointment(tenant, p.patientId, slots.horarios[0].slotId, "PARTICULAR");
+    const ocupado = await prisma.slot.findUniqueOrThrow({ where: { id: slots.horarios[0].slotId } });
+
+    await regenerateSlots(prisma, {
+      tenantId: tenant.id,
+      timezone: tenant.timezone,
+      config: tenant.config,
+      slotDays: 3,
+    });
+
+    const livres = await prisma.slot.count({
+      where: {
+        tenantId: tenant.id,
+        status: SlotStatus.AVAILABLE,
+        doctorId: ocupado.doctorId,
+        startsAt: ocupado.startsAt,
+      },
+    });
+    expect(livres).toBe(0);
   });
 });

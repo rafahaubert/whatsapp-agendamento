@@ -5,7 +5,8 @@
  * "vence": passada a janela, o bot não teria mais o que oferecer. Este job
  * regenera diariamente a janela de `booking.advanceBookingDays` de cada clínica.
  *
- * `regenerateSlots` só apaga horários LIVRES — os reservados ficam intactos.
+ * `regenerateSlots` só apaga horários LIVRES e sem agendamento — os reservados
+ * ficam intactos e o horário de uma consulta ativa não é reaberto.
  */
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";

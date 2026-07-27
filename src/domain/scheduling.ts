@@ -286,6 +286,31 @@ export async function bookAppointment(
       return { erro: "Esse horário acabou de ser reservado. Escolha outro." };
     }
 
+    // Um slot só comporta um agendamento (índice único em slotId). Se sobrou
+    // um agendamento cancelado preso a ele (dado antigo), avisa em vez de
+    // estourar P2002 no meio da conversa.
+    const jaUsado = await tx.appointment.findUnique({
+      where: { slotId: slot.id },
+      select: { id: true },
+    });
+    if (jaUsado) return { erro: "Esse horário acabou de ser reservado. Escolha outro." };
+
+    // O gerador cria um slot por unidade × especialidade do profissional: sem
+    // esta checagem dois pacientes cairiam no mesmo profissional e horário.
+    const conflito = await tx.appointment.findFirst({
+      where: {
+        tenantId,
+        status: { not: AppointmentStatus.CANCELLED },
+        slot: {
+          doctorId: slot.doctorId,
+          startsAt: { lt: slot.endsAt },
+          endsAt: { gt: slot.startsAt },
+        },
+      },
+      select: { id: true },
+    });
+    if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
+
     let healthPlanId: string | null = null;
     let pType: string = PaymentType.PARTICULAR;
     if (paymentType === PaymentType.HEALTH_PLAN && plano) {
@@ -378,18 +403,34 @@ export async function cancelAppointment(tenant: ResolvedTenant, appointmentId: s
   const outcome = await prisma.$transaction(async (tx) => {
     const appt = await tx.appointment.findFirst({
       where: { id: appointmentId, tenantId: tenant.id },
-      include: { doctor: { select: { googleCalendarId: true } } },
+      include: { doctor: { select: { googleCalendarId: true } }, slot: true },
     });
     if (!appt) return { erro: "Agendamento não encontrado." };
     if (appt.status === AppointmentStatus.CANCELLED) return { erro: "Esse agendamento já está cancelado." };
 
     await tx.appointment.update({ where: { id: appt.id }, data: { status: AppointmentStatus.CANCELLED } });
-    await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
-    return { appt };
+
+    // O slot NÃO volta a ficar livre: ele continua sendo o registro histórico
+    // da consulta cancelada (todo o painel lê a data em appointment.slot) e a
+    // FK/índice único em slotId o mantêm preso ao agendamento — reaproveitá-lo
+    // quebrava tanto a renovação da agenda quanto um novo agendamento no mesmo
+    // horário. O horário volta para a agenda como um slot NOVO, livre.
+    const livre = await tx.slot.create({
+      data: {
+        tenantId: tenant.id,
+        unitId: appt.slot.unitId,
+        doctorId: appt.slot.doctorId,
+        specialtyId: appt.slot.specialtyId,
+        startsAt: appt.slot.startsAt,
+        endsAt: appt.slot.endsAt,
+        status: SlotStatus.AVAILABLE,
+      },
+    });
+    return { appt, slotLivreId: livre.id };
   });
 
   if ("erro" in outcome) return outcome;
-  const { appt } = outcome;
+  const { appt, slotLivreId } = outcome;
 
   if (appt.googleEventId && appt.doctor.googleCalendarId && isGoogleConfigured()) {
     try {
@@ -401,7 +442,7 @@ export async function cancelAppointment(tenant: ResolvedTenant, appointmentId: s
 
   // O horário voltou a ficar livre: avisa quem está na fila de espera.
   try {
-    await notificarFilaEspera(tenant, appt.slotId);
+    await notificarFilaEspera(tenant, slotLivreId);
   } catch (err) {
     logger.error({ err, appointmentId: appt.id }, "falha ao avisar a fila de espera");
   }
@@ -435,7 +476,32 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
     });
     if (!novo) return { erro: "Novo horário não encontrado." };
     if (novo.status !== SlotStatus.AVAILABLE) return { erro: "Esse horário não está mais livre." };
+    if (novo.id === appt.slotId) return { erro: "O agendamento já está nesse horário." };
 
+    // Mesmas travas de bookAppointment: um slot só comporta um agendamento e o
+    // profissional não pode ter duas consultas ao mesmo tempo.
+    const jaUsado = await tx.appointment.findUnique({
+      where: { slotId: novo.id },
+      select: { id: true },
+    });
+    if (jaUsado) return { erro: "Esse horário não está mais livre." };
+
+    const conflito = await tx.appointment.findFirst({
+      where: {
+        id: { not: appt.id },
+        tenantId: tenant.id,
+        status: { not: AppointmentStatus.CANCELLED },
+        slot: {
+          doctorId: novo.doctorId,
+          startsAt: { lt: novo.endsAt },
+          endsAt: { gt: novo.startsAt },
+        },
+      },
+      select: { id: true },
+    });
+    if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
+
+    // O agendamento sai deste slot, então ele fica solto e pode voltar à agenda.
     await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
     await tx.slot.update({ where: { id: novo.id }, data: { status: SlotStatus.BOOKED } });
     const updated = await tx.appointment.update({
