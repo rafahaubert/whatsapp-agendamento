@@ -124,6 +124,11 @@ Ative em **Fila de espera** na configuração da clínica.
 
 Convida de volta quem não aparece há alguns meses (limpeza semestral, retorno).
 
+> ⚠️ **Este é o único que a Meta cobra como Marketing, não como Utilidade.** Convite de
+> retorno é reengajamento, e a Meta reclassifica sozinha se você enviar como Utilidade —
+> a diferença é de cerca de R$ 0,04 para R$ 0,34 por mensagem. Crie-o já na categoria
+> **Marketing** e trate o custo como tal: mil convites custam ~R$ 340, não ~R$ 40.
+
 **Corpo:**
 
 ```

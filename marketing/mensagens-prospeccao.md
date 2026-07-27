@@ -104,14 +104,19 @@ Um só. Se não responder, deixa quieto por umas semanas.
 > lembrete anti-falta e a fila de espera) e **Clínica**, sob consulta, para quem tem mais de
 > uma unidade. A implantação é R$ 500, uma vez, em qualquer um. Sem fidelidade.
 >
-> Fora isso, só o custo da Meta pelas mensagens que a clínica inicia (lembrete e convite de
-> retorno) — centavos por mensagem, e eu te mostro a conta antes de ligar.
+> Cada plano já vem com uma cota de mensagens de lembrete inclusa (300 no Essencial, 1.000 no
+> Profissional). Você não recebe fatura da Meta nem precisa cadastrar cartão lá.
 
 **"Qual plano eu preciso?"**
 > Se você sente falta na agenda, o Profissional — é ele que traz o lembrete anti-falta e a
 > fila de espera, que é onde o sistema se paga. O Essencial resolve bem quando o problema é
 > só não conseguir responder o WhatsApp a tempo. Dá para começar no Essencial e subir depois,
 > sem nova implantação.
+
+**"E se eu passar da cota de mensagens?"**
+> Difícil — a cota é dimensionada com folga para o porte de cada plano, e responder quem
+> escreveu para a clínica não conta nela (só o lembrete e o aviso de vaga consomem). Se um mês
+> estourar, são R$ 0,10 por mensagem extra e eu te aviso antes de virar valor na fatura.
 
 **"Vou pensar."**
 > Sem problema. Posso deixar o agente de teste montado com os dados da [clínica]? Você

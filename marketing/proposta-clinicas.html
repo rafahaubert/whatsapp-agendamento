@@ -920,7 +920,7 @@
     border-bottom: 1px solid var(--capa-line);
   }
 
-  .plano ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; }
+  .plano ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; flex: 1; }
 
   .plano li {
     font-size: .85rem;
@@ -946,6 +946,13 @@
 
   .plano li.heranca { color: var(--capa-ink); font-weight: 600; padding-left: 0; }
   .plano li.heranca::before { content: none; }
+
+  .plano li.cota {
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid var(--capa-line);
+  }
+  .plano li.cota::before { top: calc(15px + .42em); }
 
   .implantacao {
     border: 1px solid var(--capa-line);
@@ -1729,10 +1736,15 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
       <details class="pergunta">
         <summary>Existe algum custo além da mensalidade?</summary>
         <div class="resposta">
-          Um: a Meta cobra à parte as mensagens que a clínica <em>inicia</em> — lembrete,
-          aviso de vaga e convite de retorno. Responder quem escreveu para você não tem esse
-          custo. São centavos por mensagem; os valores atuais ficam no painel da própria Meta
-          e eu te mostro a conta antes de ligar cada recurso.
+          Não. A cota de mensagens do seu plano já está paga — você não recebe fatura da Meta,
+          não configura cartão lá, não tem surpresa no fim do mês.
+          <br><br>
+          Vale entender de onde vem a cota: a Meta cobra a clínica só pelas mensagens que
+          <em>ela inicia</em> (o lembrete, o aviso de vaga). Responder quem escreveu para você
+          é gratuito e ilimitado — ou seja, o atendimento do agente, que é a maior parte do
+          movimento, não consome nada. A cota existe só para o lembrete e o aviso de vaga, e
+          foi dimensionada com folga para o tamanho de clínica de cada plano. Se um mês passar
+          da conta, são R$ 0,10 por mensagem extra, e eu te aviso antes.
         </div>
       </details>
 
@@ -1770,10 +1782,12 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
           <ul>
             <li>Agente atendendo <b>24 horas</b>, marcando na sua agenda</li>
             <li>Paciente cancela e remarca sozinho</li>
+            <li><b>Lembrete anti-falta</b> 24h antes, com confirmação em um toque</li>
             <li>Áudio transcrito e horários clicáveis</li>
             <li>Transbordo para a recepção, com caixa de entrada</li>
             <li>Painel com calendário e agendamento manual</li>
             <li>1 unidade · até 2 profissionais</li>
+            <li class="cota"><b>300 mensagens</b> de lembrete por mês, inclusas</li>
           </ul>
         </div>
 
@@ -1784,11 +1798,11 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
           <p class="quem">Para a clínica que vive de agenda cheia — e sente cada falta.</p>
           <ul>
             <li class="heranca">Tudo do Essencial, mais:</li>
-            <li><b>Lembrete anti-falta</b> 24h antes, com confirmação em um toque</li>
             <li><b>Fila de espera</b>: cancelou, a vaga é oferecida em segundos</li>
             <li>Google Agenda para cada profissional</li>
             <li>Métricas de falta, confirmação e mensagens fora do horário</li>
             <li>1 unidade · até 6 profissionais</li>
+            <li class="cota"><b>1.000 mensagens</b> por mês, inclusas</li>
           </ul>
         </div>
 
@@ -1803,6 +1817,7 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
             <li>Usuários do painel sem limite, com acesso individual</li>
             <li>Base de conhecimento estendida e ajustes de texto quando precisar</li>
             <li>Suporte prioritário</li>
+            <li class="cota"><b>Mensagens sob medida</b>, incluindo a reativação</li>
           </ul>
         </div>
       </div>
@@ -1811,6 +1826,7 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
         <span><b>Implantação R$ 500</b>, uma vez, em qualquer plano.</span>
         <span>Cadastro completo da clínica, verificação do número, textos, testes e treinamento da equipe.</span>
         <span><b>Sem fidelidade</b> — você desliga quando quiser.</span>
+        <span>Responder quem escreveu para a clínica <b>nunca</b> conta na cota. Mensagem de lembrete além dela: R$ 0,10.</span>
       </div>
 
       <!-- [EDITE: CONTATO] link do WhatsApp e telefone · [EDITE: PRAZO] -->
