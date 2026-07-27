@@ -20,13 +20,47 @@ A rota é pública: quem tiver a URL vê os valores. Se quiser discrição, troq
 
 ## Valores e contato
 
-Já preenchidos: implantação **R$ 500**, mensalidade **R$ 990/mês**, contato
-**(51) 99767-0770** (o botão do rodapé abre `wa.me/5551997670770`). O prazo do agente de
-teste está em "3 dias úteis".
+Três planos, no bloco `.planos` do fechamento:
 
-Para trocar, procure por `[EDITE` no HTML. Uma ressalva: a classe `vazio` é o tracejado
-laranja de "falta preencher" — ao pôr um valor real, escreva `<span class="val">R$ 500</span>`
-sem o `<span class="vazio">` por dentro, senão o preço aparece com cara de campo em branco.
+| Plano | Valor | Corte | Cota |
+|---|---|---|---|
+| Essencial | R$ 490/mês | 1 unidade, até 2 profissionais. Lembrete anti-falta. | 200 agendamentos/mês |
+| Profissional | R$ 799/mês | Até 6 profissionais. Soma fila de espera, Google Agenda e métricas. | 600 agendamentos/mês |
+| Clínica | Sob consulta | Multi-unidade, sem limite. Soma a reativação de pacientes. | sob medida |
+
+**A cota é em agendamentos, não em mensagens** — o dono de clínica pensa em consulta, não em
+disparo. Excedente: R$ 1,50/agendamento. O custo da Meta é absorvido na mensalidade; o cliente
+nunca recebe fatura deles.
+
+### Por que a cota não é em mensagens
+
+**A partir de 01/10/2026 a Meta cobra as mensagens de serviço** — as respostas do agente dentro
+da janela de 24h, gratuitas desde nov/2024. Anunciado em 01/07/2026, junto da plataforma Business
+Agent da própria Meta (cujo agente fica isento). Tarifa igual à utility, ~R$ 0,04 no Brasil, sem
+escalonamento por volume.
+
+Efeito por clínica: ~2.100 mensagens enviadas/mês passam a custar ~R$ 84. O custo Meta sobe de
+~R$ 12–40 para ~R$ 100–170, e a margem do Profissional cai de 71–81% para 65–69%.
+
+Duas consequências práticas:
+
+- Qualquer material que prometa "responder o paciente é gratuito" **expira em 01/10** — por isso
+  a cota saiu de mensagens.
+- A regra `"Faça UMA pergunta por mensagem"` do system prompt vira custo: cada quebra é
+  R$ 0,04. Vale reavaliar onde dá para juntar perguntas.
+
+Tarifas Meta Brasil por categoria: **utility** ≈ R$ 0,04 · **service** ≈ R$ 0,04 (a partir de
+01/10) · **marketing** ≈ R$ 0,34. O convite de retorno é marketing, quase 9× mais caro — por isso
+a reativação só entra no plano sob consulta (ver aviso no
+[`WHATSAPP-TEMPLATES.md`](../WHATSAPP-TEMPLATES.md)).
+
+Implantação **R$ 500** em qualquer plano. Contato **(51) 99767-0770** (o botão do rodapé abre
+`wa.me/5551997670770`), agente de teste em "3 dias úteis".
+
+O corte entre os planos é implementável: `reminders.enabled`, `waitlist.enabled` e
+`recall.enabled` são toggles por clínica no painel — não é diferenciação de fachada.
+
+Para trocar valores, procure por `[EDITE` no HTML.
 
 ## Identidade
 

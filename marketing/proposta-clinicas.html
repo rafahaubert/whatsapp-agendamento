@@ -3,9 +3,8 @@
 <!--
   MATERIAL DE PROSPECÇÃO — clínicas · HAUBERT AGENTS
   --------------------------------------------------
-  Preenchido: implantação R$ 500 · mensalidade R$ 990/mês · (51) 99767-0770.
-  Para trocar depois, procure por [EDITE] — e não reponha o <span class="vazio">,
-  que é o tracejado de "falta preencher".
+  Planos: Essencial R$ 490 · Profissional R$ 799 · Clínica sob consulta · implantação R$ 500.
+  Contato (51) 99767-0770. Para trocar, procure por [EDITE].
   Identidade: verde #163029 · cinza #C8C8C8 · verde médio #41695B.
   As marcas abaixo são os vetores originais da identidade (extraídos do PDF da marca).
 -->
@@ -861,42 +860,114 @@
 
   .fecha-corpo { padding: 76px 0 64px; }
 
-  .preco {
-    display: grid;
-    gap: 1px;
-    background: var(--capa-line);
+  .planos { display: grid; gap: 14px; margin: 34px 0 22px; }
+
+  @media (min-width: 780px) { .planos { grid-template-columns: repeat(3, 1fr); align-items: stretch; } }
+
+  .plano {
     border: 1px solid var(--capa-line);
     border-radius: var(--r);
-    overflow: hidden;
-    margin: 34px 0;
-    max-width: 720px;
+    padding: 26px 22px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
   }
 
-  @media (min-width: 620px) { .preco { grid-template-columns: 1fr 1fr; } }
+  .plano.destaque { border-color: var(--acento); background: rgba(200, 200, 200, .04); }
 
-  .preco-item { background: var(--capa); padding: 24px 22px; }
-
-  .preco-item .rot {
+  .plano .selo-plano {
     font-family: var(--fonte-geo);
-    font-size: .67rem;
+    font-size: .6rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--capa);
+    background: var(--acento);
+    border-radius: 100px;
+    padding: 4px 11px;
+    position: absolute;
+    top: 22px;
+    right: 20px;
+  }
+
+  .plano .nome {
+    font-family: var(--fonte-geo);
+    font-size: .72rem;
     letter-spacing: .2em;
     text-transform: uppercase;
-    color: var(--capa-ink-2);
+    color: var(--acento);
     display: block;
     margin-bottom: 12px;
   }
 
-  .preco-item .val {
+  .plano .valor {
     font-family: var(--fonte-geo);
-    font-size: 1.9rem;
+    font-size: 2rem;
     font-weight: 400;
-    line-height: 1.1;
-    display: block;
+    line-height: 1;
     color: var(--capa-ink);
+    display: block;
   }
 
-  .vazio { color: var(--acento); border-bottom: 2px dashed var(--acento); padding-bottom: 2px; }
-  .preco-item small { display: block; color: var(--capa-ink-2); font-size: .8rem; margin-top: 10px; line-height: 1.45; }
+  .plano .valor small { font-size: .95rem; color: var(--capa-ink-2); }
+  .plano .valor.consulta { font-size: 1.55rem; letter-spacing: .01em; }
+
+  .plano .quem {
+    color: var(--capa-ink-2);
+    font-size: .84rem;
+    line-height: 1.45;
+    margin: 12px 0 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--capa-line);
+  }
+
+  .plano ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 9px; flex: 1; }
+
+  .plano li {
+    font-size: .85rem;
+    line-height: 1.45;
+    color: var(--capa-ink-2);
+    padding-left: 20px;
+    position: relative;
+  }
+
+  .plano li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: .42em;
+    width: 9px;
+    height: 5px;
+    border-left: 1.5px solid var(--acento);
+    border-bottom: 1.5px solid var(--acento);
+    transform: rotate(-45deg);
+  }
+
+  .plano li b { color: var(--capa-ink); font-weight: 600; }
+
+  .plano li.heranca { color: var(--capa-ink); font-weight: 600; padding-left: 0; }
+  .plano li.heranca::before { content: none; }
+
+  .plano li.cota {
+    margin-top: auto;
+    padding-top: 15px;
+    border-top: 1px solid var(--capa-line);
+  }
+  .plano li.cota::before { top: calc(15px + .42em); }
+
+  .implantacao {
+    border: 1px solid var(--capa-line);
+    border-radius: var(--r);
+    padding: 18px 22px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 14px;
+    color: var(--capa-ink-2);
+    font-size: .88rem;
+    line-height: 1.5;
+  }
+
+  .implantacao b { color: var(--capa-ink); font-weight: 600; }
 
   .contato { display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: center; margin-top: 30px; }
 
@@ -967,6 +1038,8 @@
     .prints { display: block; margin-top: 34px; }
     .print { break-inside: avoid; margin-bottom: 32px; }
     .print .fone { max-width: 460px; }
+    .plano, .implantacao { break-inside: avoid; }
+    .planos { gap: 10px; }
     .print.largo .print-corpo { display: block; }
     .print-dupla .fone { max-width: 100%; }
 
@@ -1663,10 +1736,15 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
       <details class="pergunta">
         <summary>Existe algum custo além da mensalidade?</summary>
         <div class="resposta">
-          Um: a Meta cobra à parte as mensagens que a clínica <em>inicia</em> — lembrete,
-          aviso de vaga e convite de retorno. Responder quem escreveu para você não tem esse
-          custo. São centavos por mensagem; os valores atuais ficam no painel da própria Meta
-          e eu te mostro a conta antes de ligar cada recurso.
+          Não. Tudo o que o agente troca com os seus pacientes já está pago dentro da
+          mensalidade — as conversas, os lembretes, os avisos de vaga. <b>Você não recebe fatura
+          da Meta, não cadastra cartão lá e não tem surpresa no fim do mês.</b>
+          <br><br>
+          O que cada plano define é o volume de <em>agendamentos</em> por mês — 200 no Essencial,
+          600 no Profissional —, dimensionado com folga para o porte de clínica de cada um.
+          Conversa que não vira consulta não conta. Se um mês passar da conta, são R$ 1,50 por
+          agendamento extra, e eu te aviso antes de virar valor na fatura — normalmente é sinal
+          de que vale subir de plano.
         </div>
       </details>
 
@@ -1695,18 +1773,60 @@ Que tal agendar uma avaliação? É só responder esta mensagem que eu cuido do 
         </p>
       </div>
 
-      <!-- [EDITE: PREÇO] troque os dois valores abaixo -->
-      <div class="preco">
-        <div class="preco-item">
-          <span class="rot">Implantação</span>
-          <span class="val">R$ 500</span>
-          <small>Uma vez. Cadastro completo da clínica, verificação do número, textos, testes e treinamento da equipe.</small>
+      <!-- [EDITE: PREÇO] os três valores mensais e a implantação, logo abaixo -->
+      <div class="planos">
+        <div class="plano">
+          <span class="nome">Essencial</span>
+          <span class="valor">R$ 490<small>/mês</small></span>
+          <p class="quem">Para o consultório de um ou dois profissionais, numa unidade só.</p>
+          <ul>
+            <li>Agente atendendo <b>24 horas</b>, marcando na sua agenda</li>
+            <li>Paciente cancela e remarca sozinho</li>
+            <li><b>Lembrete anti-falta</b> 24h antes, com confirmação em um toque</li>
+            <li>Áudio transcrito e horários clicáveis</li>
+            <li>Transbordo para a recepção, com caixa de entrada</li>
+            <li>Painel com calendário e agendamento manual</li>
+            <li>1 unidade · até 2 profissionais</li>
+            <li class="cota">Até <b>200 agendamentos</b> por mês</li>
+          </ul>
         </div>
-        <div class="preco-item">
-          <span class="rot">Mensalidade</span>
-          <span class="val">R$ 990<small style="display:inline;font-size:1rem;color:var(--capa-ink-2);margin:0">/mês</small></span>
-          <small>Agente, painel, lembretes, fila de espera, reativação e suporte. Sem fidelidade.</small>
+
+        <div class="plano destaque">
+          <span class="selo-plano">Mais escolhido</span>
+          <span class="nome">Profissional</span>
+          <span class="valor">R$ 799<small>/mês</small></span>
+          <p class="quem">Para a clínica que vive de agenda cheia — e sente cada falta.</p>
+          <ul>
+            <li class="heranca">Tudo do Essencial, mais:</li>
+            <li><b>Fila de espera</b>: cancelou, a vaga é oferecida em segundos</li>
+            <li>Google Agenda para cada profissional</li>
+            <li>Métricas de falta, confirmação e mensagens fora do horário</li>
+            <li>1 unidade · até 6 profissionais</li>
+            <li class="cota">Até <b>600 agendamentos</b> por mês</li>
+          </ul>
         </div>
+
+        <div class="plano">
+          <span class="nome">Clínica</span>
+          <span class="valor consulta">Sob consulta</span>
+          <p class="quem">Para quem tem mais de um endereço e uma equipe grande. O valor depende de quantas unidades e profissionais entram.</p>
+          <ul>
+            <li class="heranca">Tudo do Profissional, mais:</li>
+            <li><b>Reativação de pacientes</b>: convida de volta quem sumiu</li>
+            <li>Unidades e profissionais <b>sem limite</b></li>
+            <li>Usuários do painel sem limite, com acesso individual</li>
+            <li>Base de conhecimento estendida e ajustes de texto quando precisar</li>
+            <li>Suporte prioritário</li>
+            <li class="cota"><b>Volume sob medida</b>, incluindo a reativação</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="implantacao">
+        <span><b>Implantação R$ 500</b>, uma vez, em qualquer plano.</span>
+        <span>Cadastro completo da clínica, verificação do número, textos, testes e treinamento da equipe.</span>
+        <span><b>Sem fidelidade</b> — você desliga quando quiser.</span>
+        <span>Todas as mensagens do agente e os lembretes já estão no plano — <b>você não recebe fatura da Meta</b>. Agendamento além da cota: R$ 1,50.</span>
       </div>
 
       <!-- [EDITE: CONTATO] link do WhatsApp e telefone · [EDITE: PRAZO] -->
