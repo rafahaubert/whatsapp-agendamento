@@ -5,15 +5,15 @@
 | [`proposta-clinicas.html`](proposta-clinicas.html) | Página de uma só rolagem para mandar ao cliente: prints das conversas, calculadora de agenda ociosa, painel, perguntas e proposta. |
 | [`mensagens-prospeccao.md`](mensagens-prospeccao.md) | Mensagens prontas de primeiro contato, follow-up e respostas a objeções. |
 
-## Antes de enviar
+## Valores e contato
 
-Abra o HTML e preencha os pontos marcados com `[EDITE`:
+Já preenchidos: implantação **R$ 500**, mensalidade **R$ 990/mês**, contato
+**(51) 99767-0770** (o botão do rodapé abre `wa.me/5551997670770`). O prazo do agente de
+teste está em "3 dias úteis".
 
-| Marca | O que trocar |
-|---|---|
-| `[EDITE: CONTATO]` | Link `wa.me` e telefone no rodapé |
-| `[EDITE: PREÇO]` | Implantação e mensalidade (hoje `R$ 0.000` / `R$ 000`) |
-| `[EDITE: PRAZO]` | Prazo do agente de teste (hoje "3 dias úteis") |
+Para trocar, procure por `[EDITE` no HTML. Uma ressalva: a classe `vazio` é o tracejado
+laranja de "falta preencher" — ao pôr um valor real, escreva `<span class="val">R$ 500</span>`
+sem o `<span class="vazio">` por dentro, senão o preço aparece com cara de campo em branco.
 
 ## Identidade
 
