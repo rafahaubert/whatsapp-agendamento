@@ -81,7 +81,7 @@ URL pública: `https://<app>.fly.dev`. Webhook da Meta:
 | `WHATSAPP_APP_SECRET` | Segredo do app (valida a assinatura do webhook) |
 | `WHATSAPP_ACCESS_TOKEN` | Token de envio de mensagens |
 | `WHATSAPP_API_VERSION` | Ex.: `v21.0` |
-| `ADMIN_USER` / `ADMIN_PASSWORD` | Login do painel `/admin` |
+| `ADMIN_USER` / `ADMIN_PASSWORD` | Chave reserva do painel `/admin` (os demais acessos são criados em /admin/usuarios e entram pelo **e-mail**) |
 | `SESSION_SECRET` | Segredo aleatório longo para assinar a sessão do painel |
 | `NODE_ENV` | `production` (logs em JSON) |
 
