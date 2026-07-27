@@ -82,6 +82,88 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("scheduling (integração)", () 
     expect(r.horarios.length).toBeLessThanOrEqual(tenant.config.booking.maxOptionsOffered);
   });
 
+  // "Na quarta, teria?" — antes o dia pedido era ignorado e o agente respondia
+  // com os horários mais próximos (de outro dia), concluindo que não havia vaga.
+  describe("filtro por dia", () => {
+    /** "29/07" — como o paciente escreve, no fuso da clínica. */
+    const emDias = (n: number) =>
+      new Intl.DateTimeFormat("pt-BR", {
+        timeZone: tenant.timezone,
+        day: "2-digit",
+        month: "2-digit",
+      }).format(new Date(Date.now() + n * 86_400_000));
+
+    it("devolve apenas horários do dia pedido", async () => {
+      const amanha = emDias(1);
+      const r = (await scheduling.listAvailableSlots(tenant, {
+        especialidade: "Clínico Geral",
+        dia: "amanhã",
+      })) as { horarios: { inicio: string }[]; dia?: string };
+
+      expect(r.horarios.length).toBeGreaterThan(0);
+      expect(r.dia).toContain(amanha);
+      r.horarios.forEach((h) => expect(h.inicio).toContain(amanha));
+    });
+
+    it("aceita a data escrita pelo paciente", async () => {
+      const r = (await scheduling.listAvailableSlots(tenant, {
+        especialidade: "Clínico Geral",
+        dia: emDias(1),
+      })) as { horarios: { inicio: string }[] };
+      expect(r.horarios.length).toBeGreaterThan(0);
+      r.horarios.forEach((h) => expect(h.inicio).toContain(emDias(1)));
+    });
+
+    it("nome de dia da semana nunca traz horário de outro dia", async () => {
+      const abrev: Record<string, string> = {
+        domingo: "dom",
+        segunda: "seg",
+        terça: "ter",
+        quarta: "qua",
+        quinta: "qui",
+        sexta: "sex",
+        sábado: "sáb",
+      };
+      for (const [nome, prefixo] of Object.entries(abrev)) {
+        const r = (await scheduling.listAvailableSlots(tenant, {
+          especialidade: "Clínico Geral",
+          dia: nome,
+        })) as { horarios: { inicio: string }[] };
+        r.horarios.forEach((h) => expect(h.inicio.startsWith(prefixo)).toBe(true));
+      }
+    });
+
+    it("dia sem vaga volta vazio e sugere os dias que têm", async () => {
+      // A agenda de teste cobre 3 dias; o dia +10 existe, mas sem horários.
+      const r = (await scheduling.listAvailableSlots(tenant, {
+        especialidade: "Clínico Geral",
+        dia: emDias(10),
+      })) as { horarios: unknown[]; aviso?: string; proximasDatas?: string[] };
+
+      expect(r.horarios).toHaveLength(0);
+      expect(r.aviso).toContain(emDias(10));
+      expect(r.proximasDatas?.length).toBeGreaterThan(0);
+    });
+
+    it("avisa quando o dia está além da janela de agendamento", async () => {
+      const r = (await scheduling.listAvailableSlots(tenant, {
+        especialidade: "Clínico Geral",
+        dia: emDias(40), // advanceBookingDays = 30
+      })) as { horarios: unknown[]; aviso?: string };
+
+      expect(r.horarios).toHaveLength(0);
+      expect(r.aviso).toContain("agenda");
+    });
+
+    it("devolve erro quando não entende o dia", async () => {
+      const r = (await scheduling.listAvailableSlots(tenant, {
+        especialidade: "Clínico Geral",
+        dia: "qualquer dia desses",
+      })) as { erro?: string };
+      expect(r.erro).toBeDefined();
+    });
+  });
+
   it("agenda e impede reserva dupla no mesmo horário", async () => {
     const p = (await scheduling.findOrCreatePatient(tenant.id, {
       nome: "Fulano de Tal",

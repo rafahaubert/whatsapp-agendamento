@@ -91,12 +91,17 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "listar_horarios",
     description:
-      "Busca horários livres de uma especialidade. Retorna no máximo o número de opções configurado pela clínica.",
+      "Busca horários livres de uma especialidade. Retorna no máximo o número de opções configurado pela clínica — sempre os mais próximos, NUNCA a agenda inteira. Se o paciente citar um dia, passe `dia`: é a única forma de saber se aquele dia tem vaga.",
     input_schema: {
       type: "object",
       properties: {
         especialidade: { type: "string", description: "Nome da especialidade" },
         unidade: { type: "string", description: "Nome da unidade (opcional)" },
+        dia: {
+          type: "string",
+          description:
+            'Dia pedido pelo paciente. Aceita dia da semana ("quarta"), data ("29/07" ou "2026-07-29"), "hoje" e "amanhã". Dia da semana resolve para a próxima ocorrência. Use SEMPRE que ele citar um dia (opcional).',
+        },
         plano: {
           type: "string",
           description: "Nome do plano para filtrar médicos que o aceitam (opcional)",
@@ -193,6 +198,7 @@ export async function executeTool(
         especialidade: input.especialidade,
         unidade: input.unidade,
         plano: input.plano,
+        dia: input.dia,
         periodo: input.periodo,
         horaPreferida: input.horaPreferida,
         medico: input.medico,

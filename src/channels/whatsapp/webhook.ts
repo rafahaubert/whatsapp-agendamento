@@ -3,6 +3,7 @@ import { env } from "../../config/env.js";
 import { verifyWhatsAppSignature } from "./signature.js";
 import { parseWhatsAppWebhook } from "./parse.js";
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from "./client.js";
+import { MAX_BOTOES, semOpcoesRepetidas } from "../format.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
 import { markMessageProcessed } from "../../db/idempotency.js";
 import { logger } from "../../shared/logger.js";
@@ -88,8 +89,14 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
         try {
           if (reply.opcoes?.length) {
             // Até 3 opções cabem em botões; acima disso, lista interativa.
-            if (reply.opcoes.length <= 3) {
-              await sendWhatsAppButtons(numero, parsed.from, reply.texto, reply.opcoes);
+            if (reply.opcoes.length <= MAX_BOTOES) {
+              // O botão já mostra dia e hora: repetir no texto duplica a mensagem.
+              await sendWhatsAppButtons(
+                numero,
+                parsed.from,
+                semOpcoesRepetidas(reply.texto, reply.opcoes),
+                reply.opcoes,
+              );
             } else {
               await sendWhatsAppList(
                 numero,

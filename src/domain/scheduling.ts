@@ -8,7 +8,7 @@
 import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { SlotStatus, AppointmentStatus, PaymentType } from "../shared/enums.js";
-import { formatDateTime } from "../shared/datetime.js";
+import { formatDateTime, formatDate, janelaDoDia, type JanelaDia } from "../shared/datetime.js";
 import { normalizeCpf, isValidCpf } from "../shared/cpf.js";
 import { logger } from "../shared/logger.js";
 import {
@@ -199,6 +199,8 @@ export async function listAvailableSlots(
     periodo?: string;
     horaPreferida?: number;
     medico?: string;
+    /** Dia pedido pelo paciente: "quarta", "29/07", "2026-07-29", "hoje", "amanhã". */
+    dia?: string;
     /** Vem do contexto da conversa (não do modelo): usado para continuidade. */
     pacienteId?: string;
   },
@@ -232,34 +234,19 @@ export async function listAvailableSlots(
     where.doctorId = doc.id;
   }
 
-  // Busca uma janela maior e filtra por período / hora (local) antes de cortar em N.
-  const encontrados = await prisma.slot.findMany({
-    where,
-    orderBy: { startsAt: "asc" },
-    take: 300,
-    include: { doctor: true, unit: true },
-  });
-
   const horaLocal = (d: Date) => {
     const dt = DateTime.fromJSDate(d).setZone(tenant.timezone);
     return dt.hour + dt.minute / 60;
   };
 
   const faixa = opts.periodo ? PERIODOS[opts.periodo.trim().toLowerCase()] : undefined;
-  let filtrados = faixa
-    ? encontrados.filter((s) => {
-        const h = horaLocal(s.startsAt);
-        return h >= faixa[0] && h < faixa[1];
-      })
-    : encontrados;
-
-  // Preferência de horário específico ("pelas 22h"): ordena pelos mais próximos.
-  if (opts.horaPreferida != null && Number.isFinite(opts.horaPreferida)) {
-    const alvo = opts.horaPreferida;
-    filtrados = [...filtrados].sort(
-      (a, b) => Math.abs(horaLocal(a.startsAt) - alvo) - Math.abs(horaLocal(b.startsAt) - alvo),
-    );
-  }
+  const noPeriodo = <T extends { startsAt: Date }>(slots: T[]): T[] =>
+    faixa
+      ? slots.filter((s) => {
+          const h = horaLocal(s.startsAt);
+          return h >= faixa[0] && h < faixa[1];
+        })
+      : slots;
 
   // Continuidade: se o paciente já foi atendido, preferir o mesmo profissional.
   let profissionalHabitual: string | null = null;
@@ -276,12 +263,92 @@ export async function listAvailableSlots(
     profissionalHabitual = ultima?.doctorId ?? null;
   }
 
-  const escolhidos = umPorHorario(filtrados, profissionalHabitual).slice(
-    0,
-    tenant.config.booking.maxOptionsOffered,
-  );
+  /** Busca uma janela maior e filtra por período / hora (local) antes de cortar em N. */
+  const buscar = async (janela: JanelaDia | null) => {
+    const encontrados = await prisma.slot.findMany({
+      where: janela
+        ? { ...where, startsAt: { gte: janela.inicio > now ? janela.inicio : now, lt: janela.fim } }
+        : where,
+      orderBy: { startsAt: "asc" },
+      take: 300,
+      include: { doctor: true, unit: true },
+    });
+
+    let filtrados = noPeriodo(encontrados);
+
+    // Preferência de horário específico ("pelas 22h"): ordena pelos mais próximos.
+    if (opts.horaPreferida != null && Number.isFinite(opts.horaPreferida)) {
+      const alvo = opts.horaPreferida;
+      filtrados = [...filtrados].sort(
+        (a, b) => Math.abs(horaLocal(a.startsAt) - alvo) - Math.abs(horaLocal(b.startsAt) - alvo),
+      );
+    }
+
+    return umPorHorario(filtrados, profissionalHabitual).slice(
+      0,
+      tenant.config.booking.maxOptionsOffered,
+    );
+  };
+
+  // Dia pedido pelo paciente ("na quarta?"). O recorte vai para o banco: a busca
+  // traz só os primeiros horários, então filtrar em memória deixaria os dias
+  // seguintes invisíveis — era o que fazia o agente concluir, errado, que o dia
+  // pedido não tinha vaga.
+  let dia: JanelaDia | null = null;
+  if (opts.dia) {
+    dia = janelaDoDia(opts.dia, tenant.timezone, now);
+    if (!dia) {
+      return { erro: `Não entendi o dia "${opts.dia}". Confirme com o paciente (ex.: "quarta" ou "29/07").` };
+    }
+    if (dia.fim <= now) {
+      return { horarios: [], dia: dia.rotulo, aviso: `${dia.rotulo} já passou — peça uma data futura ao paciente.` };
+    }
+    if (dia.inicio > limite) {
+      return {
+        horarios: [],
+        dia: dia.rotulo,
+        aviso: `A agenda está aberta só até ${formatDate(limite, tenant.timezone)}; ${dia.rotulo} ainda não pode ser marcado.`,
+      };
+    }
+  }
+
+  let escolhidos = await buscar(dia);
+
+  // "Na quarta?" numa quarta à noite, com o dia já esgotado: o paciente quer a
+  // semana que vem, não hoje.
+  if (escolhidos.length === 0 && dia?.diaDaSemana && dia.inicio <= now) {
+    const semanaQueVem = janelaDoDia(opts.dia!, tenant.timezone, dia.fim);
+    if (semanaQueVem && semanaQueVem.inicio <= limite) {
+      dia = semanaQueVem;
+      escolhidos = await buscar(dia);
+    }
+  }
 
   if (escolhidos.length === 0) {
+    // Dia sem vaga: nunca só "não tem". Devolve os dias que TÊM, para o agente
+    // oferecer alternativa concreta em vez de chutar sobre o resto da agenda.
+    if (dia) {
+      const outros = await prisma.slot.findMany({
+        where, // sem o recorte do dia: quais dias TÊM vaga
+        orderBy: { startsAt: "asc" },
+        take: 300,
+        select: { startsAt: true },
+      });
+      const proximasDatas = [
+        ...new Set(noPeriodo(outros).map((s) => formatDate(s.startsAt, tenant.timezone))),
+      ].slice(0, 3);
+
+      return {
+        horarios: [],
+        dia: dia.rotulo,
+        aviso: `Nenhum horário livre em ${dia.rotulo}${opts.periodo ? ` no período "${opts.periodo}"` : ""}.`,
+        proximasDatas,
+        instrucao: proximasDatas.length
+          ? `Diga que ${dia.rotulo} não tem vaga e ofereça estes dias: ${proximasDatas.join(", ")}. Ao paciente escolher um, chame listar_horarios de novo com dia=<o dia escolhido>.`
+          : "Não há vaga nos próximos dias com esses critérios — ofereça a fila de espera.",
+      };
+    }
+
     return {
       horarios: [],
       aviso: opts.periodo
@@ -291,6 +358,8 @@ export async function listAvailableSlots(
   }
 
   return {
+    // Só os horários DESTA busca: o agente não conhece o resto da agenda.
+    ...(dia ? { dia: dia.rotulo } : {}),
     horarios: escolhidos.map((s) => ({
       slotId: s.id,
       medico: s.doctor.name,

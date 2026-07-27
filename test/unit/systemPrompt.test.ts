@@ -63,4 +63,24 @@ describe("buildSystemPrompt", () => {
   it("proíbe perguntar qual profissional o paciente quer", () => {
     expect(buildSystemPrompt(fakeTenant())).toContain("Não pergunte qual PROFISSIONAL");
   });
+
+  it("obriga a consultar a agenda do dia pedido antes de dizer que não tem vaga", () => {
+    const prompt = buildSystemPrompt(fakeTenant());
+    expect(prompt).toContain("dia=<o dia que ele disse>");
+    expect(prompt).toContain("PROIBIDO dizer que um dia não tem vaga");
+  });
+
+  // O bot escrevia os horários no texto E o sistema mandava os mesmos botões.
+  it("com botões (até 3 opções), manda NÃO repetir os horários no texto", () => {
+    const prompt = buildSystemPrompt(fakeTenant({ maxOptionsOffered: 3 }));
+    expect(prompt).toContain("NÃO escreva os horários no texto");
+    expect(prompt).not.toContain("escreva-os no texto numerados");
+  });
+
+  // Acima de 3 vira lista interativa: o paciente só a vê depois de abrir.
+  it("com lista (mais de 3 opções), manda escrever os horários no texto", () => {
+    const prompt = buildSystemPrompt(fakeTenant({ maxOptionsOffered: 5 }));
+    expect(prompt).toContain("escreva-os no texto numerados");
+    expect(prompt).not.toContain("NÃO escreva os horários no texto");
+  });
 });
