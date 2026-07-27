@@ -730,3 +730,41 @@ function calcularIdade(nascimento: Date): number {
   if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) idade--;
   return idade;
 }
+
+// ---------- Usuários de UMA clínica ----------
+
+/** Só os usuários desta clínica. SUPER não aparece: não é gerido pela clínica. */
+export async function listUsersByTenant(tenantId: string) {
+  return prisma.adminUser.findMany({
+    where: { tenantId, role: "CLINIC" },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
+}
+
+/**
+ * Cria um usuário preso a esta clínica. O papel e o tenant são fixados aqui, no
+ * servidor — nada do corpo do formulário decide isso, senão bastaria mandar
+ * role=SUPER no POST para virar administrador da plataforma.
+ */
+export async function createTenantUser(
+  tenantId: string,
+  d: { email: string; name: string; passwordHash: string },
+) {
+  await prisma.adminUser.create({
+    data: {
+      email: d.email.trim().toLowerCase(),
+      name: d.name.trim(),
+      passwordHash: d.passwordHash,
+      role: "CLINIC",
+      tenantId,
+    },
+  });
+}
+
+/** Carrega o alvo de uma ação para conferir a permissão antes de executá-la. */
+export async function findAdminUser(id: string) {
+  return prisma.adminUser.findUnique({
+    where: { id },
+    select: { id: true, role: true, tenantId: true, name: true, isActive: true },
+  });
+}

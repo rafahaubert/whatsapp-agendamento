@@ -177,11 +177,16 @@
     .rail{--rail-lbl:none}
     .rail:hover,.rail:focus-within,:root[data-rail="fixo"] .rail{--rail-lbl:block}
 
+    /* O nav é flex column e rola quando o menu não cabe. Sem isto os itens
+       encolhem em vez de rolar — com o menu cheio, os rótulos de grupo chegaram
+       a 1px de altura e sumiram da tela. */
+    .rail-nav > *{flex:0 0 auto}
+
     .rail-grp{
       font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
-      margin:10px 0 3px;padding:0 8px;height:12px;
+      margin:10px 0 3px;padding:0 8px;
       white-space:nowrap;overflow:hidden;
-      /* Fechado o texto some, mas a altura fica: é ela que separa os dois grupos. */
+      /* Fechado o texto some, mas a linha fica: é ela que separa os dois grupos. */
       color:transparent;
     }
     .rail:hover .rail-grp,.rail:focus-within .rail-grp,
@@ -222,6 +227,21 @@
       padding:1px 7px;font-size:10.5px;font-weight:700;line-height:1.5;
     }
 
+    /* --------------------------------------------------- submenu (<details>) */
+    /* `<details>` em vez de JS: abre e fecha sozinho, é navegável por teclado e
+       sobrevive a página sem script. O servidor já manda `open` quando a tela
+       atual está dentro do grupo. */
+    .rail-sub{margin-top:10px;display:flex;flex-direction:column;gap:2px}
+    /* Fechado, o pai é a única pista de onde você está — daí o mesmo destaque
+       dos outros itens. Aberto, ele convive com o filho ativo. */
+    .rail-i-dentro{background:var(--ha-sage);color:#fff}
+    .rail-filho{
+      display:var(--rail-lbl);
+      padding:6px 8px 6px 43px;font-size:12.5px;
+      color:rgba(255,255,255,.58);
+    }
+    .rail-filho:hover{color:#fff}
+    .rail-filho[aria-current="page"]{background:rgba(255,255,255,.14);color:#fff;font-weight:560}
     /* Sem tooltip próprio: apontar para um ícone já expande o rail e revela o
        rótulo. O `title` de cada item cobre o instante anterior à expansão, e o
        `aria-label` cobre quem navega por leitor de tela. */

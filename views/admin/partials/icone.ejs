@@ -6,7 +6,13 @@
 %>
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-<% if (n === "clinicas") { %>
+<% if (n === "dashboard") { %>
+  <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
+  <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+<% } else if (n === "agendamentos") { %>
+  <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M9 3v3M15 3v3" />
+  <path d="M8 11h8M8 15h5" />
+<% } else if (n === "clinicas") { %>
   <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18" /><path d="M2 22h20" />
   <path d="M10 7h4M10 11h4M10 15h4M10 19h4" />
 <% } else if (n === "config") { %>
