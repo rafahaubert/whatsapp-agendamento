@@ -16,14 +16,14 @@
     <% conversas.forEach(function(c){ %>
       <a class="conv <%= c.telefone === telefone ? 'sel' : '' %>"
          href="/admin/clinicas/<%= t.id %>/inbox?telefone=<%= encodeURIComponent(c.telefone) %>">
-        <div class="row between">
+        <div class="conv-topo">
           <strong><%= c.telefone %></strong>
-          <% if (c.aguardando) { %><span class="st st-remarcado">aguardando</span><% } %>
+          <span class="conv-hora"><%= c.ultimaEmTexto %></span>
         </div>
-        <div class="muted" style="margin-top:2px"><%= c.previa || "—" %></div>
-        <div class="muted" style="font-size:11px;margin-top:3px">
-          <%= new Date(c.ultimaEm).toLocaleString("pt-BR") %>
-          <%= c.janelaAberta ? "" : " · janela de 24h fechada" %>
+        <div class="conv-baixo">
+          <span class="conv-previa"><%= c.previa || "—" %></span>
+          <% if (c.aguardando) { %><span class="st st-remarcado">aguardando</span><% } %>
+          <% if (!c.janelaAberta) { %><span class="conv-flag" title="Janela de 24h fechada">24h</span><% } %>
         </div>
       </a>
     <% }) %>
@@ -57,7 +57,7 @@
         <% thread.forEach(function(m){ %>
           <div class="bolha <%= m.entrada ? 'in' : 'out' %>">
             <div class="txt"><%= m.texto %></div>
-            <div class="meta"><%= m.entrada ? "paciente" : (m.autor === "HUMAN" ? "recepção" : "bot") %> · <%= new Date(m.quando).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) %></div>
+            <div class="meta"><%= m.entrada ? "paciente" : (m.autor === "HUMAN" ? "recepção" : "bot") %> · <%= m.quandoTexto %></div>
           </div>
         <% }) %>
       </div>

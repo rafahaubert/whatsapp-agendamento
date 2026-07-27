@@ -136,9 +136,19 @@
     /* Caixa de entrada */
     .inbox{display:grid;grid-template-columns:300px 1fr;gap:14px;align-items:start}
     @media (max-width:760px){.inbox{grid-template-columns:1fr}}
-    .conv{display:block;padding:10px;border-radius:9px;color:var(--ink);border:1px solid transparent}
+    .conv{display:block;padding:7px 9px;border-radius:8px;color:var(--ink);border:1px solid transparent}
     .conv:hover{background:var(--bg);text-decoration:none}
     .conv.sel{background:var(--bg);border-color:var(--brand)}
+    .conv-topo{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+    .conv-topo strong{font-size:14px;font-weight:600}
+    .conv-hora{font-size:11px;color:var(--muted);white-space:nowrap}
+    .conv-baixo{display:flex;align-items:center;gap:6px;margin-top:1px;min-width:0}
+    /* Prévia em uma linha só: a lista fica com altura previsível, como no WhatsApp. */
+    .conv-previa{flex:1;min-width:0;font-size:13px;color:var(--muted);
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .conv-baixo .st{flex:0 0 auto;font-size:11px;padding:1px 7px}
+    .conv-flag{flex:0 0 auto;font-size:10px;font-weight:600;color:var(--muted);
+        border:1px solid var(--line);border-radius:999px;padding:0 6px}
     .thread{max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:5px;margin-top:12px;padding-right:4px}
     .bolha{width:fit-content;max-width:min(62%,360px);padding:6px 8px 4px;border-radius:8px;font-size:14px;
         line-height:1.35;box-shadow:0 1px 1px rgba(11,20,26,.13)}
