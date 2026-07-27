@@ -6,11 +6,15 @@
   <meta name="theme-color" content="#163029" />
   <meta name="color-scheme" content="light dark" />
   <script>
-    // Aplica o tema salvo ANTES da primeira pintura — sem piscar branco no modo escuro.
+    // Aplica tema e estado do menu ANTES da primeira pintura — sem piscar branco
+    // no modo escuro e sem o rail saltar de 68px para 212px ao carregar.
     (function () {
       try {
         var t = localStorage.getItem("ha-tema");
         if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+        if (localStorage.getItem("ha-rail") === "fixo") {
+          document.documentElement.setAttribute("data-rail", "fixo");
+        }
       } catch (e) {}
     })();
   </script>
@@ -106,7 +110,8 @@
     :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
     ::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
 
-    /* ---------------------------------------------------------------- topbar */
+    /* ------------------------------------------- barra do topo (página pública) */
+    /* Só `privacidade.ejs` ainda usa esta barra; o painel navega pelo rail. */
     .topbar{
       position:sticky;top:0;z-index:40;
       display:flex;align-items:center;gap:14px;
@@ -124,36 +129,144 @@
     .brand .word .w-haubert{color:#fff}
     .brand .word .w-agents{color:var(--ha-mist);opacity:.85}
     .brand .word .w-agents svg{height:11px}
+    @media (max-width:900px){.brand .word .w-agents{display:none}}
+    @media (max-width:640px){
+      .topbar{gap:8px;padding:0 12px}
+      .brand .word{display:none}
+    }
 
-    .topnav{display:flex;align-items:center;gap:2px;margin-left:6px;flex:1;min-width:0}
-    .topnav a{
-      font-size:13px;font-weight:500;padding:6px 10px;border-radius:var(--r-sm);
-      color:rgba(255,255,255,.78);white-space:nowrap;
-    }
-    .topnav a:hover{background:rgba(255,255,255,.10);color:#fff;text-decoration:none}
-    .topnav a[aria-current="page"]{background:rgba(255,255,255,.14);color:#fff}
+    /* ============================================================== o esqueleto
+       Rail fixo à esquerda + coluna de conteúdo. O rail é `fixed` de propósito:
+       ao expandir (hover) ele passa POR CIMA do conteúdo, sem reflow. Fixado,
+       aí sim empurra — é uma escolha deliberada do usuário, não um acidente do
+       ponteiro. A barra de contexto tem 52px, a mesma altura da antiga barra do
+       topo, para `.tabs{top:52px}` e o scrollspy da clínica seguirem válidos.
+       ========================================================================= */
+    .shell{display:flex;min-height:100vh}
+    .shell-main{flex:1;min-width:0;margin-left:68px;transition:margin-left .14s}
+    :root[data-rail="fixo"] .shell-main{margin-left:236px}
 
-    .topbar-end{display:flex;align-items:center;gap:6px;flex:0 0 auto}
-    .whoami{
-      display:flex;align-items:center;gap:7px;font-size:13px;
-      color:rgba(255,255,255,.82);padding-right:2px;
+    /* ------------------------------------------------------------------- rail */
+    .rail{
+      position:fixed;left:0;top:0;bottom:0;z-index:50;
+      width:68px;transition:width .14s;
+      background:var(--ha-deep);color:#fff;
+      display:flex;flex-direction:column;
+      padding:12px 10px 14px;overflow:visible;
+      /* No tema escuro o fundo da página chega perto do verde do rail; o filete
+         mantém a borda legível sem introduzir cor nova. */
+      border-right:1px solid rgba(255,255,255,.08);
     }
-    .avatar{
-      width:24px;height:24px;border-radius:50%;flex:0 0 auto;
-      display:grid;place-items:center;
-      background:rgba(255,255,255,.16);color:#fff;
-      font-size:11px;font-weight:700;letter-spacing:.02em;
+    .rail:hover,.rail:focus-within,
+    :root[data-rail="fixo"] .rail{width:236px;box-shadow:var(--shadow-2)}
+
+    .rail-marca{display:flex;align-items:center;gap:10px;padding:0 5px;margin-bottom:12px;min-height:32px}
+    .rail-marca:hover{text-decoration:none;opacity:.88}
+    .rail-marca .mark{width:28px;height:28px;flex:0 0 auto;color:var(--ha-mist)}
+    .rail-marca .mark svg{width:100%;height:100%;display:block}
+    .rail-marca-nome{font-size:13px;font-weight:640;color:#fff;letter-spacing:.01em}
+
+    .rail-nav{display:flex;flex-direction:column;gap:2px;flex:1;min-height:0;overflow-y:auto;scrollbar-width:none}
+    .rail-nav::-webkit-scrollbar{display:none}
+    .rail-fim{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.14)}
+    .rail-fim form{margin:0}
+
+    /* `--rail-lbl` é o interruptor único do estado aberto/fechado: os rótulos
+       de item leem essa variável em vez de repetir os três seletores de
+       expansão (hover, foco dentro, fixado). */
+    .rail{--rail-lbl:none}
+    .rail:hover,.rail:focus-within,:root[data-rail="fixo"] .rail{--rail-lbl:block}
+
+    .rail-grp{
+      font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+      margin:10px 0 3px;padding:0 8px;height:12px;
+      white-space:nowrap;overflow:hidden;
+      /* Fechado o texto some, mas a altura fica: é ela que separa os dois grupos. */
+      color:transparent;
     }
-    @media (max-width:720px){.whoami .nome{display:none}}
+    .rail:hover .rail-grp,.rail:focus-within .rail-grp,
+    :root[data-rail="fixo"] .rail-grp{color:rgba(255,255,255,.42)}
+
+    .rail-i{
+      position:relative;display:flex;align-items:center;gap:11px;
+      width:100%;padding:8px;border:0;border-radius:10px;
+      background:transparent;color:rgba(255,255,255,.66);
+      font:inherit;font-size:13px;text-align:left;cursor:pointer;
+    }
+    .rail-i:hover{background:rgba(255,255,255,.10);color:#fff;text-decoration:none}
+    .rail-i[aria-current="page"]{background:var(--ha-sage);color:#fff;font-weight:560}
+    .rail-i[aria-pressed="true"]{color:#fff}
+    .rail-eu{cursor:default}
+    .rail-eu:hover{background:transparent;color:rgba(255,255,255,.66)}
+
+    .rail-ico{position:relative;display:grid;place-items:center;width:24px;height:24px;flex:0 0 auto}
+    /* Sem `display` aqui: as regras de tema lá embaixo é que decidem se o sol ou
+       a lua aparece, e `.rail-ico svg` venceria por especificidade. */
+    .rail-ico svg{width:20px;height:20px}
+    .rail-lbl{display:var(--rail-lbl);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rail-i .avatar{width:24px;height:24px}
+
+    .rail-badge{
+      position:absolute;top:-5px;right:-7px;
+      min-width:17px;height:17px;padding:0 4px;border-radius:999px;
+      background:var(--danger);color:#fff;border:2px solid var(--ha-deep);
+      font-size:10px;font-weight:700;line-height:13px;text-align:center;
+    }
+    /* Expandido o número mora ao lado do rótulo — no ícone ele brigaria com o texto. */
+    .rail:hover .rail-badge,.rail:focus-within .rail-badge,
+    :root[data-rail="fixo"] .rail-badge{display:none}
+    /* Fora do `.rail-lbl`: lá dentro o ellipsis do rótulo comeria o número. */
+    .rail-cnt{
+      display:var(--rail-lbl);flex:0 0 auto;
+      background:var(--danger);color:#fff;border-radius:999px;
+      padding:1px 7px;font-size:10.5px;font-weight:700;line-height:1.5;
+    }
+
+    /* Sem tooltip próprio: apontar para um ícone já expande o rail e revela o
+       rótulo. O `title` de cada item cobre o instante anterior à expansão, e o
+       `aria-label` cobre quem navega por leitor de tela. */
+
+    .rail-fundo{
+      position:fixed;inset:0;z-index:45;
+      background:color-mix(in srgb,var(--ha-deep) 55%,transparent);
+    }
+
+    /* ------------------------------------------------- barra de contexto (52px) */
+    .ctxbar{
+      position:sticky;top:0;z-index:30;
+      display:flex;align-items:center;gap:10px;
+      height:52px;padding:0 20px;
+      background:var(--card);border-bottom:1px solid var(--line);
+    }
+    .ctx-clinica{
+      display:flex;align-items:center;gap:8px;min-width:0;
+      border:1px solid var(--line-2);border-radius:999px;
+      padding:4px 12px 4px 5px;background:var(--card-2);color:var(--ink);
+      font-size:13px;font-weight:560;
+    }
+    a.ctx-clinica:hover{border-color:var(--accent);text-decoration:none}
+    .ctx-estatica{padding-left:12px;cursor:default}
+    .ctx-sigla{
+      width:22px;height:22px;border-radius:50%;flex:0 0 auto;
+      display:grid;place-items:center;background:var(--ha-sage);color:#fff;
+      font-size:10px;font-weight:700;letter-spacing:.02em;
+    }
+    .ctx-nome{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ctx-trocar{font-size:12px;color:var(--muted)}
+    .ctx-pagina{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* O ☰ só existe na largura de gaveta. Precisa do `.ctxbar` na frente para
+       ganhar de `.icon-btn{display:grid}`, que é declarado logo abaixo. */
+    .ctxbar .rail-abrir{display:none}
+
     .icon-btn{
-      display:grid;place-items:center;width:30px;height:30px;padding:0;
-      background:transparent;border:1px solid rgba(255,255,255,.18);border-radius:var(--r-sm);
-      color:#fff;cursor:pointer;font-size:14px;line-height:1;
+      display:grid;place-items:center;width:32px;height:32px;padding:0;flex:0 0 auto;
+      background:var(--card);border:1px solid var(--line-2);border-radius:var(--r-sm);
+      color:var(--ink-2);cursor:pointer;font-size:14px;line-height:1;
     }
-    .icon-btn:hover{background:rgba(255,255,255,.12)}
+    .icon-btn:hover{background:var(--card-2);color:var(--ink)}
     /* Sem `display` aqui: as regras de tema abaixo é que decidem qual ícone
        aparece, e `.icon-btn svg` venceria por especificidade. */
-    .icon-btn svg{width:15px;height:15px}
+    .icon-btn svg{width:17px;height:17px}
     .tema-claro,.tema-escuro{display:none}
     :root[data-theme="dark"] .tema-claro{display:block}
     :root:not([data-theme]) .tema-escuro{display:block}
@@ -163,25 +276,29 @@
       :root:not([data-theme]) .tema-claro{display:block}
     }
     .link{
-      background:none;border:0;color:rgba(255,255,255,.82);cursor:pointer;
+      background:none;border:0;color:var(--link);cursor:pointer;
       font:inherit;font-size:13px;padding:6px 8px;border-radius:var(--r-sm);
     }
-    .link:hover{background:rgba(255,255,255,.10);color:#fff}
+    .link:hover{background:var(--card-2)}
 
-    /* A barra do topo encolhe por etapas: primeiro some "AGENTS", depois o
-       logotipo inteiro (sobra a marca gráfica), e a navegação passa a rolar. */
-    @media (max-width:900px){.brand .word .w-agents{display:none}}
-    @media (max-width:640px){
-      .topbar{gap:8px;padding:0 12px}
-      .brand .word{display:none}
-      .topnav{margin-left:0;overflow-x:auto;scrollbar-width:none}
-      .topnav::-webkit-scrollbar{display:none}
-      .topnav a{padding:6px 8px}
+    /* Abaixo de 900px o rail vira gaveta: sai da frente e volta pelo botão ☰. */
+    @media (max-width:900px){
+      .shell-main,:root[data-rail="fixo"] .shell-main{margin-left:0}
+      .rail,.rail:hover,.rail:focus-within,:root[data-rail="fixo"] .rail{
+        width:236px;transform:translateX(-100%);transition:transform .16s;box-shadow:none;
+      }
+      .rail{--rail-lbl:block}
+      .rail-grp,.rail:hover .rail-grp{color:rgba(255,255,255,.42)}
+      .rail-badge{display:none}
+      :root[data-rail-mobile="aberto"] .rail{transform:none;box-shadow:var(--shadow-2)}
+      .ctxbar .rail-abrir{display:grid}
+      .rail-fixar{display:none}
     }
+    @media (min-width:901px){.rail-fundo{display:none}}
 
     /* ------------------------------------------------------------- container */
     .container{max-width:1240px;margin:0 auto;padding:18px 20px 48px}
-    @media (max-width:640px){.container{padding:14px 14px 36px}}
+    @media (max-width:640px){.container{padding:14px 14px 36px}.ctxbar{padding:0 14px}}
 
     /* ---------------------------------------------------- cabeçalho de página */
     .page-head{
@@ -577,7 +694,8 @@
     }
 
     @media print{
-      .topbar,.tabs,.btn,.icon-btn{display:none!important}
+      .rail,.ctxbar,.rail-fundo,.topbar,.tabs,.btn,.icon-btn{display:none!important}
+      .shell-main,:root[data-rail="fixo"] .shell-main{margin-left:0}
       .card{box-shadow:none;break-inside:avoid}
     }
     @media (prefers-reduced-motion: reduce){

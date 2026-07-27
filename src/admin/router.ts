@@ -201,12 +201,25 @@ export function makeAdminRouter(): Router {
   router.use(requireAuth);
 
   // Disponibiliza o usuário logado para todas as views (menu, permissões) e o
-  // caminho atual (usado para marcar o item ativo na navegação do topo).
-  router.use((req: Request, res: Response, next) => {
+  // caminho atual (usado para marcar o item ativo no menu lateral).
+  router.use(async (req: Request, res: Response, next) => {
     const u = usuarioAtual(req);
     res.locals.usuario = u;
     res.locals.ehSuper = ehSuper(req);
     res.locals.caminhoAtual = req.baseUrl + req.path;
+
+    // O badge de pendentes vive no menu, então precisa existir em TODAS as telas
+    // da clínica — não só na que já contava (GET /clinicas/:id). Aqui o :id ainda
+    // não foi extraído pela rota, daí a leitura direta do caminho.
+    const naRota = /^\/clinicas\/([^/]+)/.exec(req.path);
+    const clinicaId = naRota ? naRota[1] : u.tenantId;
+    if (req.method === "GET" && clinicaId && clinicaId !== "nova") {
+      try {
+        res.locals.pendentesNav = await countPendentes(clinicaId);
+      } catch {
+        // O badge é acessório: se a contagem falhar, a página continua de pé.
+      }
+    }
     next();
   });
 

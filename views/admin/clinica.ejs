@@ -5,23 +5,13 @@
 
 <div class="page-head">
   <div>
-    <p class="eyebrow">
-      <% if (typeof ehSuper !== "undefined" && ehSuper) { %><a href="/admin">← Clínicas</a> ·<% } %>
-      <%= t.slug %>
-    </p>
+    <p class="eyebrow"><%= t.slug %></p>
     <h1>
       <%= t.name %>
       <span class="badge <%= t.isActive ? 'on' : 'off' %>" style="vertical-align:middle;margin-left:6px">
         <%= t.isActive ? 'Ativa' : 'Inativa' %>
       </span>
     </h1>
-  </div>
-  <div class="row tight">
-    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/metricas">Métricas</a>
-    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">Calendário</a>
-    <a class="btn sm" href="/admin/clinicas/<%= t.id %>/inbox">
-      Caixa de entrada<%= pendentes ? " · " + pendentes : "" %>
-    </a>
   </div>
 </div>
 

@@ -1,0 +1,33 @@
+<%
+  // Ícones do painel. Traçado de 1.9 com pontas redondas — a mesma geometria do
+  // sol/lua que já existiam na barra do topo. Sem biblioteca: o projeto não tem
+  // bundler, e um <svg> por nome sai mais barato que uma fonte de ícones.
+  var n = typeof nome !== "undefined" ? nome : "";
+%>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+<% if (n === "clinicas") { %>
+  <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18" /><path d="M2 22h20" />
+  <path d="M10 7h4M10 11h4M10 15h4M10 19h4" />
+<% } else if (n === "config") { %>
+  <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3" />
+  <path d="M14 2v4M8 10v4M16 18v4" />
+<% } else if (n === "calendario") { %>
+  <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+<% } else if (n === "inbox") { %>
+  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+<% } else if (n === "metricas") { %>
+  <path d="M6 20v-5M12 20V8M18 20v-9" /><path d="M3 20h18" />
+<% } else if (n === "usuarios") { %>
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+<% } else if (n === "sair") { %>
+  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" />
+<% } else if (n === "fixar") { %>
+  <path d="M15 4v7l3 3v2H6v-2l3-3V4" /><path d="M8 4h8M12 16v4" />
+<% } else if (n === "menu") { %>
+  <path d="M3 6h18M3 12h18M3 18h18" />
+<% } else if (n === "fechar") { %>
+  <path d="M18 6L6 18M6 6l12 12" />
+<% } %>
+</svg>
