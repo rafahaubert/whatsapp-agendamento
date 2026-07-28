@@ -15,13 +15,16 @@ import { logger } from "../shared/logger.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
 /** Fallback de modelo caso a config da clínica não defina um. */
-const DEFAULT_MODEL = "claude-opus-4-8";
+const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
 /** Limite de idas ao Claude por mensagem (evita loop de tool use infinito). */
 const MAX_TURNS = 8;
 
 /** Pedidos explícitos de atendimento humano (atalho, sem gastar LLM). */
 const PEDE_ATENDENTE =
   /^\s*(atendente|humano|recep(c|ç)(a|ã)o)\s*$|falar com (um )?(atendente|humano|pessoa|recep)/i;
+
+/** Ações de payload válidas. */
+const ACOES_VALIDAS = new Set(["CONFIRMAR", "CANCELAR", "REMARCAR", "SLOT", "ESP"]);
 
 /** Horários oferecidos na última busca, para virarem opções clicáveis. */
 interface HorarioOferecido {
@@ -50,6 +53,29 @@ interface Resolvida {
   /** Aviso pronto quando não deu para ler (áudio ininteligível, imagem…). */
   aviso?: string;
 }
+
+// ---------- Rate limiting por telefone (sliding window) ----------
+const rateLimitMap = new Map<string, number[]>();
+const RATE_WINDOW_MS = 60_000;      // 1 minuto
+const RATE_MAX_MSG = 10;            // 10 mensagens por minuto
+
+function isRateLimited(phone: string): boolean {
+  const now = Date.now();
+  const history = rateLimitMap.get(phone) ?? [];
+  const recent = history.filter((t) => now - t < RATE_WINDOW_MS);
+
+  if (recent.length >= RATE_MAX_MSG) {
+    rateLimitMap.set(phone, recent);
+    return true;
+  }
+
+  recent.push(now);
+  rateLimitMap.set(phone, recent);
+  return false;
+}
+
+// ---------- Timeout de conversa (histórico antigo é descartado) ----------
+const CONVERSA_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
 async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
   const texto = message.text?.trim() || null;
@@ -85,12 +111,20 @@ async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
 
   // Botões do lembrete e opções clicáveis viram texto para o modelo.
   if (message.payload) {
-    const [acao, id] = message.payload.split(":");
-    if (acao === "REMARCAR" && id) return { texto: "Quero remarcar minha consulta.", log: texto ?? message.payload };
-    if (acao === "SLOT" && id) {
+    const parts = message.payload.split(":", 2);
+    const acao = parts[0];
+    const id = parts[1];
+
+    if (!ACOES_VALIDAS.has(acao) || !id) {
+      logger.warn({ payload: message.payload }, "payload inválido recebido");
+      return { texto: null, log: `[payload inválido: ${message.payload}]` };
+    }
+
+    if (acao === "REMARCAR") return { texto: "Quero remarcar minha consulta.", log: texto ?? message.payload };
+    if (acao === "SLOT") {
       return { texto: `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`, log: texto ?? message.payload };
     }
-    if (acao === "ESP" && id) return { texto: `Quero ${id}.`, log: texto ?? message.payload };
+    if (acao === "ESP") return { texto: `Quero ${id}.`, log: texto ?? message.payload };
   }
 
   return { texto, log: texto ?? message.payload ?? "" };
@@ -114,6 +148,20 @@ export const conversationEngine: MessageHandler = {
     const tenant = primeira.tenant;
     const from = primeira.from;
     const conversa = await loadConversation(tenant.id, from);
+
+    // ---------- Rate limiting ----------
+    if (isRateLimited(from)) {
+      logger.warn({ from, tenant: tenant.slug }, "rate limit excedido");
+      return {
+        texto: "Estou recebendo muitas mensagens suas. Vou pausar um momento para não me confundir. 😊",
+      };
+    }
+
+    // ---------- Timeout de conversa: descarta histórico antigo ----------
+    if (conversa.lastActivity && Date.now() - conversa.lastActivity.getTime() > CONVERSA_TTL_MS) {
+      logger.info({ from, tenant: tenant.slug }, "conversa expirada — histórico resetado");
+      conversa.history = [];
+    }
 
     // ---------- 1. Conteúdo do lote ----------
     const resolvidas: Resolvida[] = [];
@@ -157,16 +205,20 @@ export const conversationEngine: MessageHandler = {
     // Botões do lembrete: CONFIRMAR / CANCELAR + id do agendamento.
     for (const m of mensagens) {
       if (!m.payload) continue;
-      const [acao, id] = m.payload.split(":");
+      const parts = m.payload.split(":", 2);
+      const acao = parts[0];
+      const id = parts[1];
 
-      if (acao === "CONFIRMAR" && id) {
+      if (!ACOES_VALIDAS.has(acao) || !id) continue;
+
+      if (acao === "CONFIRMAR") {
         const r = (await confirmAppointment(tenant, id)) as { erro?: string; inicio?: string };
         const resposta = r.erro ? r.erro : `Presença confirmada! ✅ Te esperamos ${r.inicio}. Até breve!`;
         await logMessage(tenant.id, from, "OUT", resposta, "BOT");
         return { texto: resposta };
       }
 
-      if (acao === "CANCELAR" && id) {
+      if (acao === "CANCELAR") {
         const r = (await cancelAppointment(tenant, id)) as { erro?: string };
         const resposta = r.erro ? r.erro : "Consulta cancelada. 👍 Se quiser remarcar, é só me chamar!";
         await logMessage(tenant.id, from, "OUT", resposta, "BOT");
@@ -175,9 +227,19 @@ export const conversationEngine: MessageHandler = {
     }
 
     // ---------- 4. Conversa com o Claude ----------
+    // Data/hora atualizada a cada interação — fora do system prompt para
+    // permitir prompt caching (economia de ~90% no custo de input).
+    const now = new Intl.DateTimeFormat("pt-BR", {
+      timeZone: tenant.config.businessHours.timezone,
+      dateStyle: "full",
+      timeStyle: "short",
+    }).format(new Date());
+
+    const contextoDataHora = `[Contexto: hoje é ${now}. Fuso: ${tenant.config.businessHours.timezone}.]`;
+
     const messages: Anthropic.MessageParam[] = [
       ...conversa.history,
-      { role: "user", content: texto },
+      { role: "user", content: `${contextoDataHora}\n\n${texto}` },
     ];
 
     const ctx: ConversationContext = {
@@ -188,6 +250,7 @@ export const conversationEngine: MessageHandler = {
       // acabou de dizer — o "sim" pode vir seguido de um "obrigado".
       ultimaMensagemPaciente: textos.join("\n"),
     };
+
     const model = tenant.config.ai.model || DEFAULT_MODEL;
     const system = buildSystemPrompt(tenant);
     const tools = buildTools(tenant);
@@ -260,11 +323,15 @@ export const conversationEngine: MessageHandler = {
       return { texto: aviso };
     }
 
+    // ---------- CORREÇÃO: setHandoff ANTES de saveConversation ----------
+    // Evita race condition onde o paciente manda msg entre save e setHandoff.
+    if (ctx.handoffRequested) {
+      await setHandoff(tenant.id, from, true);
+    }
+
     await saveConversation(tenant.id, from, messages, { patientId: ctx.patientId });
 
-    // A ferramenta pediu atendimento humano.
-    if (ctx.handoffRequested) await setHandoff(tenant.id, from, true);
-
+    // ---------- CORREÇÃO: logar consumo também no sucesso ----------
     await logMessage(tenant.id, from, "OUT", replyText, "BOT", consumo);
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
@@ -287,9 +354,9 @@ export const conversationEngine: MessageHandler = {
     // lista. Se ele só consultou o catálogo para entender a necessidade do
     // paciente (triagem), anexar a lista atrapalharia a conversa.
     if (ultimasEspecialidades.length) {
-      const texto = replyText.toLowerCase();
+      const textoLower = replyText.toLowerCase();
       const citadas = ultimasEspecialidades.filter((e) =>
-        texto.includes(e.name.toLowerCase()),
+        textoLower.includes(e.name.toLowerCase()),
       ).length;
 
       if (citadas >= 2) {
