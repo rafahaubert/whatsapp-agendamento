@@ -27,9 +27,20 @@ app.use(
   }),
 );
 
+// Headers de segurança básicos.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  next();
+});
+
 // Webhook: precisa do corpo CRU (Buffer) para validar a assinatura HMAC.
+// Limita a 100kb para evitar payload bombing.
 app.use(
+  "/webhook/whatsapp",
   express.json({
+    limit: "100kb",
     verify: (req, _res, buf) => {
       (req as unknown as { rawBody?: Buffer }).rawBody = buf;
     },
@@ -37,7 +48,7 @@ app.use(
 );
 
 // Formulários do painel.
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Atrás do proxy do provedor (Render/Fly): necessário para o cookie `secure`
 // e para o IP real do cliente.
@@ -50,6 +61,7 @@ app.use(
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    name: "haubert.sid", // não usa o nome padrão connect.sid
     cookie: {
       httpOnly: true, // fora do alcance de JavaScript
       sameSite: "lax", // corta CSRF entre sites nos POSTs do painel
@@ -92,7 +104,10 @@ app.use("/admin", makeAdminRouter());
  */
 app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
   const token = req.header("x-jobs-token") ?? req.query.token;
-  if (!env.JOBS_TOKEN || token !== env.JOBS_TOKEN) return res.sendStatus(401);
+  if (!env.JOBS_TOKEN || token !== env.JOBS_TOKEN) {
+    logger.warn({ ip: req.ip, path: req.path }, "tentativa de acesso não autorizado aos jobs");
+    return res.sendStatus(401);
+  }
   try {
     // Lembretes sempre; a agenda só na rota unificada (mantém /jobs/reminders leve
     // para quem já configurou o cron antigo).
@@ -105,6 +120,16 @@ app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+
+// Verificação de configurações críticas no startup.
+if (emProducao) {
+  if (!env.JOBS_TOKEN) {
+    logger.warn("JOBS_TOKEN não configurado — endpoints de job ficam desprotegidos");
+  }
+  if (env.SESSION_SECRET === "change-me-in-production") {
+    logger.warn("SESSION_SECRET está usando o valor padrão — altere em produção!");
+  }
+}
 
 app.listen(env.PORT, () => {
   logger.info(
