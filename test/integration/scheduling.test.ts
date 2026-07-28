@@ -345,3 +345,151 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("scheduling (integração)", () 
     expect(livres).toBe(0);
   });
 });
+
+/**
+ * O paciente é UMA pessoa: não pode estar em duas cadeiras ao mesmo tempo.
+ * A trava de conflito só olhava o profissional, então dois médicos diferentes
+ * no mesmo horário passavam direto (visto em produção no painel).
+ */
+describe.skipIf(!process.env.TEST_DATABASE_URL)("paciente em dois lugares ao mesmo tempo", () => {
+  /** Cria um segundo profissional com um slot no MESMO horário de `modelo`. */
+  async function slotDeOutroMedico(modelo: { startsAt: Date; endsAt: Date }, nome: string) {
+    const outro = await prisma.doctor.create({
+      data: {
+        tenantId: tenant.id,
+        name: nome,
+        specialties: { connect: { id: (await especialidade()).id } },
+        units: { connect: { id: (await unidade()).id } },
+      },
+    });
+    return prisma.slot.create({
+      data: {
+        tenantId: tenant.id,
+        unitId: (await unidade()).id,
+        doctorId: outro.id,
+        specialtyId: (await especialidade()).id,
+        startsAt: modelo.startsAt,
+        endsAt: modelo.endsAt,
+        status: SlotStatus.AVAILABLE,
+      },
+    });
+  }
+
+  const especialidade = () =>
+    prisma.specialty.findFirstOrThrow({ where: { tenantId: tenant.id, name: "Clínico Geral" } });
+  const unidade = () => prisma.unit.findFirstOrThrow({ where: { tenantId: tenant.id } });
+
+  async function pacienteNovo(nome: string, cpf: string) {
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome,
+      cpf,
+      phone: "+5551976707799",
+    })) as { patientId?: string; erro?: string };
+    // Sem isto, um CPF inválido vira patientId undefined e o teste falha lá na
+    // frente, com erro do Prisma em vez do motivo real.
+    if (!p.patientId) throw new Error(`paciente de teste não criado: ${p.erro}`);
+    return p.patientId;
+  }
+
+  it("REGRESSÃO: recusa o mesmo paciente com dois profissionais no mesmo horário", async () => {
+    const patientId = await pacienteNovo("Otavio da Silva", "263.946.533-30");
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    const primeiro = await prisma.slot.findUniqueOrThrow({
+      where: { id: slots.horarios[0].slotId },
+    });
+    const ok = await scheduling.bookAppointment(tenant, patientId, primeiro.id, "PARTICULAR");
+    expect(ok).not.toHaveProperty("erro");
+
+    const concorrente = await slotDeOutroMedico(primeiro, "Dr. Arnaldo Pereira");
+    const r = await scheduling.bookAppointment(tenant, patientId, concorrente.id, "PARTICULAR");
+
+    expect(r).toHaveProperty("erro");
+    expect((r as { erro: string }).erro).toContain("já tem uma consulta");
+
+    // E não pode ter deixado rastro: o slot do segundo médico segue livre.
+    const depois = await prisma.slot.findUniqueOrThrow({ where: { id: concorrente.id } });
+    expect(depois.status).toBe(SlotStatus.AVAILABLE);
+    expect(
+      await prisma.appointment.count({ where: { patientId, status: { not: "CANCELLED" } } }),
+    ).toBe(1);
+  });
+
+  it("outro paciente PODE usar o mesmo horário com outro profissional", async () => {
+    const umPaciente = await pacienteNovo("Teresa Nunes", "356.916.710-06");
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    const primeiro = await prisma.slot.findUniqueOrThrow({
+      where: { id: slots.horarios[0].slotId },
+    });
+    await scheduling.bookAppointment(tenant, umPaciente, primeiro.id, "PARTICULAR");
+
+    const concorrente = await slotDeOutroMedico(primeiro, "Dra. Marina Alves");
+    const outroPaciente = await pacienteNovo("Mauricio Lima", "168.995.350-09");
+    const r = await scheduling.bookAppointment(tenant, outroPaciente, concorrente.id, "PARTICULAR");
+
+    expect(r).not.toHaveProperty("erro");
+  });
+
+  it("REGRESSÃO: remarcar também não pode empilhar o paciente no mesmo horário", async () => {
+    const patientId = await pacienteNovo("Joana Prado", "100.002.613-27");
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    // Duas consultas do mesmo paciente, em horários diferentes.
+    const slotA = await prisma.slot.findUniqueOrThrow({ where: { id: slots.horarios[0].slotId } });
+    await scheduling.bookAppointment(tenant, patientId, slotA.id, "PARTICULAR");
+
+    const depois = (await scheduling.listAvailableSlots(tenant, {
+      especialidade: "Clínico Geral",
+    })) as { horarios: { slotId: string }[] };
+    const slotB = await prisma.slot.findUniqueOrThrow({ where: { id: depois.horarios[0].slotId } });
+    const segunda = (await scheduling.bookAppointment(
+      tenant,
+      patientId,
+      slotB.id,
+      "PARTICULAR",
+    )) as { appointmentId: string };
+
+    // Remarcar a segunda para cima da primeira (outro médico, mesma hora).
+    const emCimaDaPrimeira = await slotDeOutroMedico(slotA, "Dr. Ricardo Nunes");
+    const r = await scheduling.rescheduleAppointment(
+      tenant,
+      segunda.appointmentId,
+      emCimaDaPrimeira.id,
+    );
+
+    expect(r).toHaveProperty("erro");
+    expect((r as { erro: string }).erro).toContain("já tem uma consulta");
+  });
+
+  it("remarcar para outro horário livre continua funcionando", async () => {
+    const patientId = await pacienteNovo("Carlos Dias", "100.012.591-21");
+
+    const slots = (await scheduling.listAvailableSlots(tenant, { especialidade: "Clínico Geral" })) as {
+      horarios: { slotId: string }[];
+    };
+    const inicial = (await scheduling.bookAppointment(
+      tenant,
+      patientId,
+      slots.horarios[0].slotId,
+      "PARTICULAR",
+    )) as { appointmentId: string };
+
+    const livres = (await scheduling.listAvailableSlots(tenant, {
+      especialidade: "Clínico Geral",
+    })) as { horarios: { slotId: string }[] };
+    const r = await scheduling.rescheduleAppointment(
+      tenant,
+      inicial.appointmentId,
+      livres.horarios[0].slotId,
+    );
+
+    expect(r).not.toHaveProperty("erro");
+  });
+});
