@@ -8,14 +8,20 @@ import {
   setHandoff,
   logMessage,
 } from "../db/conversationRepository.js";
+import { chaveConversa } from "./inbox.js";
 import { baixarMidia } from "../channels/whatsapp/media.js";
 import { transcreverAudio, isTranscricaoConfigurada } from "../integrations/transcription.js";
 import { confirmAppointment, cancelAppointment } from "../domain/scheduling.js";
 import { logger } from "../shared/logger.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
-/** Fallback de modelo caso a config da clínica não defina um. */
-const DEFAULT_MODEL = "claude-3-5-sonnet-20241022";
+/**
+ * Fallback de modelo caso a config da clínica não defina um. Igual ao padrão do
+ * formulário do painel (src/admin/configForm.ts) — o valor anterior
+ * ("claude-3-5-sonnet-20241022") foi aposentado pela Anthropic e devolvia 404
+ * em toda mensagem de clínica sem modelo configurado.
+ */
+const DEFAULT_MODEL = "claude-haiku-4-5";
 /** Limite de idas ao Claude por mensagem (evita loop de tool use infinito). */
 const MAX_TURNS = 8;
 
@@ -54,24 +60,78 @@ interface Resolvida {
   aviso?: string;
 }
 
-// ---------- Rate limiting por telefone (sliding window) ----------
-const rateLimitMap = new Map<string, number[]>();
+// ---------- Rate limiting por CONVERSA (sliding window) ----------
 const RATE_WINDOW_MS = 60_000;      // 1 minuto
-const RATE_MAX_MSG = 10;            // 10 mensagens por minuto
+const RATE_MAX_MSG = 10;            // 10 lotes por minuto
+const RATE_FAXINA_MS = 5 * 60_000;  // varre o mapa a cada 5 minutos
 
-function isRateLimited(phone: string): boolean {
-  const now = Date.now();
-  const history = rateLimitMap.get(phone) ?? [];
-  const recent = history.filter((t) => now - t < RATE_WINDOW_MS);
+interface JanelaEnvio {
+  /** Momentos dos lotes recebidos, mais novos que RATE_WINDOW_MS. */
+  marcas: number[];
+  /** Quando o aviso de excesso saiu — para não repetir na mesma janela. */
+  avisadoEm?: number;
+}
 
-  if (recent.length >= RATE_MAX_MSG) {
-    rateLimitMap.set(phone, recent);
-    return true;
+/** Chave = (clínica, telefone): o mesmo paciente pode falar com duas clínicas. */
+const rateLimitMap = new Map<string, JanelaEnvio>();
+let ultimaFaxina = Date.now();
+
+/** Sem isto o mapa guarda para sempre todo telefone que já escreveu. */
+function faxinaRateLimit(now: number): void {
+  if (now - ultimaFaxina < RATE_FAXINA_MS) return;
+  ultimaFaxina = now;
+  for (const [chave, janela] of rateLimitMap) {
+    const viva = janela.marcas.some((t) => now - t < RATE_WINDOW_MS);
+    if (!viva) rateLimitMap.delete(chave);
   }
+}
 
-  recent.push(now);
-  rateLimitMap.set(phone, recent);
-  return false;
+/**
+ * Passou do limite? `avisar` sai UMA vez por janela — repetir o aviso a cada
+ * mensagem do flood custa envio na Meta e faz o bot parecer quebrado.
+ */
+function checarRateLimit(chave: string): { limitado: boolean; avisar: boolean } {
+  const now = Date.now();
+  faxinaRateLimit(now);
+
+  const janela = rateLimitMap.get(chave) ?? { marcas: [] };
+  const marcas = janela.marcas.filter((t) => now - t < RATE_WINDOW_MS);
+  const limitado = marcas.length >= RATE_MAX_MSG;
+
+  // A marca entra mesmo quando limitado: enquanto o flood continuar, a janela
+  // não drena e a conversa segue barrada até um minuto inteiro de silêncio.
+  marcas.push(now);
+
+  const avisar =
+    limitado && (janela.avisadoEm === undefined || now - janela.avisadoEm >= RATE_WINDOW_MS);
+
+  rateLimitMap.set(chave, {
+    marcas,
+    avisadoEm: avisar ? now : janela.avisadoEm,
+  });
+
+  return { limitado, avisar };
+}
+
+/** Só para testes: zera as janelas entre casos. */
+export function limparRateLimit(): void {
+  rateLimitMap.clear();
+  ultimaFaxina = Date.now();
+}
+
+/**
+ * Fuso da clínica que o runtime aceita. O painel já valida na gravação; isto é
+ * a rede de baixo, para uma config antiga inválida não derrubar o lote inteiro
+ * (`Intl.DateTimeFormat` lança fora do try/catch da conversa).
+ */
+function fusoDaClinica(timezone: string): string {
+  try {
+    new Intl.DateTimeFormat("pt-BR", { timeZone: timezone });
+    return timezone;
+  } catch {
+    logger.error({ timezone }, "timezone inválido na config da clínica — usando UTC");
+    return "UTC";
+  }
 }
 
 // ---------- Timeout de conversa (histórico antigo é descartado) ----------
@@ -150,11 +210,15 @@ export const conversationEngine: MessageHandler = {
     const conversa = await loadConversation(tenant.id, from);
 
     // ---------- Rate limiting ----------
-    if (isRateLimited(from)) {
+    const rate = checarRateLimit(chaveConversa(tenant.id, from));
+    if (rate.limitado) {
       logger.warn({ from, tenant: tenant.slug }, "rate limit excedido");
-      return {
-        texto: "Estou recebendo muitas mensagens suas. Vou pausar um momento para não me confundir. 😊",
-      };
+      // Em atendimento humano o bot é mudo — nem para avisar de excesso.
+      if (!rate.avisar || conversa.humanHandoff) return null;
+      const aviso =
+        "Estou recebendo muitas mensagens suas. Vou pausar um momento para não me confundir. 😊";
+      await logMessage(tenant.id, from, "OUT", aviso, "BOT");
+      return { texto: aviso };
     }
 
     // ---------- Timeout de conversa: descarta histórico antigo ----------
@@ -227,15 +291,17 @@ export const conversationEngine: MessageHandler = {
     }
 
     // ---------- 4. Conversa com o Claude ----------
-    // Data/hora atualizada a cada interação — fora do system prompt para
-    // permitir prompt caching (economia de ~90% no custo de input).
+    // Data/hora atualizada a cada interação — fora do system prompt para que
+    // ele seja byte a byte igual entre as mensagens (pré-requisito do prompt
+    // caching; o `cache_control` em si ainda não é enviado — ver systemPrompt.ts).
+    const fuso = fusoDaClinica(tenant.config.businessHours.timezone);
     const now = new Intl.DateTimeFormat("pt-BR", {
-      timeZone: tenant.config.businessHours.timezone,
+      timeZone: fuso,
       dateStyle: "full",
       timeStyle: "short",
     }).format(new Date());
 
-    const contextoDataHora = `[Contexto: hoje é ${now}. Fuso: ${tenant.config.businessHours.timezone}.]`;
+    const contextoDataHora = `[Contexto: hoje é ${now}. Fuso: ${fuso}.]`;
 
     const messages: Anthropic.MessageParam[] = [
       ...conversa.history,
@@ -323,15 +389,17 @@ export const conversationEngine: MessageHandler = {
       return { texto: aviso };
     }
 
-    // ---------- CORREÇÃO: setHandoff ANTES de saveConversation ----------
-    // Evita race condition onde o paciente manda msg entre save e setHandoff.
+    // O handoff é gravado ANTES do histórico: se o processo cair entre as duas
+    // escritas, o pior caso é o bot mudo com o histórico velho — nunca o bot
+    // respondendo por cima da recepção. (A fila por conversa em inbox.ts já
+    // impede que o lote seguinte leia o estado no meio do caminho.)
     if (ctx.handoffRequested) {
       await setHandoff(tenant.id, from, true);
     }
 
     await saveConversation(tenant.id, from, messages, { patientId: ctx.patientId });
 
-    // ---------- CORREÇÃO: logar consumo também no sucesso ----------
+    // Consumo do turno vai junto da resposta — é a base de custo por clínica.
     await logMessage(tenant.id, from, "OUT", replyText, "BOT", consumo);
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.

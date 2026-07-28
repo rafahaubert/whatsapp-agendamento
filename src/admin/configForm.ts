@@ -40,6 +40,42 @@ function num(v: unknown, padrao: number): number {
   return Number.isFinite(n) ? n : padrao;
 }
 
+/** "08:00" … "23:59". */
+const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Hora do formulário, ou o padrão se não for HH:MM.
+ *
+ * Não é só higiene de dados: o horário de funcionamento é copiado LITERALMENTE
+ * para o system prompt (`resumoAgenda` monta "seg, ter: <open> às <close>"), e
+ * `escapePrompt` não passa por aqui. Sem esta validação, quem edita a clínica
+ * escreve texto livre — instruções inclusive — dentro do prompt do agente.
+ */
+function hora(v: unknown, padrao: string): string {
+  const s = String(v ?? "").trim();
+  return HORA_RE.test(s) ? s : padrao;
+}
+
+/**
+ * Fuso horário IANA aceito pelo runtime? Um valor inválido quebrava o motor
+ * (`Intl.DateTimeFormat` lança e o lote morria sem resposta) e também entrava
+ * cru no system prompt.
+ */
+export function fusoValido(v: unknown): boolean {
+  if (typeof v !== "string" || !/^[A-Za-z0-9_+\-/]{1,64}$/.test(v)) return false;
+  try {
+    new Intl.DateTimeFormat("pt-BR", { timeZone: v });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Fuso do formulário, ou o padrão se não for um IANA válido. */
+export function lerTimezone(v: unknown, padrao: string): string {
+  return fusoValido(v) ? String(v).trim() : padrao;
+}
+
 /** Blocos declarados pelo formulário, em `_blocos` (separados por espaço). */
 export function blocosDoCorpo(body: Corpo): Bloco[] {
   return String(body?._blocos ?? "")
@@ -54,15 +90,14 @@ function lerDias(body: Corpo): Record<number, DiaAtendimento | null> {
       days[i] = null;
       continue;
     }
-    const inicioIntervalo = (body[`day_${i}_break_start`] ?? "").trim();
-    const fimIntervalo = (body[`day_${i}_break_end`] ?? "").trim();
+    const inicioIntervalo = String(body[`day_${i}_break_start`] ?? "").trim();
+    const fimIntervalo = String(body[`day_${i}_break_end`] ?? "").trim();
+    const temIntervalo = HORA_RE.test(inicioIntervalo) && HORA_RE.test(fimIntervalo);
     days[i] = {
-      open: body[`day_${i}_open`] || "08:00",
-      close: body[`day_${i}_close`] || "18:00",
-      // Intervalo (almoço) é opcional: só entra se as duas pontas vierem preenchidas.
-      ...(inicioIntervalo && fimIntervalo
-        ? { breakStart: inicioIntervalo, breakEnd: fimIntervalo }
-        : {}),
+      open: hora(body[`day_${i}_open`], "08:00"),
+      close: hora(body[`day_${i}_close`], "18:00"),
+      // Intervalo (almoço) é opcional: só entra se as duas pontas forem horas válidas.
+      ...(temIntervalo ? { breakStart: inicioIntervalo, breakEnd: fimIntervalo } : {}),
     };
   }
   return days;
