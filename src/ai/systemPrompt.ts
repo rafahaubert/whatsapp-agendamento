@@ -21,9 +21,11 @@ function escapePrompt(value: string, maxLength = 2000): string {
  * por cliente (persona, textos, regras de agendamento) entra aqui — o mesmo
  * código serve qualquer clínica.
  *
- * NOTA DE PERFORMANCE: a data/hora NÃO entra mais neste prompt. Ela é
- * passada como uma mensagem user no engine.ts, permitindo que o system prompt
- * seja cacheado pela Anthropic (economia de ~90% no custo de input).
+ * NOTA DE PERFORMANCE: a data/hora NÃO entra mais neste prompt. Ela é passada
+ * como uma mensagem user no engine.ts, para o prompt ser byte a byte igual
+ * entre as mensagens — pré-requisito do prompt caching da Anthropic. O caching
+ * em si ainda NÃO está ligado: falta o `cache_control` na chamada (ver
+ * engine.ts) e o SDK fixado (0.30.1) só o expõe na API beta.
  */
 export function buildSystemPrompt(tenant: ResolvedTenant): string {
   const cfg = tenant.config;
@@ -60,7 +62,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     escapePrompt(cfg.ai.persona),
     "",
     `Você é o assistente de agendamento da clínica "${escapePrompt(cfg.branding.clinicName, 100)}".`,
-    `Fuso horário da clínica: ${cfg.businessHours.timezone}.`,
+    `Fuso horário da clínica: ${escapePrompt(cfg.businessHours.timezone, 64)}.`,
     "",
     "# Objetivo",
     "Ajudar o paciente a AGENDAR, CANCELAR ou REMARCAR consultas, de forma cordial e objetiva, em português do Brasil. Mensagens curtas (é WhatsApp).",

@@ -66,7 +66,7 @@ import {
   marcarComparecimento,
 } from "../domain/scheduling.js";
 import { calcularMetricas } from "./metrics.js";
-import { parseConfig, blocosDoCorpo } from "./configForm.js";
+import { parseConfig, blocosDoCorpo, lerTimezone } from "./configForm.js";
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
@@ -205,7 +205,7 @@ export function makeAdminRouter(): Router {
         slug: slugify(req.body.slug || req.body.name),
         name: req.body.name,
         whatsappPhoneNumberId: req.body.whatsappPhoneNumberId,
-        timezone: req.body.timezone || "America/Sao_Paulo",
+        timezone: lerTimezone(req.body.timezone, "America/Sao_Paulo"),
       });
       res.redirect(clinicaUrl(t.id, "", { msg: "Clínica criada" }));
     } catch {
@@ -593,7 +593,9 @@ export function makeAdminRouter(): Router {
 
     const blocos = blocosDoCorpo(req.body);
     const editaIdentificacao = blocos.includes("identificacao");
-    const timezone = editaIdentificacao ? req.body.timezone || t.timezone : t.timezone;
+    const timezone = editaIdentificacao
+      ? lerTimezone(req.body.timezone, t.timezone)
+      : t.timezone;
 
     await updateTenant(t.id, {
       name: editaIdentificacao ? req.body.name : t.name,
