@@ -11,6 +11,8 @@ export interface ConversationSnapshot {
   state: ConversationState;
   /** true = conversa em atendimento humano; o bot fica em silêncio. */
   humanHandoff: boolean;
+  /** Momento da última mensagem trocada; ausente em conversa nova. */
+  lastActivity?: Date;
 }
 
 /** Carrega o histórico (mensagens para o Claude) e o estado por telefone. */
@@ -25,7 +27,12 @@ export async function loadConversation(
 
   const history = conv.history ? (JSON.parse(conv.history) as Anthropic.MessageParam[]) : [];
   const state = conv.state ? (JSON.parse(conv.state) as ConversationState) : {};
-  return { history, state, humanHandoff: conv.humanHandoff };
+  return {
+    history,
+    state,
+    humanHandoff: conv.humanHandoff,
+    lastActivity: conv.lastMessageAt,
+  };
 }
 
 /** Persiste (upsert) o histórico e o estado. `state`/`history` são JSON (String no banco). */
