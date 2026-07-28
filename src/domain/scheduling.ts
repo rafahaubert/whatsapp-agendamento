@@ -311,6 +311,22 @@ export async function bookAppointment(
     });
     if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
 
+    // O paciente é uma pessoa só: não pode estar em duas cadeiras ao mesmo
+    // tempo. A trava acima não pega isto — cada profissional tem o SEU slot,
+    // então o mesmo paciente às 13:00 com o Dr. A e com o Dr. B passava direto.
+    const conflitoPaciente = await tx.appointment.findFirst({
+      where: {
+        tenantId,
+        patientId,
+        status: { not: AppointmentStatus.CANCELLED },
+        slot: { startsAt: { lt: slot.endsAt }, endsAt: { gt: slot.startsAt } },
+      },
+      select: { id: true },
+    });
+    if (conflitoPaciente) {
+      return { erro: "Este paciente já tem uma consulta nesse horário. Escolha outro." };
+    }
+
     let healthPlanId: string | null = null;
     let pType: string = PaymentType.PARTICULAR;
     if (paymentType === PaymentType.HEALTH_PLAN && plano) {
@@ -500,6 +516,22 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
       select: { id: true },
     });
     if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
+
+    // Mesma regra do agendamento: o paciente não pode ficar com duas consultas
+    // sobrepostas — nem remarcando por cima de outra que ele já tem.
+    const conflitoPaciente = await tx.appointment.findFirst({
+      where: {
+        id: { not: appt.id },
+        tenantId: tenant.id,
+        patientId: appt.patientId,
+        status: { not: AppointmentStatus.CANCELLED },
+        slot: { startsAt: { lt: novo.endsAt }, endsAt: { gt: novo.startsAt } },
+      },
+      select: { id: true },
+    });
+    if (conflitoPaciente) {
+      return { erro: "Este paciente já tem uma consulta nesse horário. Escolha outro." };
+    }
 
     // O agendamento sai deste slot, então ele fica solto e pode voltar à agenda.
     await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
