@@ -188,6 +188,77 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("scheduling (integração)", () 
     expect(ok.status).toBe("AGENDADO");
   });
 
+  it("reconhece pelo telefone quem já é paciente, sem pedir CPF de novo", async () => {
+    const telefone = "+5551988887777";
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Josué Santana",
+      cpf: "111.444.777-35",
+      phone: telefone,
+    })) as { patientId: string };
+
+    // O webhook da Meta entrega o número SEM o "+": tem de ser o mesmo paciente.
+    const doTelefone = await scheduling.pacientesDoTelefone(tenant.id, "5551988887777");
+    expect(doTelefone.map((c) => c.id)).toEqual([p.patientId]);
+
+    // Ele responde só o primeiro nome — e isso basta, o CPF fica de fora.
+    const achado = (await scheduling.identificarPaciente(tenant.id, {
+      nome: "Josué",
+      phone: telefone,
+    })) as { patientId?: string; novo?: boolean };
+    expect(achado.patientId).toBe(p.patientId);
+    expect(achado.novo).toBe(false);
+  });
+
+  it("telefone de família: quem não está na lista ainda precisa de CPF", async () => {
+    const telefone = "+5551955554444";
+    await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Carla Prado",
+      cpf: "231.002.999-81",
+      phone: telefone,
+    });
+
+    // A filha, que ainda não tem cadastro: sem CPF a ferramenta não inventa ficha.
+    const semCadastro = (await scheduling.identificarPaciente(tenant.id, {
+      nome: "Beatriz Prado",
+      phone: telefone,
+    })) as { erro?: string };
+    expect(semCadastro.erro).toMatch(/CPF/i);
+
+    const criada = (await scheduling.identificarPaciente(tenant.id, {
+      nome: "Beatriz Prado",
+      cpf: "153.509.460-56",
+      phone: telefone,
+    })) as { patientId?: string; novo?: boolean };
+    expect(criada.novo).toBe(true);
+
+    // Agora o número tem duas fichas — e o nome desempata.
+    const cadastros = await scheduling.pacientesDoTelefone(tenant.id, telefone);
+    expect(cadastros).toHaveLength(2);
+    const beatriz = (await scheduling.identificarPaciente(tenant.id, {
+      nome: "Beatriz",
+      phone: telefone,
+    })) as { patientId?: string };
+    expect(beatriz.patientId).toBe(criada.patientId);
+  });
+
+  it("identificar_paciente sem CPF, pela ferramenta, para quem já tem cadastro", async () => {
+    const telefone = "+5551933332222";
+    const p = (await scheduling.findOrCreatePatient(tenant.id, {
+      nome: "Roberto Lima",
+      cpf: "790.573.610-51",
+      phone: telefone,
+    })) as { patientId: string };
+
+    const ctx = { tenant, phone: telefone };
+    const r = (await executeTool("identificar_paciente", { nome: "Roberto" }, ctx)) as {
+      patientId?: string;
+    };
+
+    expect(r.patientId).toBe(p.patientId);
+    // A ferramenta também preenche o contexto, que é o que agendar consulta.
+    expect((ctx as { patientId?: string }).patientId).toBe(p.patientId);
+  });
+
   it("cancelar libera o horário", async () => {
     const p = (await scheduling.findOrCreatePatient(tenant.id, {
       nome: "Fulano de Tal",

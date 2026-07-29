@@ -48,9 +48,12 @@ vi.mock("../../src/integrations/transcription.js", () => ({
   transcreverAudio: vi.fn(),
   isTranscricaoConfigurada: () => false,
 }));
+const pacientesDoTelefone = vi.fn();
 vi.mock("../../src/domain/scheduling.js", () => ({
   confirmAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
+  periodosReaisDaAgenda: vi.fn(async () => []),
+  pacientesDoTelefone: (...a: unknown[]) => pacientesDoTelefone(...a),
 }));
 
 const { conversationEngine, limparRateLimit } = await import("../../src/core/engine.js");
@@ -113,7 +116,101 @@ beforeEach(() => {
   saveConversation.mockResolvedValue(undefined);
   setHandoff.mockResolvedValue(undefined);
   logMessage.mockResolvedValue(undefined);
+  pacientesDoTelefone.mockResolvedValue([]);
   criarMensagem.mockResolvedValue(respostaSimples("Oi! Como posso ajudar?"));
+});
+
+/** Turno que busca horários e termina com o texto dado. */
+function turnoComHorarios(textoFinal: string) {
+  criarMensagem
+    .mockResolvedValueOnce({
+      content: [{ type: "tool_use", id: "tu1", name: "listar_horarios", input: {} }],
+      stop_reason: "tool_use",
+      usage: { input_tokens: 100, output_tokens: 20 },
+    })
+    .mockResolvedValueOnce(respostaSimples(textoFinal));
+  executarFerramenta.mockResolvedValue({
+    horarios: [
+      { slotId: "s1", medico: "Dr. Arnaldo", unidade: "Centro", inicio: "sex., 31/07, 15:30" },
+      { slotId: "s2", medico: "Dr. Arnaldo", unidade: "Centro", inicio: "sex., 31/07, 16:00" },
+    ],
+  });
+}
+
+describe("opções clicáveis no pedido de confirmação", () => {
+  // O paciente trocou de profissional mantendo o horário; o agente buscou a
+  // agenda de novo e o motor devolveu os três horários DEBAIXO do "Posso
+  // confirmar?" — como se a escolha dele tivesse se perdido.
+  it("REGRESSÃO: não reoferece a agenda junto do 'Posso confirmar?'", async () => {
+    turnoComHorarios(
+      "Confirmando então:\n\n*Clínico Geral* | *Dr. Arnaldo Pereira* | *Sexta, 31/07 às 15:30*\n\nPosso confirmar?",
+    );
+
+    const reply = await conversationEngine.handle([msg("troque para o dr Arnaldo")]);
+
+    expect(reply?.opcoes?.map((o) => o.titulo)).toEqual(["Sim, pode agendar", "Quero outro horário"]);
+  });
+
+  // "Confirmando então: ... agendado!" não pede mais nada — a consulta já saiu.
+  it("depois de agendar, não sobra pergunta de confirmação para responder", async () => {
+    criarMensagem
+      .mockResolvedValueOnce({
+        content: [{ type: "tool_use", id: "tu1", name: "agendar", input: { slotId: "s1" } }],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 100, output_tokens: 20 },
+      })
+      .mockResolvedValueOnce(respostaSimples("Confirmando então: está agendado! Posso confirmar mais alguma coisa?"));
+    executarFerramenta.mockResolvedValue({ status: "AGENDADO" });
+
+    const reply = await conversationEngine.handle([msg("sim, pode agendar")]);
+
+    expect(reply?.opcoes).toBeUndefined();
+  });
+
+  it("oferecendo horários de verdade, os botões continuam sendo os horários", async () => {
+    turnoComHorarios("Tenho estes horários com o Dr. Arnaldo 👇");
+
+    const reply = await conversationEngine.handle([msg("tem mais tarde?")]);
+
+    expect(reply?.opcoes?.map((o) => o.titulo)).toEqual([
+      "sex., 31/07, 15:30",
+      "sex., 31/07, 16:00",
+    ]);
+  });
+});
+
+describe("paciente já cadastrado no telefone", () => {
+  it("entra na conversa já identificado, sem pedir nome e CPF", async () => {
+    pacientesDoTelefone.mockResolvedValue([{ id: "p1", name: "Josué Santana" }]);
+
+    await conversationEngine.handle([msg("oi")]);
+
+    expect(saveConversation).toHaveBeenCalledWith("t1", "5511999990000", expect.anything(), {
+      patientId: "p1",
+    });
+  });
+
+  // Telefone de família: quem escolhe para quem é a consulta é o paciente.
+  it("com mais de um cadastro no número, não escolhe por conta própria", async () => {
+    pacientesDoTelefone.mockResolvedValue([
+      { id: "p1", name: "Josué Santana" },
+      { id: "p2", name: "Maria Santana" },
+    ]);
+
+    await conversationEngine.handle([msg("oi")]);
+
+    expect(saveConversation).toHaveBeenCalledWith("t1", "5511999990000", expect.anything(), {
+      patientId: undefined,
+    });
+  });
+
+  it("uma falha na leitura do cadastro não derruba o atendimento", async () => {
+    pacientesDoTelefone.mockRejectedValue(new Error("db fora"));
+
+    const reply = await conversationEngine.handle([msg("oi")]);
+
+    expect(reply?.texto).toBe("Oi! Como posso ajudar?");
+  });
 });
 
 describe("atendimento humano", () => {

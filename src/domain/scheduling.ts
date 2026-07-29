@@ -22,6 +22,7 @@ import {
   type Periodo,
 } from "./horarios.js";
 import { normalizeCpf, isValidCpf } from "../shared/cpf.js";
+import { casarNome } from "../shared/nomes.js";
 import { logger } from "../shared/logger.js";
 import {
   isGoogleConfigured,
@@ -126,6 +127,64 @@ export async function findOrCreatePatient(
     data: { tenantId, name: data.nome, cpf, phone: data.phone },
   });
   return { patientId: created.id, nome: created.name, novo: true };
+}
+
+/**
+ * O mesmo número escrito de formas diferentes. O webhook da Meta entrega
+ * "5511999999999"; o cadastro feito pelo painel costuma vir com "+" e
+ * pontuação. Sem isto o paciente do painel não é reconhecido no WhatsApp.
+ */
+function variantesTelefone(phone: string): string[] {
+  const digitos = phone.replace(/\D/g, "");
+  if (!digitos) return [];
+  return [...new Set([phone, digitos, `+${digitos}`])];
+}
+
+/**
+ * Pacientes já cadastrados NESTE telefone, do mais recente para o mais antigo.
+ *
+ * O número já foi provado pelo WhatsApp, então ele vale como identificação —
+ * é o que dispensa pedir nome e CPF a quem já é da casa. Vem mais de um quando
+ * o telefone é da família (mãe agendando para os filhos); aí quem escolhe é o
+ * paciente, não o agente.
+ */
+export async function pacientesDoTelefone(tenantId: string, phone: string) {
+  const variantes = variantesTelefone(phone ?? "");
+  if (!variantes.length) return [];
+
+  return prisma.patient.findMany({
+    where: { tenantId, phone: { in: variantes } },
+    orderBy: { updatedAt: "desc" },
+    take: 5,
+    select: { id: true, name: true },
+  });
+}
+
+/**
+ * Identifica o paciente da conversa.
+ *
+ * O CPF só é obrigatório para quem AINDA não tem cadastro neste telefone:
+ * para quem já tem, o número mais o nome bastam. Pedir CPF de novo a cada
+ * conversa é atrito puro — o dado já está no banco, e o WhatsApp já provou
+ * de que número a mensagem veio.
+ */
+export async function identificarPaciente(
+  tenantId: string,
+  data: { nome: string; cpf?: string | null; phone: string },
+) {
+  if (data.cpf) {
+    return findOrCreatePatient(tenantId, { nome: data.nome, cpf: data.cpf, phone: data.phone });
+  }
+
+  const cadastrados = await pacientesDoTelefone(tenantId, data.phone);
+  const encontrado = casarNome(cadastrados, data.nome ?? "");
+  if (encontrado) return { patientId: encontrado.id, nome: encontrado.name, novo: false };
+
+  return {
+    erro: cadastrados.length
+      ? `Não há cadastro de "${data.nome}" neste telefone. Peça o CPF para cadastrar e chame identificar_paciente de novo com nome e cpf.`
+      : "Este telefone ainda não tem cadastro. Peça o nome completo E o CPF, e chame identificar_paciente com os dois.",
+  };
 }
 
 // ---------- Resolvers case-insensitive (portáveis SQLite/Postgres) ----------
