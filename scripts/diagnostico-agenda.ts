@@ -50,6 +50,10 @@ function agendaDoProfissional(
   }
 }
 
+// A mesma leitura, sem terminal, está em Agendamentos → "Ver horários livres"
+// (src/admin/tenantAdmin.ts → diagnosticarAgenda). Este script continua útil
+// para rodar contra o banco de produção a partir da máquina de quem mantém.
+
 async function diagnosticar(tenant: {
   id: string;
   slug: string;

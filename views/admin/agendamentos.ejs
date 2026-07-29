@@ -12,13 +12,20 @@
 <div class="card" id="agenda">
   <div class="card-head">
     <h2>Agenda</h2>
-    <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">Ver calendário</a>
+    <div class="row tight">
+      <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/agenda/diagnostico">Ver horários livres</a>
+      <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/calendario">Ver calendário</a>
+    </div>
   </div>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
-    <label>Gerar horários livres para os próximos<input type="number" name="days" value="7" style="max-width:90px" /> dias</label>
+    <label>Gerar horários livres para os próximos<input type="number" name="days" value="<%= cfg.booking.advanceBookingDays || 30 %>" style="max-width:90px" /> dias</label>
     <button class="btn sm">Gerar horários</button>
   </form>
-  <p class="muted">Regenera os horários LIVRES (preserva os já reservados) a partir do horário de funcionamento e dos profissionais.</p>
+  <p class="muted">
+    Regenera os horários LIVRES (preserva os já reservados) a partir do horário de funcionamento e dos
+    profissionais. Se o assistente disser que não tem horário num período,
+    <a href="/admin/clinicas/<%= t.id %>/agenda/diagnostico">o diagnóstico da agenda</a> mostra o porquê.
+  </p>
 
   <h2>Próximos agendamentos <span class="muted" style="font-weight:400">(<%= agendamentos.length %>)</span></h2>
   <% if (agendamentos.length === 0) { %>

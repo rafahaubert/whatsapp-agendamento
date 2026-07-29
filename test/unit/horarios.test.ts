@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { DateTime } from "luxon";
 import { umPorHorario } from "../../src/domain/scheduling.js";
 import {
+  avisoPeriodoVazio,
   escolherHorarios,
   janelaAtendimento,
   parseHoraPreferida,
+  periodosGeraveis,
   resolverDia,
 } from "../../src/domain/horarios.js";
 
@@ -165,6 +167,65 @@ describe("janelaAtendimento", () => {
     const j = janelaAtendimento({}, 30);
     expect(j.periodos).toEqual([]);
     expect(j.temAlgum).toBe(false);
+  });
+});
+
+describe("periodosGeraveis", () => {
+  const manhaSo = { 0: null, 1: { open: "08:00", close: "12:00" } };
+  const diaTodo = { 0: null, 1: { open: "08:00", close: "18:00" } };
+
+  it("junta os períodos de todos os profissionais", () => {
+    expect(periodosGeraveis([manhaSo, diaTodo], 30)).toEqual(["manha", "tarde"]);
+  });
+
+  it("um profissional só de manhã não inventa tarde", () => {
+    expect(periodosGeraveis([manhaSo], 30)).toEqual(["manha"]);
+  });
+
+  it("almoço que engole a tarde tira a tarde da lista", () => {
+    const comAlmocoLongo = {
+      0: null,
+      1: { open: "08:00", close: "18:00", breakStart: "12:00", breakEnd: "18:00" },
+    };
+    expect(periodosGeraveis([comAlmocoLongo], 30)).toEqual(["manha"]);
+  });
+
+  it("sem profissional, nenhum período", () => {
+    expect(periodosGeraveis([], 30)).toEqual([]);
+  });
+});
+
+describe("avisoPeriodoVazio", () => {
+  const base = { periodo: "tarde" as const, especialidade: "Ortodontia", janelaDias: 30 };
+
+  it('agenda sem o período: manda parar de oferecer e proíbe o "hoje não tem"', () => {
+    const a = avisoPeriodoVazio({
+      ...base,
+      causa: { tipo: "fora-da-agenda", periodosReais: ["manha"] },
+    });
+    expect(a).toContain("NÃO tem tarde");
+    expect(a).toContain("manhã");
+    expect(a).toContain("hoje não tem"); // a instrução de NÃO dizer isso
+    expect(a).toContain("NUNCA volte a oferecer");
+  });
+
+  it("tudo reservado: oferece a fila de espera, não nega o período", () => {
+    const a = avisoPeriodoVazio({ ...base, causa: { tipo: "tudo-reservado" }, dia: "sexta-feira" });
+    expect(a).toContain("reservados");
+    expect(a).toContain("FILA DE ESPERA");
+    expect(a).toContain("sexta-feira");
+    expect(a).not.toContain("NÃO tem tarde");
+  });
+
+  it("sem profissional: manda mostrar as especialidades reais", () => {
+    const a = avisoPeriodoVazio({ ...base, causa: { tipo: "sem-profissional" } });
+    expect(a).toContain("listar_especialidades");
+  });
+
+  it("sem horário gerado: fala em janela de dias, sem prometer nem negar o período", () => {
+    const a = avisoPeriodoVazio({ ...base, causa: { tipo: "sem-horario" } });
+    expect(a).toContain("30 dias");
+    expect(a).toContain("fila de espera");
   });
 });
 

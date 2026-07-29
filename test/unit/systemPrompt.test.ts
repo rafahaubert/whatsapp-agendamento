@@ -97,6 +97,20 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("prefere manhã, tarde ou noite?");
   });
 
+  it("a agenda dos profissionais manda no horário anunciado pela clínica", () => {
+    // A clínica funciona até as 18h, mas os profissionais só atendem de manhã:
+    // perguntar "prefere manhã ou tarde?" leva direto ao "não tem tarde".
+    const prompt = buildSystemPrompt(fakeTenant({}, DIAS_PADRAO), ["manha"]);
+    expect(prompt).toContain("prefere manhã?");
+    expect(prompt).toContain("Períodos que existem na agenda: manhã.");
+    expect(prompt).not.toContain("manhã ou tarde");
+  });
+
+  it("sem profissional com agenda, não promete período nenhum de verdade", () => {
+    const prompt = buildSystemPrompt(fakeTenant({}, DIAS_PADRAO), []);
+    expect(prompt).toContain("Períodos que existem na agenda: manhã ou tarde.");
+  });
+
   it("REGRESSÃO: com 'Perguntar convênio' desmarcado, proíbe falar de convênio", () => {
     const prompt = buildSystemPrompt(fakeTenant({ askInsurance: false }, DIAS_PADRAO));
     expect(prompt).toContain("NUNCA pergunte se é particular ou convênio");

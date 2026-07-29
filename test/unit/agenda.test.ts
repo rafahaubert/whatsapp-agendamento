@@ -33,6 +33,27 @@ describe("resumoAgenda", () => {
     const vazio = { 0: null, 1: null, 2: null, 3: null, 4: null, 5: null, 6: null };
     expect(resumoAgenda(vazio)).toMatch(/sem dias/);
   });
+
+  it("mostra o intervalo de almoço — ele decide quais horários existem", () => {
+    // "08:00 às 18:00" com almoço até as 18:00 não tem tarde nenhuma. Esconder
+    // o intervalo fazia o painel e o system prompt anunciarem uma tarde que o
+    // gerador nunca produziu.
+    const dias = {
+      0: null,
+      1: { open: "08:00", close: "18:00", breakStart: "12:00", breakEnd: "18:00" },
+      2: null, 3: null, 4: null, 5: null, 6: null,
+    };
+    expect(resumoAgenda(dias)).toBe("seg: 08:00 às 18:00 (almoço 12:00–18:00)");
+  });
+
+  it("ignora intervalo inválido (fim antes do início), como o gerador", () => {
+    const dias = {
+      0: null,
+      1: { open: "08:00", close: "18:00", breakStart: "13:00", breakEnd: "12:00" },
+      2: null, 3: null, 4: null, 5: null, 6: null,
+    };
+    expect(resumoAgenda(dias)).toBe("seg: 08:00 às 18:00");
+  });
 });
 
 describe("statusUI", () => {
