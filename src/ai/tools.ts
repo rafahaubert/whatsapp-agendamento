@@ -81,14 +81,22 @@ const TODAS: Anthropic.Tool[] = [
   {
     name: "identificar_paciente",
     description:
-      "Identifica ou cadastra o paciente pelo nome completo e CPF. Chame assim que tiver ambos.",
+      "Identifica (ou cadastra) o paciente da consulta. Se o telefone JÁ TIVER cadastro, basta o nome — o CPF NÃO é necessário e não deve ser pedido. " +
+      "O CPF só entra para cadastrar alguém NOVO; se ele fizer falta, a ferramenta avisa.",
     input_schema: {
       type: "object",
       properties: {
-        nome: { type: "string", description: "Nome completo do paciente" },
-        cpf: { type: "string", description: "CPF (com ou sem pontuação)" },
+        nome: {
+          type: "string",
+          description: "Nome do paciente. Completo, quando for um cadastro novo",
+        },
+        cpf: {
+          type: "string",
+          description:
+            "CPF (com ou sem pontuação). Envie APENAS ao cadastrar um paciente novo — omita para quem já tem cadastro neste telefone (opcional)",
+        },
       },
-      required: ["nome", "cpf"],
+      required: ["nome"],
     },
   },
   {
@@ -217,7 +225,7 @@ export async function executeTool(
     case "listar_convenios":
       return scheduling.listInsurers(t.id);
     case "identificar_paciente": {
-      const p = await scheduling.findOrCreatePatient(t.id, {
+      const p = await scheduling.identificarPaciente(t.id, {
         nome: input.nome,
         cpf: input.cpf,
         phone: ctx.phone,

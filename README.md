@@ -144,6 +144,42 @@ paralelas, cada uma lendo e sobrescrevendo o mesmo histórico.
 
 ---
 
+## Paciente reconhecido pelo telefone
+
+Quem já é da casa **não repete nome completo e CPF a cada conversa**: o número
+já foi provado pelo WhatsApp e o cadastro está no banco. Antes de falar com o
+Claude, o motor procura os pacientes daquele telefone
+(`pacientesDoTelefone`, em [src/domain/scheduling.ts](src/domain/scheduling.ts))
+e o prompt muda conforme o resultado:
+
+| Cadastros no número | O que o agente faz |
+|---|---|
+| **nenhum** | pede nome completo e CPF, como sempre |
+| **um** | já entra identificado; só **confirma** ("a consulta é para você mesmo, Josué?") |
+| **vários** (telefone de família) | pergunta **para qual deles** é a consulta — não escolhe sozinho |
+
+O CPF passou a ser exigido só para **cadastrar alguém novo**: `identificar_paciente`
+aceita apenas o nome quando ele bate com um cadastro daquele telefone
+([src/shared/nomes.ts](src/shared/nomes.ts) desempata, e na dúvida devolve nada —
+aí o agente pede o CPF). O nome do paciente entra no resumo antes do
+"Posso confirmar?", que é a chance de dizer *"não, é para o meu filho"* antes de
+a consulta cair na ficha errada.
+
+> A busca é por telefone exato, com e sem o `+` — o webhook da Meta entrega
+> `5551999999999` e o painel costuma gravar `+5551999999999`.
+
+## Pedido de confirmação
+
+No "Posso confirmar?" o motor **não reoferece a agenda**: o paciente já escolheu
+o horário, e ver os mesmos botões de novo faz parecer que a escolha se perdeu
+(acontecia quando ele trocava de profissional mantendo o horário — a busca rodava
+outra vez e os horários voltavam junto da pergunta). No lugar deles vão dois
+botões, *Sim, pode agendar* e *Quero outro horário*, e o "sim" do botão é o mesmo
+"sim" que a trava de [src/shared/confirmacao.ts](src/shared/confirmacao.ts) exige
+antes de `agendar` rodar.
+
+---
+
 ## Fases do desenvolvimento
 
 - [x] **Fase 0 — Fundação:** estrutura + schema completo + config.

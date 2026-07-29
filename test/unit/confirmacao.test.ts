@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ehConfirmacao } from "../../src/shared/confirmacao.js";
+import { ehConfirmacao, ehPedidoDeConfirmacao } from "../../src/shared/confirmacao.js";
 
 describe("ehConfirmacao", () => {
   it("aceita as formas comuns de dizer sim", () => {
@@ -54,5 +54,40 @@ describe("ehConfirmacao", () => {
     expect(ehConfirmacao("teria que ser um pouco mais tarde")).toBe(false);
     expect(ehConfirmacao("me manda outras opções")).toBe(false);
     expect(ehConfirmacao("estou com um pouco de dor de dente")).toBe(false);
+  });
+
+  it("os botões de sim/não do pedido de confirmação são lidos como se espera", () => {
+    expect(ehConfirmacao("Sim, pode agendar.")).toBe(true);
+    expect(ehConfirmacao("Não, quero outro horário.")).toBe(false);
+  });
+});
+
+describe("ehPedidoDeConfirmacao", () => {
+  it("reconhece o pedido de aval final, do jeito que o agente escreve", () => {
+    for (const t of [
+      "Perfeito! Deixa eu confirmar:\n\n*Clínico Geral* | *Dr. Pedro* | *Sexta, 31/07 às 15:30*\n\nPosso confirmar?",
+      "Ótimo! Confirmando então:\n\n*Clínico Geral*\n\nPosso agendar?",
+      "Posso marcar para você?",
+      "Podemos confirmar?",
+    ]) {
+      expect(ehPedidoDeConfirmacao(t), t).toBe(true);
+    }
+  });
+
+  it("mensagem que oferece horários NÃO é pedido de confirmação", () => {
+    for (const t of [
+      "Ótimo! Tenho estes horários com o Clínico Geral para sexta-feira 👇",
+      "Sim! Tenho estes outros horários mais tarde para você 👇",
+      "Os horários que mostrei têm o *Dr. Pedro* e o *Dr. Arnaldo*. Qual você prefere?",
+      "Pelo que você descreveu, o ideal é *Clínico Geral*. Posso seguir com isso?",
+    ]) {
+      expect(ehPedidoDeConfirmacao(t), t).toBe(false);
+    }
+  });
+
+  it("trata vazio e nulo como não pedido", () => {
+    expect(ehPedidoDeConfirmacao("")).toBe(false);
+    expect(ehPedidoDeConfirmacao(null)).toBe(false);
+    expect(ehPedidoDeConfirmacao(undefined)).toBe(false);
   });
 });

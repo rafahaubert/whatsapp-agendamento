@@ -54,3 +54,31 @@ export function ehConfirmacao(texto: string | null | undefined): boolean {
   if (NEGACAO.test(t)) return false;
   return AFIRMACOES.some((re) => re.test(t));
 }
+
+/**
+ * Formas de o AGENTE pedir o aval final do agendamento. Só o pedido em si —
+ * "posso seguir com isso?" (usado na triagem de especialidade) fica de fora
+ * de propósito: ali ainda não há horário escolhido.
+ */
+const PEDIDOS_DE_CONFIRMACAO = [
+  /\bposso (confirmar|agendar|marcar)\b/,
+  /\bpodemos (confirmar|agendar|marcar)\b/,
+  /\bposso seguir com o agendamento\b/,
+  /\b(confirmo|confirmando|confirmamos) (entao|assim)\b/,
+  /\bdeixa eu confirmar\b/,
+  /\bconfirma (pra|para) (voce|mim)\b/,
+];
+
+/**
+ * A mensagem do agente é o pedido de confirmação do agendamento?
+ *
+ * Serve para NÃO reoferecer a agenda junto do "Posso confirmar?": o paciente
+ * já escolheu o horário, e ver os mesmos botões de novo faz parecer que a
+ * escolha se perdeu — ele reclica, e a conversa volta uma casa.
+ */
+export function ehPedidoDeConfirmacao(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const t = normalizar(texto);
+  if (!t) return false;
+  return PEDIDOS_DE_CONFIRMACAO.some((re) => re.test(t));
+}

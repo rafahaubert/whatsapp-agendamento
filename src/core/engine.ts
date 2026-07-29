@@ -15,7 +15,9 @@ import {
   confirmAppointment,
   cancelAppointment,
   periodosReaisDaAgenda,
+  pacientesDoTelefone,
 } from "../domain/scheduling.js";
+import { ehPedidoDeConfirmacao } from "../shared/confirmacao.js";
 import type { Periodo } from "../domain/horarios.js";
 import { logger } from "../shared/logger.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
@@ -35,7 +37,18 @@ const PEDE_ATENDENTE =
   /^\s*(atendente|humano|recep(c|ç)(a|ã)o)\s*$|falar com (um )?(atendente|humano|pessoa|recep)/i;
 
 /** Ações de payload válidas. */
-const ACOES_VALIDAS = new Set(["CONFIRMAR", "CANCELAR", "REMARCAR", "SLOT", "ESP"]);
+const ACOES_VALIDAS = new Set(["CONFIRMAR", "CANCELAR", "REMARCAR", "SLOT", "ESP", "SIM", "NAO"]);
+
+/**
+ * O que acompanha um "Posso confirmar?": sim ou não, num toque.
+ *
+ * Antes iam os mesmos horários da última busca, e o paciente que já tinha
+ * escolhido via a agenda de novo — como se nada tivesse sido registrado.
+ */
+const OPCOES_CONFIRMACAO: ReplyOption[] = [
+  { id: "SIM:1", titulo: "Sim, pode agendar" },
+  { id: "NAO:1", titulo: "Quero outro horário" },
+];
 
 /** Horários oferecidos na última busca, para virarem opções clicáveis. */
 interface HorarioOferecido {
@@ -190,6 +203,8 @@ async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
       return { texto: `Escolho este horário: ${message.text ?? ""} (slotId: ${id})`, log: texto ?? message.payload };
     }
     if (acao === "ESP") return { texto: `Quero ${id}.`, log: texto ?? message.payload };
+    if (acao === "SIM") return { texto: "Sim, pode agendar.", log: texto ?? message.payload };
+    if (acao === "NAO") return { texto: "Não, quero outro horário.", log: texto ?? message.payload };
   }
 
   return { texto, log: texto ?? message.payload ?? "" };
@@ -322,6 +337,20 @@ export const conversationEngine: MessageHandler = {
       ultimaMensagemPaciente: textos.join("\n"),
     };
 
+    // Quem já é da casa não repete nome e CPF: o WhatsApp já provou o número e
+    // o cadastro está no banco. Um cadastro no telefone = paciente entra na
+    // conversa já identificado (só confirma que a consulta é para ele); vários
+    // (telefone de família) = quem escolhe é o paciente, no prompt. Acessório:
+    // se a leitura falhar, o fluxo cai no de sempre, pedindo nome e CPF.
+    let cadastrados: string[] = [];
+    try {
+      const doTelefone = await pacientesDoTelefone(tenant.id, from);
+      cadastrados = doTelefone.map((p) => p.name);
+      if (!ctx.patientId && doTelefone.length === 1) ctx.patientId = doTelefone[0].id;
+    } catch (err) {
+      logger.error({ err, tenant: tenant.slug }, "falha ao buscar o cadastro do telefone");
+    }
+
     const model = tenant.config.ai.model || DEFAULT_MODEL;
 
     // Os períodos que a agenda dos profissionais realmente gera. Sem eles o
@@ -335,12 +364,21 @@ export const conversationEngine: MessageHandler = {
       logger.error({ err, tenant: tenant.slug }, "falha ao apurar os períodos reais da agenda");
     }
 
-    const system = buildSystemPrompt(tenant, periodosReais);
+    // `identificado` olha o ESTADO da conversa, não o ctx: um paciente que já
+    // veio resolvido de turnos anteriores não deve ser reapresentado ("este
+    // telefone tem mais de um cadastro") depois de a conversa ter decidido
+    // para quem é a consulta.
+    const system = buildSystemPrompt(tenant, periodosReais, {
+      identificado: Boolean(conversa.state.patientId),
+      nomes: cadastrados,
+    });
     const tools = buildTools(tenant);
 
     let replyText = tenant.config.branding.fallbackMessage;
     let ultimosHorarios: HorarioOferecido[] = [];
     let ultimasEspecialidades: { name: string; priceParticular?: string | null }[] = [];
+    /** A consulta saiu neste turno? Depois disso não há mais o que confirmar. */
+    let concluiu = false;
     // Consumo do turno inteiro (várias idas ao modelo) — base de custo por clínica.
     const consumo = { input: 0, output: 0 };
 
@@ -371,7 +409,11 @@ export const conversationEngine: MessageHandler = {
               if (block.name === "listar_especialidades") {
                 ultimasEspecialidades = extrairEspecialidades(result);
               }
-              if (block.name === "agendar" && !(result as { erro?: string })?.erro) {
+              if (
+                (block.name === "agendar" || block.name === "remarcar") &&
+                !(result as { erro?: string })?.erro
+              ) {
+                concluiu = true;
                 ultimosHorarios = []; // já escolheu
                 ultimasEspecialidades = [];
               }
@@ -418,6 +460,14 @@ export const conversationEngine: MessageHandler = {
 
     // Consumo do turno vai junto da resposta — é a base de custo por clínica.
     await logMessage(tenant.id, from, "OUT", replyText, "BOT", consumo);
+
+    // Pedindo o aval final, a agenda sai de cena: o horário já foi escolhido e
+    // repetir os botões convida a escolher de novo (foi o que aconteceu quando
+    // o paciente trocou de profissional — voltou a agenda inteira junto do
+    // "Posso confirmar?"). No lugar dela, sim ou não num toque.
+    if (!concluiu && ehPedidoDeConfirmacao(replyText)) {
+      return { texto: replyText, opcoes: OPCOES_CONFIRMACAO };
+    }
 
     // Horários (ou especialidades) viram opções clicáveis — botões até 3, lista acima disso.
     if (ultimosHorarios.length) {

@@ -16,6 +16,57 @@ function escapePrompt(value: string, maxLength = 2000): string {
     .trim();
 }
 
+/** Quem é o paciente desta conversa, do ponto de vista do prompt. */
+export interface PacienteDaConversa {
+  /** true = já resolvido (veio do estado da conversa); não peça nada de novo. */
+  identificado: boolean;
+  /** Nomes já cadastrados NESTE telefone. Vazio = número desconhecido. */
+  nomes: string[];
+}
+
+const TELEFONE_DESCONHECIDO: PacienteDaConversa = { identificado: false, nomes: [] };
+
+/** Primeiro nome, que é como se chama alguém no WhatsApp. */
+function primeiroNome(nome: string): string {
+  return nome.trim().split(/\s+/)[0] ?? nome;
+}
+
+/**
+ * O passo de identificação, que muda conforme o telefone já seja conhecido.
+ *
+ * Pedir nome completo e CPF a quem já é paciente da clínica é o atrito mais
+ * caro do fluxo: o número já foi provado pelo WhatsApp e o cadastro está no
+ * banco. Reconhecer e CONFIRMAR ("é para você mesmo?") pede uma palavra;
+ * recadastrar pede duas mensagens e um CPF digitado no celular.
+ */
+function passoIdentificacao(paciente: PacienteDaConversa): string {
+  if (paciente.identificado) {
+    return (
+      "O paciente desta conversa JÁ ESTÁ IDENTIFICADO. NÃO peça nome nem CPF — siga direto para o próximo passo. " +
+      "Só chame identificar_paciente se ele disser que a consulta é para OUTRA pessoa (aí sim peça o nome completo e o CPF dela)."
+    );
+  }
+
+  const nomes = paciente.nomes.map((n) => escapePrompt(n, 80));
+
+  if (nomes.length === 1) {
+    return (
+      `Este telefone JÁ TEM CADASTRO: ${nomes[0]} — o paciente já está identificado. É PROIBIDO pedir nome completo ou CPF de novo. ` +
+      `Chame-o pelo primeiro nome e, junto da saudação, apenas CONFIRME para quem é: "A consulta é para você mesmo, ${primeiroNome(nomes[0])}?". ` +
+      "Se for para outra pessoa, aí sim peça o nome completo e o CPF dela e chame identificar_paciente com os dois."
+    );
+  }
+
+  if (nomes.length > 1) {
+    return (
+      `Este telefone tem mais de um cadastro: ${nomes.join(", ")}. NÃO peça CPF de cara: pergunte para QUAL deles é a consulta ` +
+      "e chame identificar_paciente passando SÓ o nome escolhido (sem cpf). Se for para alguém fora dessa lista, aí peça o nome completo e o CPF."
+    );
+  }
+
+  return "Colete NOME COMPLETO e CPF. Ao ter os dois, chame a ferramenta identificar_paciente.";
+}
+
 /**
  * Monta o system prompt a partir da configuração da clínica. Tudo o que varia
  * por cliente (persona, textos, regras de agendamento) entra aqui — o mesmo
@@ -27,8 +78,20 @@ function escapePrompt(value: string, maxLength = 2000): string {
  * em si ainda NÃO está ligado: falta o `cache_control` na chamada (ver
  * engine.ts) e o SDK fixado (0.30.1) só o expõe na API beta.
  */
-export function buildSystemPrompt(tenant: ResolvedTenant, periodosReais?: Periodo[]): string {
+export function buildSystemPrompt(
+  tenant: ResolvedTenant,
+  periodosReais?: Periodo[],
+  paciente: PacienteDaConversa = TELEFONE_DESCONHECIDO,
+): string {
   const cfg = tenant.config;
+
+  // Quem entrou na conversa já reconhecido tem de aparecer no resumo antes do
+  // "Posso confirmar?" — é a chance do paciente dizer "não, é para meu filho"
+  // antes de a consulta cair na ficha errada.
+  const conhecido = paciente.identificado || paciente.nomes.length > 0;
+  const camposResumo = conhecido
+    ? "paciente, especialidade, profissional, dia e horário"
+    : "especialidade, profissional, dia e horário";
 
   // O que a agenda REALMENTE tem. Sem isto o agente oferecia "noite" a uma
   // clínica que fecha às 18h.
@@ -51,7 +114,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant, periodosReais?: Period
   // passo some, e uma lista que pula do 4 para o 6 confunde o modelo.
   const passos = [
     `Cumprimente. Use como base: "${escapePrompt(cfg.branding.greetingMessage)}"`,
-    "Colete NOME COMPLETO e CPF. Ao ter os dois, chame a ferramenta identificar_paciente.",
+    passoIdentificacao(paciente),
     "ENTENDA A NECESSIDADE primeiro: pergunte, em UMA frase curta e acolhedora, o que está acontecendo / qual é a situação (dor, limpeza, avaliação, aparelho, prótese…). NÃO despeje a lista de especialidades logo de cara e NÃO fale de profissionais ainda.",
     'Com a resposta, chame listar_especialidades e escolha internamente a que melhor se enquadra (use também a Base de conhecimento). Confirme numa frase: \\"Pelo que você descreveu, o ideal é <especialidade>. Posso seguir com isso?\\". Só apresente a LISTA COMPLETA se o paciente estiver em dúvida, pedir para ver as opções, ou se nada se enquadrar.',
     cfg.booking.askInsurance
@@ -59,7 +122,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant, periodosReais?: Period
       : "",
     `Pergunte a PREFERÊNCIA DE DIA/PERÍODO antes de buscar a agenda: "Tem algum dia melhor pra você? E prefere ${periodos}?".`,
     `Só então chame listar_horarios — repassando dia, periodo e/ou horaPreferida conforme a resposta — e ofereça até ${cfg.booking.maxOptionsOffered} opções${usaBotoes ? "" : ", NUMERADAS"}.`,
-    'Ao paciente escolher, faça um RESUMO curto (especialidade, profissional, dia e horário) e peça a confirmação, SOZINHA: \\"Posso confirmar?\\". Só chame agendar depois de um sim claro.',
+    `Ao paciente escolher, faça um RESUMO curto (${camposResumo}) e peça a confirmação, SOZINHA: \\"Posso confirmar?\\". Só chame agendar depois de um sim claro.`,
     `Depois que agendar retornar sucesso, finalize com algo como: "${escapePrompt(cfg.branding.closingMessage)}"`,
   ]
     .filter((p) => p !== "")
@@ -103,7 +166,10 @@ export function buildSystemPrompt(tenant: ResolvedTenant, periodosReais?: Period
     "# Regras (continuação)",
     "- Se perguntarem QUEM atende, ou em que dias/horários um profissional atende, chame listar_medicos (traz o campo 'atende' com a agenda de cada um) e informe exatamente o que veio de lá.",
     "- Se o paciente quiser um profissional específico, passe medico=<nome> em listar_horarios para ver só os horários dele.",
-    "- Só chame agendar DEPOIS de identificar_paciente.",
+    paciente.identificado || paciente.nomes.length === 1
+      ? "- O paciente já está identificado: chame agendar direto, sem passar por identificar_paciente."
+      : "- Só chame agendar DEPOIS de identificar_paciente.",
+    "- NUNCA escreva o CPF do paciente na conversa, nem para conferir. Para reconhecer alguém, use o nome.",
     'NUNCA chame agendar sem uma confirmação explícita do paciente na mensagem anterior ("sim", "pode agendar", "confirmo"). Escolher um horário NÃO é confirmar.',
     "- NUNCA junte o pedido de confirmação com outra pergunta. Se o paciente perguntar outra coisa antes de confirmar (preço, endereço, duração), responda a pergunta e REPITA o pedido de confirmação.",
     cfg.booking.askInsurance
