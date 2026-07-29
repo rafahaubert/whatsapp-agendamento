@@ -76,6 +76,23 @@ export function lerTimezone(v: unknown, padrao: string): string {
   return fusoValido(v) ? String(v).trim() : padrao;
 }
 
+/**
+ * Assinatura do que a CONFIGURAÇÃO manda na geração de horários.
+ *
+ * Serve para o painel refazer a agenda só quando ela realmente mudou: o
+ * formulário de "Dados da clínica" envia horário, regras, mensagens, persona e
+ * FAQ num POST só, e reconstruir milhares de horários porque alguém corrigiu a
+ * saudação seria trabalho jogado fora.
+ */
+export function assinaturaDaAgenda(timezone: string, cfg: TenantConfig): string {
+  return JSON.stringify([
+    timezone,
+    cfg.businessHours.days,
+    cfg.booking.slotDurationMinutes,
+    cfg.booking.advanceBookingDays,
+  ]);
+}
+
 /** Blocos declarados pelo formulário, em `_blocos` (separados por espaço). */
 export function blocosDoCorpo(body: Corpo): Bloco[] {
   return String(body?._blocos ?? "")

@@ -21,8 +21,9 @@
   <% d.alertas.forEach(function(a){ %><p class="erro"><%= a %></p><% }) %>
 <% } else if (d.totalSlots === 0) { %>
   <p class="erro">
-    Não há nenhum horário livre gerado. Clique em “Gerar horários” na tela de agendamentos —
-    salvar a configuração não regenera a agenda sozinho.
+    Não há nenhum horário livre. Confira se há profissional ativo com especialidade e unidade
+    e se o horário de funcionamento tem algum dia aberto. Se estiver tudo certo, use o botão no
+    fim da página para refazer a agenda.
   </p>
 <% } else { %>
   <p class="ok">Nada fora do lugar: os períodos anunciados têm horário livre na agenda.</p>
@@ -156,9 +157,20 @@
   <% } %>
 </div>
 
-<form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline" style="margin-top:4px">
-  <input type="hidden" name="days" value="<%= d.janelaDias %>" />
-  <button class="btn">Gerar horários para os próximos <%= d.janelaDias %> dias</button>
-</form>
+<div class="card">
+  <div class="card-head">
+    <h2>Refazer a agenda</h2>
+    <span class="muted">normalmente não é preciso</span>
+  </div>
+  <p class="muted" style="margin:0 0 10px">
+    A agenda já se refaz sozinha a cada mudança de horário, de equipe ou de bloqueio, e todo dia,
+    para a janela de <%= d.janelaDias %> dias andar para a frente. Use isto se desconfiar que
+    alguma atualização automática não pegou.
+  </p>
+  <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
+    <input type="hidden" name="days" value="<%= d.janelaDias %>" />
+    <button class="btn ghost">Refazer agora (<%= d.janelaDias %> dias)</button>
+  </form>
+</div>
 
 <%- include('partials/footer') %>

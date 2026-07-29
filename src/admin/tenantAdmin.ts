@@ -316,16 +316,15 @@ export async function diagnosticarAgenda(tenantId: string) {
       const culpados = profissionais.filter((x) => !x.periodos.includes(p)).map((x) => x.nome);
       alertas.push(
         `A clínica anuncia ${rotularPeriodos([p])}, mas nenhum profissional atende nesse período ` +
-          `(${culpados.join(", ") || "sem profissionais ativos"}). O assistente promete um período ` +
-          "que a agenda nunca teve. Ajuste em Configurações → Equipe → Horários de atendimento " +
-          "(ou marque “usar o horário da clínica”) e gere os horários de novo.",
+          `(${culpados.join(", ") || "sem profissionais ativos"}). Este é o ajuste a fazer: ` +
+          "Configurações → Equipe → Horários de atendimento (ou marque “usar o horário da " +
+          "clínica”). A agenda se refaz ao salvar.",
       );
     } else {
       alertas.push(
         `A agenda dos profissionais prevê ${rotularPeriodos([p])}, mas não há nenhum horário livre ` +
-          "nesse período. Quase sempre é agenda não gerada depois de mudar o horário — salvar a " +
-          "configuração NÃO regenera. Clique em “Gerar horários”. Se não resolver, veja bloqueios " +
-          "(férias/feriados) e se o período está todo reservado.",
+          "nesse período. Veja se há bloqueio de férias/feriado cobrindo esse horário, ou se ele " +
+          "está todo reservado. Persistindo, use “Refazer agora” no fim desta página.",
       );
     }
   }

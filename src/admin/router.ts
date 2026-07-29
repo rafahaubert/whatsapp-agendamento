@@ -67,8 +67,8 @@ import {
   marcarComparecimento,
 } from "../domain/scheduling.js";
 import { calcularMetricas } from "./metrics.js";
-import { parseConfig, blocosDoCorpo, lerTimezone } from "./configForm.js";
-import type { TenantConfig, DiaAtendimento } from "../config/types.js";
+import { parseConfig, blocosDoCorpo, lerTimezone, assinaturaDaAgenda } from "./configForm.js";
+import type { DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,6 +110,33 @@ function clinicaUrl(
     params && Object.keys(params).length ? "?" + new URLSearchParams(params).toString() : "";
   const frag = anchor ? `#${anchor}` : "";
   return `/admin/clinicas/${id}${sub}${qs}${frag}`;
+}
+
+/**
+ * Refaz a agenda depois de uma mudança que altera quais horários existem.
+ *
+ * A agenda tem que acompanhar a configuração sozinha: obrigar a recepção a
+ * lembrar de clicar em "gerar horários" depois de cada ajuste é o caminho certo
+ * para o assistente passar dias dizendo que não tem horário à tarde.
+ *
+ * Devolve o complemento da mensagem de sucesso — ou o aviso, se a agenda não
+ * puder ser refeita agora (o que foi salvo continua salvo).
+ */
+async function refazerAgenda(tenantId: string): Promise<{ msg?: string; erro?: string }> {
+  try {
+    const t = await findTenantById(tenantId);
+    if (!t) return {};
+    const n = await generateAgenda(tenantId, t.config.booking.advanceBookingDays || 30);
+    return { msg: `agenda atualizada (${n} horários livres)` };
+  } catch (err) {
+    logger.error({ err, tenantId }, "falha ao refazer a agenda após mudança na configuração");
+    return {
+      erro:
+        "Salvo, mas não consegui atualizar os horários agora. Eles se refazem sozinhos " +
+        "em algumas horas; para não esperar, use “Refazer agora” em Agendamentos → " +
+        "Ver horários livres.",
+    };
+  }
 }
 
 export function makeAdminRouter(): Router {
@@ -598,6 +625,8 @@ export function makeAdminRouter(): Router {
       ? lerTimezone(req.body.timezone, t.timezone)
       : t.timezone;
 
+    const config = parseConfig(req.body, timezone, t.parsedConfig, blocos);
+
     await updateTenant(t.id, {
       name: editaIdentificacao ? req.body.name : t.name,
       whatsappPhoneNumberId: editaIdentificacao
@@ -605,13 +634,24 @@ export function makeAdminRouter(): Router {
         : t.whatsappPhoneNumberId,
       timezone,
       isActive: editaIdentificacao ? bool(req.body.isActive) : t.isActive,
-      config: parseConfig(req.body, timezone, t.parsedConfig, blocos),
+      config,
     });
+
+    // Mudou horário de funcionamento, duração do slot, janela ou fuso? A agenda
+    // se refaz agora — a recepção não precisa saber que existe esse passo.
+    const mexeuNaAgenda =
+      assinaturaDaAgenda(timezone, config) !== assinaturaDaAgenda(t.timezone, t.parsedConfig);
+    const agenda = mexeuNaAgenda ? await refazerAgenda(t.id) : {};
 
     // `_voltar` traz a página que enviou o formulário, para o aviso aparecer nela.
     const voltar = String(req.body._voltar ?? "/config");
     const destino = voltar.startsWith("/config") ? voltar : "/config";
-    res.redirect(clinicaUrl(t.id, destino, { msg: "Configuração salva" }));
+    res.redirect(
+      clinicaUrl(t.id, destino, {
+        ...(agenda.erro ? { erro: agenda.erro } : {}),
+        msg: agenda.msg ? `Configuração salva — ${agenda.msg}` : "Configuração salva",
+      }),
+    );
   });
 
   // ----- Catálogo -----
@@ -648,7 +688,18 @@ export function makeAdminRouter(): Router {
       unitIds: toArr(req.body.unidades),
       planIds: toArr(req.body.planos),
     });
-    res.redirect(clinicaUrl(req.params.id, "/config/equipe", undefined, "medicos"));
+    // Profissional novo = horários novos. A agenda entra no ar junto com ele.
+    const agenda = await refazerAgenda(req.params.id);
+    res.redirect(
+      clinicaUrl(
+        req.params.id,
+        "/config/equipe",
+        agenda.erro
+          ? { erro: agenda.erro }
+          : { msg: `Profissional adicionado — ${agenda.msg ?? "agenda atualizada"}` },
+        "medicos",
+      ),
+    );
   });
 
   router.post("/clinicas/:id/medicos/:docId/google", async (req: Request, res: Response) => {
@@ -676,8 +727,16 @@ export function makeAdminRouter(): Router {
       }
       await updateDoctorHours(req.params.id, req.params.docId, days);
     }
+    const agenda = await refazerAgenda(req.params.id);
     res.redirect(
-      clinicaUrl(req.params.id, "/config/equipe", { msg: "Agenda do profissional salva — gere os horários" }, "medicos"),
+      clinicaUrl(
+        req.params.id,
+        "/config/equipe",
+        agenda.erro
+          ? { erro: agenda.erro }
+          : { msg: `Agenda do profissional salva — ${agenda.msg ?? "horários atualizados"}` },
+        "medicos",
+      ),
     );
   });
 
@@ -691,7 +750,26 @@ export function makeAdminRouter(): Router {
       doctor: ["/config/equipe", "medicos"],
     }[entity];
     const r = await remove(req.params.id, entity, req.params.entId);
-    res.redirect(clinicaUrl(req.params.id, destino[0], r.ok ? undefined : { erro: r.erro }, destino[1]));
+
+    // Profissional, unidade e especialidade definem quais horários existem
+    // (o gerador cria um slot por profissional × unidade × especialidade).
+    const mexeuNaAgenda = r.ok && ["doctor", "unit", "specialty"].includes(entity);
+    const agenda = mexeuNaAgenda ? await refazerAgenda(req.params.id) : {};
+
+    res.redirect(
+      clinicaUrl(
+        req.params.id,
+        destino[0],
+        r.ok
+          ? agenda.erro
+            ? { erro: agenda.erro }
+            : agenda.msg
+              ? { msg: `Excluído — ${agenda.msg}` }
+              : undefined
+          : { erro: r.erro },
+        destino[1],
+      ),
+    );
   });
 
   // ----- Desfecho da consulta (base da taxa de falta) -----
@@ -736,15 +814,35 @@ export function makeAdminRouter(): Router {
     if (!r.ok) {
       return res.redirect(clinicaUrl(req.params.id, "/config/equipe", { erro: r.erro }, "bloqueios"));
     }
+    // Os horários do período bloqueado saem da agenda na hora.
+    const agenda = await refazerAgenda(t.id);
     const msg = r.conflitos.length
-      ? `Bloqueio criado. ATENÇÃO: ${r.conflitos.length} consulta(s) já marcada(s) nesse período — ${r.conflitos.slice(0, 3).join("; ")}${r.conflitos.length > 3 ? "…" : ""}`
-      : "Bloqueio criado — gere os horários novamente";
-    res.redirect(clinicaUrl(req.params.id, "/config/equipe", { msg }, "bloqueios"));
+      ? `Bloqueio criado (${agenda.msg ?? "agenda atualizada"}). ATENÇÃO: ${r.conflitos.length} consulta(s) já marcada(s) nesse período — ${r.conflitos.slice(0, 3).join("; ")}${r.conflitos.length > 3 ? "…" : ""}`
+      : `Bloqueio criado — ${agenda.msg ?? "agenda atualizada"}`;
+    res.redirect(
+      clinicaUrl(
+        req.params.id,
+        "/config/equipe",
+        agenda.erro ? { erro: agenda.erro } : { msg },
+        "bloqueios",
+      ),
+    );
   });
 
   router.post("/clinicas/:id/bloqueios/:blockId/excluir", async (req: Request, res: Response) => {
     await removeBlock(req.params.id, req.params.blockId);
-    res.redirect(clinicaUrl(req.params.id, "/config/equipe", { msg: "Bloqueio removido" }, "bloqueios"));
+    // Sem o bloqueio, os horários daquele período voltam para a agenda.
+    const agenda = await refazerAgenda(req.params.id);
+    res.redirect(
+      clinicaUrl(
+        req.params.id,
+        "/config/equipe",
+        agenda.erro
+          ? { erro: agenda.erro }
+          : { msg: `Bloqueio removido — ${agenda.msg ?? "agenda atualizada"}` },
+        "bloqueios",
+      ),
+    );
   });
 
   // ----- Agenda -----
@@ -761,9 +859,21 @@ export function makeAdminRouter(): Router {
     res.render("admin/agenda_diagnostico", { t, cfg: t.parsedConfig, diag, ...avisos(req) });
   });
 
+  /**
+   * Regeração manual. A agenda já se refaz sozinha (a cada mudança de
+   * configuração e pelo job da agenda rolante); isto fica como saída de
+   * emergência — para destravar uma clínica cuja regeração automática falhou.
+   */
   router.post("/clinicas/:id/agenda/gerar", async (req: Request, res: Response) => {
-    const n = await generateAgenda(req.params.id, num(req.body.days, 7));
-    res.redirect(clinicaUrl(req.params.id, "/agendamentos", { msg: `${n} horários gerados` }));
+    const t = await findTenantById(req.params.id);
+    if (!t) return res.redirect("/admin");
+    const dias = num(req.body.days, t.config.booking.advanceBookingDays || 30);
+    const n = await generateAgenda(req.params.id, dias);
+    res.redirect(
+      clinicaUrl(req.params.id, "/agenda/diagnostico", {
+        msg: `${n} horários livres gerados para os próximos ${dias} dias`,
+      }),
+    );
   });
 
   return router;

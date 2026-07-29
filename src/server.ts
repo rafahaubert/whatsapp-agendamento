@@ -145,7 +145,10 @@ app.listen(env.PORT, () => {
     10 * 60 * 1000,
   ).unref();
 
-  // Agenda rolante: uma vez por dia (e uma vez ao subir, após 1 min).
+  // Agenda rolante. A verificação é barata quando a agenda já alcança o fim da
+  // janela (só uma consulta), então roda de 6 em 6 horas e logo ao subir: num
+  // plano que hiberna, o boot é a única coisa que acontece com certeza. Assim a
+  // agenda anda sozinha e ninguém precisa clicar em "gerar horários".
   setTimeout(() => {
     renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
   }, 60 * 1000).unref();
@@ -153,6 +156,12 @@ app.listen(env.PORT, () => {
   setInterval(
     () => {
       renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
+    },
+    6 * 60 * 60 * 1000,
+  ).unref();
+
+  setInterval(
+    () => {
       enviarReativacoes().catch((err) => logger.error({ err }, "falha nas reativações"));
     },
     24 * 60 * 60 * 1000,

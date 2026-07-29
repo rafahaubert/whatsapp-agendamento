@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resumoAgenda } from "../../src/domain/scheduling.js";
+import { pontaDaJanela } from "../../src/jobs/agenda.js";
 import { statusUI } from "../../src/shared/enums.js";
 
 describe("resumoAgenda", () => {
@@ -65,5 +66,23 @@ describe("statusUI", () => {
 
   it("não quebra com status desconhecido", () => {
     expect(statusUI("XPTO").label).toBe("XPTO");
+  });
+});
+
+describe("pontaDaJanela", () => {
+  const agora = new Date("2026-07-30T12:00:00.000Z");
+  const dias = (d: Date) => Math.round((d.getTime() - agora.getTime()) / 86_400_000);
+
+  it("aponta um dia antes do fim da janela", () => {
+    // A folga de um dia é o relógio da renovação: a janela recua um dia por dia,
+    // então o teste falha sozinho uma vez ao dia e a agenda se refaz — sem
+    // precisar guardar "quando foi a última vez".
+    expect(dias(pontaDaJanela(30, agora)!)).toBe(29);
+    expect(dias(pontaDaJanela(7, agora)!)).toBe(6);
+  });
+
+  it("janela curta demais não tem atalho: renova sempre", () => {
+    expect(pontaDaJanela(1, agora)).toBeNull();
+    expect(pontaDaJanela(0, agora)).toBeNull();
   });
 });
