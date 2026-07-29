@@ -1,3 +1,25 @@
+import { DateTime } from "luxon";
+
+/**
+ * Data/hora digitada no painel (`<input type="datetime-local">`, que manda
+ * "2026-07-31T14:00" — sem fuso), lida no fuso da CLÍNICA.
+ *
+ * `new Date("2026-07-31T14:00")` usa o fuso do SERVIDOR, e o container de
+ * produção roda em UTC: uma consulta ou um bloqueio digitados às 14:00 viravam
+ * 14:00Z, ou seja, 11:00 para uma clínica em São Paulo. Três horas a menos em
+ * tudo que passa por formulário.
+ *
+ * Strings que já trazem fuso (o `toISOString()` que o calendário envia ao
+ * arrastar um agendamento) continuam valendo pelo instante que carregam — o
+ * luxon usa o offset da própria string quando ele existe.
+ */
+export function parseDataHoraLocal(valor: unknown, timeZone: string): Date | null {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return null;
+  const dt = DateTime.fromISO(texto, { zone: timeZone });
+  return dt.isValid ? dt.toJSDate() : null;
+}
+
 /** Formata uma data no fuso da clínica, em pt-BR. Ex.: "seg., 28/07, 14:30". */
 export function formatDateTime(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("pt-BR", {

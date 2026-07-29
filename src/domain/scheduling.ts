@@ -8,8 +8,19 @@
 import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { SlotStatus, AppointmentStatus, PaymentType } from "../shared/enums.js";
-import { formatDateTime } from "../shared/datetime.js";
-import { escolherHorarios, resolverDia, resumoAgenda, umPorHorario } from "./horarios.js";
+import { formatDateTime, parseDataHoraLocal } from "../shared/datetime.js";
+import {
+  agendaDoProfissional,
+  avisoPeriodoVazio,
+  escolherHorarios,
+  faixaDoPeriodo,
+  periodosGeraveis,
+  resolverDia,
+  resumoAgenda,
+  umPorHorario,
+  type CausaVazio,
+  type Periodo,
+} from "./horarios.js";
 import { normalizeCpf, isValidCpf } from "../shared/cpf.js";
 import { logger } from "../shared/logger.js";
 import {
@@ -81,22 +92,13 @@ export async function listDoctors(tenant: ResolvedTenant, especialidade?: string
 
   return {
     medicos: doctors.map((d) => {
-      let agenda = tenant.config.businessHours.days;
-      let agendaPropria = false;
-      if (d.workingHours) {
-        try {
-          agenda = JSON.parse(d.workingHours);
-          agendaPropria = true;
-        } catch {
-          /* usa o horário da clínica */
-        }
-      }
+      const { days, propria } = agendaDoProfissional(d.workingHours, tenant.config.businessHours.days);
       return {
         nome: d.name,
         especialidades: d.specialties.map((s) => s.name),
         unidades: d.units.map((u) => u.name),
-        atende: resumoAgenda(agenda),
-        agendaPropria,
+        atende: resumoAgenda(days),
+        agendaPropria: propria,
       };
     }),
   };
@@ -153,6 +155,26 @@ async function resolveHealthPlan(tenantId: string, name: string) {
   const all = await prisma.healthPlan.findMany({ where: { tenantId, isActive: true } });
   const n = name.trim().toLowerCase();
   return all.find((p) => p.name.toLowerCase() === n) ?? all.find((p) => p.name.toLowerCase().includes(n));
+}
+
+/**
+ * Os períodos que a agenda REALMENTE gera, somando a agenda de cada
+ * profissional (a própria, quando ele tem).
+ *
+ * O horário de funcionamento é só o que a clínica ANUNCIA. Quem decide quais
+ * horários passam a existir é a agenda de cada profissional — e era essa
+ * diferença que fazia o assistente perguntar "prefere manhã ou tarde?" para
+ * depois descobrir que tarde não existe.
+ */
+export async function periodosReaisDaAgenda(tenant: ResolvedTenant): Promise<Periodo[]> {
+  const doctors = await prisma.doctor.findMany({
+    where: { tenantId: tenant.id, isActive: true },
+    select: { workingHours: true },
+  });
+  return periodosGeraveis(
+    doctors.map((d) => agendaDoProfissional(d.workingHours, tenant.config.businessHours.days).days),
+    tenant.config.booking.slotDurationMinutes,
+  );
 }
 
 // ---------- Horários ----------
@@ -251,7 +273,18 @@ export async function listAvailableSlots(
     profissionalHabitual,
   });
 
-  if (escolhidos.length === 0) return { horarios: [], aviso };
+  if (escolhidos.length === 0) {
+    // Vazio não diz nada à clínica nem ao paciente. Descobre a CAUSA — a agenda
+    // não cobre o período, ou ele está todo reservado — antes de responder.
+    const explicado = await explicarPeriodoVazio(tenant, {
+      where,
+      specialtyId: specialty.id,
+      especialidade: specialty.name,
+      periodo: opts.periodo,
+      dia: opts.dia,
+    });
+    return { horarios: [], aviso: explicado ?? aviso };
+  }
 
   return {
     horarios: escolhidos.map((s) => ({
@@ -264,6 +297,129 @@ export async function listAvailableSlots(
     ...(exato === null ? {} : { exato }),
     ...(aviso ? { aviso } : {}),
   };
+}
+
+/** Nome por extenso de um dia da semana pedido pelo paciente ("sexta" → "sexta-feira"). */
+const NOME_SEMANA: Record<number, string> = {
+  1: "segunda-feira",
+  2: "terça-feira",
+  3: "quarta-feira",
+  4: "quinta-feira",
+  5: "sexta-feira",
+  6: "sábado",
+  7: "domingo",
+};
+
+/**
+ * Por que a busca voltou vazia? Devolve o aviso pronto — ou null quando não há
+ * período pedido (aí o aviso genérico de `escolherHorarios` já serve).
+ *
+ * Roda SÓ quando não sobrou nenhum horário, então as consultas extras não pesam
+ * no caminho feliz.
+ */
+async function explicarPeriodoVazio(
+  tenant: ResolvedTenant,
+  ctx: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: any;
+    specialtyId: string;
+    especialidade: string;
+    periodo?: string;
+    dia?: string;
+  },
+): Promise<string | null> {
+  const faixa = faixaDoPeriodo(ctx.periodo);
+  if (!faixa) return null;
+  // Pela faixa, não pelo texto: o modelo pode mandar "manhã" com acento, e
+  // faixaDoPeriodo já normalizou para chegar até aqui.
+  const periodo = periodoDaFaixa(faixa);
+
+  // Os profissionais que a busca alcançou — mesmos filtros de unidade, plano e
+  // profissional aplicados aos horários.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filtros: any = {
+    tenantId: tenant.id,
+    isActive: true,
+    specialties: { some: { id: ctx.specialtyId } },
+  };
+  if (ctx.where.doctorId) filtros.id = ctx.where.doctorId;
+  if (ctx.where.unitId) filtros.units = { some: { id: ctx.where.unitId } };
+  if (ctx.where.doctor?.healthPlans) filtros.healthPlans = ctx.where.doctor.healthPlans;
+
+  const doctors = await prisma.doctor.findMany({
+    where: filtros,
+    select: { name: true, workingHours: true },
+  });
+
+  const filtro = resolverDia(ctx.dia, tenant.timezone, new Date());
+  const causa = await descobrirCausa(tenant, ctx, doctors, faixa, filtro);
+
+  logger.warn(
+    {
+      tenant: tenant.slug,
+      especialidade: ctx.especialidade,
+      periodo,
+      causa: causa.tipo,
+      profissionais: doctors.map((d) => d.name),
+    },
+    "busca de horários voltou vazia",
+  );
+
+  // "Não foi gerado" não muda o que o paciente ouve, e o aviso de
+  // escolherHorarios é mais preciso sobre o dia — fica com ele. A causa já foi
+  // para o log e aparece no diagnóstico da agenda, no painel.
+  if (causa.tipo === "sem-horario") return null;
+
+  const diaTexto = filtro?.tipo === "semana" ? NOME_SEMANA[filtro.weekday] ?? null : null;
+
+  return avisoPeriodoVazio({
+    periodo,
+    especialidade: ctx.especialidade,
+    causa,
+    dia: diaTexto,
+    janelaDias: tenant.config.booking.advanceBookingDays,
+  });
+}
+
+/** Distingue "a agenda não tem esse período" de "esse período está todo reservado". */
+async function descobrirCausa(
+  tenant: ResolvedTenant,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ctx: { where: any },
+  doctors: { name: string; workingHours: string | null }[],
+  faixa: [number, number],
+  filtroDia: ReturnType<typeof resolverDia>,
+): Promise<CausaVazio> {
+  if (doctors.length === 0) return { tipo: "sem-profissional" };
+
+  const agendas = doctors.map(
+    (d) => agendaDoProfissional(d.workingHours, tenant.config.businessHours.days).days,
+  );
+  const reais = periodosGeraveis(agendas, tenant.config.booking.slotDurationMinutes);
+  if (!reais.includes(periodoDaFaixa(faixa))) {
+    return { tipo: "fora-da-agenda", periodosReais: reais };
+  }
+
+  // A agenda prevê o período: ou está todo reservado, ou não chegou a ser gerado.
+  // O `where` só é estreitado numa DATA, então o dia da semana é filtrado aqui.
+  const reservados = await prisma.slot.findMany({
+    where: { ...ctx.where, status: { not: SlotStatus.AVAILABLE } },
+    select: { startsAt: true },
+    take: 2000,
+  });
+  const noPeriodo = reservados.some((s) => {
+    const local = DateTime.fromJSDate(s.startsAt).setZone(tenant.timezone);
+    if (filtroDia?.tipo === "semana" && local.weekday !== filtroDia.weekday) return false;
+    return local.hour >= faixa[0] && local.hour < faixa[1];
+  });
+
+  return noPeriodo ? { tipo: "tudo-reservado" } : { tipo: "sem-horario" };
+}
+
+/** O período dono de uma faixa de horas (a faixa vem de faixaDoPeriodo). */
+function periodoDaFaixa(faixa: [number, number]): Periodo {
+  if (faixa[1] <= 12) return "manha";
+  return faixa[0] >= 18 ? "noite" : "tarde";
 }
 
 // ---------- Agendar ----------
@@ -634,8 +790,10 @@ export async function createManualAppointment(
     plano?: string;
   },
 ) {
-  const startsAt = new Date(p.startsAt);
-  if (Number.isNaN(startsAt.getTime())) return { erro: "Data/hora inválida." };
+  // Lido no fuso da CLÍNICA: o formulário manda "2026-07-31T14:00" sem fuso e o
+  // servidor de produção roda em UTC — ver parseDataHoraLocal.
+  const startsAt = parseDataHoraLocal(p.startsAt, tenant.timezone);
+  if (!startsAt) return { erro: "Data/hora inválida." };
 
   const paciente = await findOrCreatePatient(tenant.id, {
     nome: p.nome,
@@ -677,8 +835,8 @@ export async function moveAppointment(
   appointmentId: string,
   novoInicioISO: string,
 ) {
-  const startsAt = new Date(novoInicioISO);
-  if (Number.isNaN(startsAt.getTime())) return { erro: "Data/hora inválida." };
+  const startsAt = parseDataHoraLocal(novoInicioISO, tenant.timezone);
+  if (!startsAt) return { erro: "Data/hora inválida." };
 
   const appt = await prisma.appointment.findFirst({
     where: { id: appointmentId, tenantId: tenant.id },

@@ -11,7 +11,12 @@ import {
 import { chaveConversa } from "./inbox.js";
 import { baixarMidia } from "../channels/whatsapp/media.js";
 import { transcreverAudio, isTranscricaoConfigurada } from "../integrations/transcription.js";
-import { confirmAppointment, cancelAppointment } from "../domain/scheduling.js";
+import {
+  confirmAppointment,
+  cancelAppointment,
+  periodosReaisDaAgenda,
+} from "../domain/scheduling.js";
+import type { Periodo } from "../domain/horarios.js";
 import { logger } from "../shared/logger.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
@@ -318,7 +323,19 @@ export const conversationEngine: MessageHandler = {
     };
 
     const model = tenant.config.ai.model || DEFAULT_MODEL;
-    const system = buildSystemPrompt(tenant);
+
+    // Os períodos que a agenda dos profissionais realmente gera. Sem eles o
+    // prompt anuncia o horário de funcionamento da clínica, que pode prometer
+    // uma tarde que nenhum profissional atende. É acessório: se a leitura
+    // falhar, o prompt cai no horário anunciado, como antes.
+    let periodosReais: Periodo[] | undefined;
+    try {
+      periodosReais = await periodosReaisDaAgenda(tenant);
+    } catch (err) {
+      logger.error({ err, tenant: tenant.slug }, "falha ao apurar os períodos reais da agenda");
+    }
+
+    const system = buildSystemPrompt(tenant, periodosReais);
     const tools = buildTools(tenant);
 
     let replyText = tenant.config.branding.fallbackMessage;

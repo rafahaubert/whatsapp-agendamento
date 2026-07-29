@@ -25,7 +25,7 @@
   else if (/^\/admin\/clinicas\/[^/]+\/config\/usuarios/.test(caminho)) secao = "usuarios-clinica";
   else if (/^\/admin\/clinicas\/[^/]+\/config/.test(caminho)) secao = "dados";
   else if (/^\/admin\/clinicas\/[^/]+\/inbox/.test(caminho)) secao = "inbox";
-  else if (/^\/admin\/clinicas\/[^/]+\/agendamentos/.test(caminho)) secao = "agendamentos";
+  else if (/^\/admin\/clinicas\/[^/]+\/(agendamentos|agenda)/.test(caminho)) secao = "agendamentos";
   else if (/^\/admin\/clinicas\/[^/]+\/pacientes/.test(caminho)) secao = "pacientes";
   else if (/^\/admin\/clinicas\/[^/]+\/calendario/.test(caminho)) secao = "calendario";
   else if (/^\/admin\/clinicas\/[^/]+\/metricas/.test(caminho)) secao = "metricas";

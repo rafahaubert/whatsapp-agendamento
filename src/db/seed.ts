@@ -13,6 +13,12 @@ export { minutosDoDia, noIntervalo };
 
 const CLINICS_DIR = path.resolve(process.cwd(), "config", "clinics");
 
+/**
+ * Linhas por INSERT ao regravar a agenda. O Postgres aceita 65535 parâmetros
+ * por comando e cada slot leva 8 colunas; 2000 deixa folga confortável.
+ */
+const LOTE_INSERCAO = 2000;
+
 /** Lê todos os config/clinics/*.json. */
 export async function loadClinicFiles(): Promise<ClinicFile[]> {
   const files = await readdir(CLINICS_DIR);
@@ -84,18 +90,6 @@ export async function regenerateSlots(
   params: { tenantId: string; timezone: string; config: TenantConfig; slotDays: number },
 ): Promise<number> {
   const { tenantId, timezone, config, slotDays } = params;
-
-  // Um slot preso a um agendamento não pode ser apagado (a FK
-  // appointments.slotId é RESTRICT) — era isso que derrubava a renovação
-  // inteira da agenda depois de um cancelamento. Marca como ocupado (o horário
-  // volta livre no slot novo gerado abaixo) e só apaga os slots realmente soltos.
-  await prisma.slot.updateMany({
-    where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { isNot: null } },
-    data: { status: SlotStatus.BOOKED },
-  });
-  await prisma.slot.deleteMany({
-    where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { is: null } },
-  });
 
   const doctors = await prisma.doctor.findMany({
     where: { tenantId, isActive: true },
@@ -179,7 +173,35 @@ export async function regenerateSlots(
     }
   }
 
-  if (rows.length) await prisma.slot.createMany({ data: rows });
+  // Troca a agenda antiga pela nova NUMA TRANSAÇÃO. Antes o apagar vinha antes
+  // de montar as linhas: se a inserção falhasse, a clínica ficava sem nenhum
+  // horário livre até a próxima renovação — e o assistente passava o dia
+  // dizendo a todos os pacientes que não havia vaga. Agora, ou a agenda nova
+  // entra inteira, ou a antiga fica de pé.
+  await prisma.$transaction(
+    async (tx) => {
+      // Um slot preso a um agendamento não pode ser apagado (a FK
+      // appointments.slotId é RESTRICT) — era isso que derrubava a renovação
+      // inteira depois de um cancelamento. Marca como ocupado (o horário volta
+      // livre no slot novo) e só apaga os que estão realmente soltos.
+      await tx.slot.updateMany({
+        where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { isNot: null } },
+        data: { status: SlotStatus.BOOKED },
+      });
+      await tx.slot.deleteMany({
+        where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { is: null } },
+      });
+
+      // Em lotes: o Postgres aceita no máximo 65535 parâmetros por comando, e um
+      // createMany é UM comando só. Uma clínica com poucos milhares de horários
+      // já estourava o limite — e derrubava a renovação inteira.
+      for (let i = 0; i < rows.length; i += LOTE_INSERCAO) {
+        await tx.slot.createMany({ data: rows.slice(i, i + LOTE_INSERCAO) });
+      }
+    },
+    { timeout: 120_000, maxWait: 30_000 },
+  );
+
   return rows.length;
 }
 

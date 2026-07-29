@@ -31,6 +31,7 @@ import {
   updateDoctorHours,
   remove,
   generateAgenda,
+  diagnosticarAgenda,
   listAppointments,
   listAppointmentsRange,
   listConversations,
@@ -747,6 +748,19 @@ export function makeAdminRouter(): Router {
   });
 
   // ----- Agenda -----
+  /**
+   * "Por que o bot diz que não tem horário à tarde?" — confronta o horário
+   * configurado, a agenda de cada profissional e os horários LIVRES que existem
+   * de fato. Sem esta tela os horários livres não aparecem em lugar nenhum do
+   * painel, e não há como a clínica saber quem está certo.
+   */
+  router.get("/clinicas/:id/agenda/diagnostico", async (req: Request, res: Response) => {
+    const t = await getTenant(req.params.id);
+    if (!t) return res.redirect("/admin");
+    const diag = await diagnosticarAgenda(t.id);
+    res.render("admin/agenda_diagnostico", { t, cfg: t.parsedConfig, diag, ...avisos(req) });
+  });
+
   router.post("/clinicas/:id/agenda/gerar", async (req: Request, res: Response) => {
     const n = await generateAgenda(req.params.id, num(req.body.days, 7));
     res.redirect(clinicaUrl(req.params.id, "/agendamentos", { msg: `${n} horários gerados` }));

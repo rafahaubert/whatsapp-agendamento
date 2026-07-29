@@ -2,10 +2,26 @@
  * Operações de administração sobre clínicas e catálogo. Camada fina sobre o
  * Prisma, usada pelas rotas do painel. Tudo escopado por tenantId.
  */
+import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
-import { AppointmentStatus, statusUI } from "../shared/enums.js";
-import { formatDateTime, formatarHoraCurta, formatarDia } from "../shared/datetime.js";
+import { AppointmentStatus, SlotStatus, statusUI } from "../shared/enums.js";
+import {
+  agendaDoProfissional,
+  janelaAtendimento,
+  periodosGeraveis,
+  resumoAgenda,
+  rotularPeriodos,
+  ORDEM_PERIODOS,
+  PERIODOS,
+  type Periodo,
+} from "../domain/horarios.js";
+import {
+  formatDateTime,
+  formatarHoraCurta,
+  formatarDia,
+  parseDataHoraLocal,
+} from "../shared/datetime.js";
 import type { TenantConfig } from "../config/types.js";
 
 /** Config padrão ao criar uma clínica nova. */
@@ -216,6 +232,140 @@ export async function generateAgenda(tenantId: string, days: number) {
   return regenerateSlots(prisma, { tenantId, timezone: t.timezone, config, slotDays: days });
 }
 
+/**
+ * Diagnóstico da agenda — responde "por que o bot diz que não tem horário à tarde?".
+ *
+ * O painel mostra o que está MARCADO; os horários LIVRES nunca apareceram em
+ * lugar nenhum. Sem essa tela, a clínica vê "atendo até as 18h" na configuração
+ * e o bot dizendo que não tem tarde, sem meio de saber quem está certo.
+ *
+ * Confronta as três coisas que precisam bater: o que a clínica anuncia, a
+ * agenda de cada profissional (é ela que gera os horários) e o que existe de
+ * fato no banco.
+ */
+export async function diagnosticarAgenda(tenantId: string) {
+  const t = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+  const cfg = JSON.parse(t.config) as TenantConfig;
+  const tz = t.timezone;
+  const duracao = cfg.booking.slotDurationMinutes;
+  const janelaDias = cfg.booking.advanceBookingDays || 30;
+
+  // 1) O que a clínica anuncia (é o que vai para o system prompt).
+  const anunciada = janelaAtendimento(cfg.businessHours.days, duracao);
+
+  // 2) A agenda de cada profissional — a que o gerador realmente usa.
+  const doctors = await prisma.doctor.findMany({
+    where: { tenantId, isActive: true },
+    include: { specialties: { select: { name: true } }, units: { select: { name: true } } },
+    orderBy: { name: "asc" },
+  });
+
+  const profissionais = doctors.map((d) => {
+    const { days, propria } = agendaDoProfissional(d.workingHours, cfg.businessHours.days);
+    const j = janelaAtendimento(days, duracao);
+    return {
+      nome: d.name,
+      propria,
+      resumo: resumoAgenda(days),
+      periodos: j.periodos,
+      semEspecialidade: d.specialties.length === 0,
+      semUnidade: d.units.length === 0,
+    };
+  });
+
+  const geraveis = periodosGeraveis(
+    doctors.map((d) => agendaDoProfissional(d.workingHours, cfg.businessHours.days).days),
+    duracao,
+  );
+
+  // 3) O que existe DE FATO no banco, na janela que o bot consulta.
+  const agora = new Date();
+  const limite = new Date(agora.getTime() + janelaDias * 86_400_000);
+  const slots = await prisma.slot.findMany({
+    where: { tenantId, status: SlotStatus.AVAILABLE, startsAt: { gte: agora, lte: limite } },
+    select: { startsAt: true, specialty: { select: { name: true } } },
+    orderBy: { startsAt: "asc" },
+    take: 20_000,
+  });
+
+  const zerado = (): Record<Periodo, number> => ({ manha: 0, tarde: 0, noite: 0 });
+  const total = zerado();
+  const porEspecialidade = new Map<string, Record<Periodo, number>>();
+  const porDia = new Map<string, Record<Periodo, number>>();
+
+  for (const s of slots) {
+    const local = DateTime.fromJSDate(s.startsAt).setZone(tz);
+    const p = periodoDaHora(local.hour);
+    const dia = local.toFormat("ccc dd/LL");
+    total[p]++;
+    if (!porEspecialidade.has(s.specialty.name)) porEspecialidade.set(s.specialty.name, zerado());
+    porEspecialidade.get(s.specialty.name)![p]++;
+    if (!porDia.has(dia)) porDia.set(dia, zerado());
+    porDia.get(dia)![p]++;
+  }
+
+  const bloqueios = await prisma.block.count({ where: { tenantId, endsAt: { gte: agora } } });
+
+  // 4) O veredito, na linguagem de quem opera a clínica.
+  const alertas: string[] = [];
+  for (const p of ORDEM_PERIODOS) {
+    if (!anunciada.periodos.includes(p)) continue;
+    if (total[p] > 0) continue;
+
+    if (!geraveis.includes(p)) {
+      const culpados = profissionais.filter((x) => !x.periodos.includes(p)).map((x) => x.nome);
+      alertas.push(
+        `A clínica anuncia ${rotularPeriodos([p])}, mas nenhum profissional atende nesse período ` +
+          `(${culpados.join(", ") || "sem profissionais ativos"}). O assistente promete um período ` +
+          "que a agenda nunca teve. Ajuste em Configurações → Equipe → Horários de atendimento " +
+          "(ou marque “usar o horário da clínica”) e gere os horários de novo.",
+      );
+    } else {
+      alertas.push(
+        `A agenda dos profissionais prevê ${rotularPeriodos([p])}, mas não há nenhum horário livre ` +
+          "nesse período. Quase sempre é agenda não gerada depois de mudar o horário — salvar a " +
+          "configuração NÃO regenera. Clique em “Gerar horários”. Se não resolver, veja bloqueios " +
+          "(férias/feriados) e se o período está todo reservado.",
+      );
+    }
+  }
+
+  const semTarde = [...porEspecialidade]
+    .filter(([, m]) => m.tarde === 0)
+    .map(([nome]) => nome);
+  if (total.tarde > 0 && semTarde.length) {
+    alertas.push(
+      `Há tarde na agenda, mas não em: ${semTarde.join(", ")}. O bot busca POR ESPECIALIDADE — ` +
+        "nessas ele responde que não tem tarde, e está certo.",
+    );
+  }
+
+  return {
+    timezone: tz,
+    janelaDias,
+    duracao,
+    anunciada: { resumo: anunciada.resumo, periodos: anunciada.periodos, ultimoPorDia: anunciada.ultimoPorDia },
+    profissionais,
+    geraveis,
+    total,
+    totalSlots: slots.length,
+    truncado: slots.length >= 20_000,
+    porEspecialidade: [...porEspecialidade].sort(([a], [b]) => a.localeCompare(b, "pt-BR")),
+    porDia: [...porDia].slice(0, 14),
+    bloqueios,
+    alertas,
+  };
+}
+
+/** Período de uma hora local (mesma régua de src/domain/horarios.ts). */
+function periodoDaHora(hora: number): Periodo {
+  for (const p of ORDEM_PERIODOS) {
+    const [ini, fim] = PERIODOS[p];
+    if (hora >= ini && hora < fim) return p;
+  }
+  return "noite";
+}
+
 // ---------- Conversas (memória do agente) ----------
 export async function listConversations(tenantId: string) {
   return prisma.conversation.findMany({
@@ -423,9 +573,12 @@ export async function addBlock(
   d: { doctorId?: string | null; startsAt: string; endsAt: string; reason?: string },
   timezone: string,
 ): Promise<{ ok: true; conflitos: string[] } | { ok: false; erro: string }> {
-  const inicio = new Date(d.startsAt);
-  const fim = new Date(d.endsAt);
-  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+  // O formulário manda "2026-08-01T12:00", sem fuso: em produção (container em
+  // UTC) `new Date` colocava o bloqueio três horas adiante do que a clínica
+  // digitou — ver parseDataHoraLocal.
+  const inicio = parseDataHoraLocal(d.startsAt, timezone);
+  const fim = parseDataHoraLocal(d.endsAt, timezone);
+  if (!inicio || !fim) {
     return { ok: false, erro: "Datas inválidas." };
   }
   if (fim <= inicio) return { ok: false, erro: "O fim precisa ser depois do início." };

@@ -121,11 +121,23 @@ function agruparPorDia(valorDoDia: (d: number) => string | null, vazio: string):
     .join(" · ");
 }
 
-/** "seg, ter, qua: 08:30 às 22:30 · sáb: 08:00 às 12:00" */
-export function resumoAgenda(days: Record<number, { open: string; close: string } | null>): string {
+/**
+ * "seg, ter, qua: 08:30 às 22:30 · sáb: 08:00 às 12:00"
+ *
+ * O intervalo entra no texto. Sem ele, uma clínica com almoço das 12:00 às
+ * 18:00 aparecia como "08:00 às 18:00" no painel, em listar_medicos e no system
+ * prompt — o assistente anunciava uma tarde que o gerador nunca produziu, e a
+ * clínica não tinha como perceber olhando a tela.
+ */
+export function resumoAgenda(days: Record<number, DiaAtendimento | null>): string {
   return agruparPorDia((d) => {
     const h = days[d];
-    return h ? `${h.open} às ${h.close}` : null;
+    if (!h) return null;
+    const almoco =
+      h.breakStart && h.breakEnd && minutosDoDia(h.breakEnd) > minutosDoDia(h.breakStart)
+        ? ` (almoço ${h.breakStart}–${h.breakEnd})`
+        : "";
+    return `${h.open} às ${h.close}${almoco}`;
   }, "sem dias de atendimento definidos");
 }
 
@@ -174,6 +186,107 @@ export function janelaAtendimento(
     ultimoPorDia: agruparPorDia((d) => ultimoDoDia.get(d) ?? null, "sem horários gerados"),
     temAlgum: ultimoDoDia.size > 0,
   };
+}
+
+/**
+ * A agenda que o GERADOR usa para um profissional: a própria, se ele tiver, ou
+ * a da clínica. Mesma regra (e mesmo silêncio diante de JSON quebrado) de
+ * `regenerateSlots` — é ela, e não o horário de funcionamento, que decide quais
+ * horários passam a existir.
+ */
+export function agendaDoProfissional(
+  workingHours: string | null,
+  daClinica: Record<number, DiaAtendimento | null>,
+): { days: Record<number, DiaAtendimento | null>; propria: boolean } {
+  if (!workingHours) return { days: daClinica, propria: false };
+  try {
+    return {
+      days: JSON.parse(workingHours) as Record<number, DiaAtendimento | null>,
+      propria: true,
+    };
+  } catch {
+    return { days: daClinica, propria: false };
+  }
+}
+
+/** Períodos que estas agendas, juntas, conseguem gerar. */
+export function periodosGeraveis(
+  agendas: Record<number, DiaAtendimento | null>[],
+  duracaoMinutos: number,
+): Periodo[] {
+  const todos = new Set<Periodo>();
+  for (const days of agendas) {
+    for (const p of janelaAtendimento(days, duracaoMinutos).periodos) todos.add(p);
+  }
+  return ORDEM_PERIODOS.filter((p) => todos.has(p));
+}
+
+/** Por que a busca voltou vazia num período. */
+export type CausaVazio =
+  /** Nenhum profissional ativo atende a especialidade (com os filtros pedidos). */
+  | { tipo: "sem-profissional" }
+  /** As agendas dos profissionais não cobrem o período — é definitivo. */
+  | { tipo: "fora-da-agenda"; periodosReais: Periodo[] }
+  /** O período existe na agenda, mas está todo reservado — é temporário. */
+  | { tipo: "tudo-reservado" }
+  /** O período existe na agenda e não há slot nenhum: agenda não gerada. */
+  | { tipo: "sem-horario" };
+
+/**
+ * O que o assistente deve dizer quando um período volta vazio.
+ *
+ * A distinção que faltava: "a clínica não atende à tarde" (definitivo — parar
+ * de oferecer tarde) é MUITO diferente de "a tarde está toda reservada"
+ * (temporário — cabe fila de espera). Antes as duas viravam o mesmo
+ * "Nenhum horário livre no período tarde", e o assistente respondia sempre
+ * "hoje não tem", como se amanhã fosse ter.
+ */
+export function avisoPeriodoVazio(opts: {
+  periodo: Periodo;
+  especialidade: string;
+  causa: CausaVazio;
+  /** Dia pedido pelo paciente, por extenso ("sexta-feira"), se houve. */
+  dia?: string | null;
+  /** Janela de agendamento em dias (booking.advanceBookingDays). */
+  janelaDias: number;
+}): string {
+  const { periodo, especialidade, causa, janelaDias } = opts;
+  const rotulo = ROTULO_PERIODO[periodo];
+  const noDia = opts.dia ? ` de ${opts.dia}` : "";
+
+  switch (causa.tipo) {
+    case "sem-profissional":
+      return (
+        `Nenhum profissional ativo atende ${especialidade}. ` +
+        "Chame listar_especialidades e ofereça ao paciente as opções REAIS da clínica."
+      );
+
+    case "fora-da-agenda": {
+      const reais = causa.periodosReais.length
+        ? rotularPeriodos(causa.periodosReais)
+        : "nenhum período";
+      return (
+        `A agenda de ${especialidade} NÃO tem ${rotulo}: os profissionais dessa ` +
+        `especialidade atendem apenas de ${reais}. Diga ao paciente que essa ` +
+        `especialidade não atende à ${rotulo} — NÃO diga "hoje não tem", porque ` +
+        `nenhum dia tem — e ofereça ${reais}. ` +
+        `NUNCA volte a oferecer ${rotulo} para ${especialidade}.`
+      );
+    }
+
+    case "tudo-reservado":
+      return (
+        `Todos os horários de ${rotulo}${noDia} de ${especialidade} já estão ` +
+        "reservados. Diga que estão ocupados, ofereça a FILA DE ESPERA " +
+        "(entrar_fila_espera) e também outro período, que tem vaga."
+      );
+
+    case "sem-horario":
+      return (
+        `Não há horário livre de ${rotulo}${noDia} para ${especialidade} nos ` +
+        `próximos ${janelaDias} dias. Ofereça outro período ou a fila de espera.`
+      );
+  }
 }
 
 // =========================================================

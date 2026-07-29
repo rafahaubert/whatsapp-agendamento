@@ -1,0 +1,164 @@
+<%- include('partials/header', { tituloPagina: "Diagnóstico da agenda" }) %>
+<%
+  var d = diag;
+  var rot = { manha: "Manhã", tarde: "Tarde", noite: "Noite" };
+  var ordem = ["manha", "tarde", "noite"];
+  function num(v){ return (v || 0).toLocaleString("pt-BR"); }
+%>
+
+<div class="page-head">
+  <div>
+    <h1>Diagnóstico da agenda</h1>
+    <p class="muted" style="margin:4px 0 0">
+      Por que o assistente diz que não tem horário? Aqui estão os horários <b>livres</b> que ele
+      enxerga — o resto do painel só mostra o que já está marcado.
+    </p>
+  </div>
+  <a class="btn sm ghost" href="/admin/clinicas/<%= t.id %>/agendamentos">Voltar aos agendamentos</a>
+</div>
+
+<% if (d.alertas.length) { %>
+  <% d.alertas.forEach(function(a){ %><p class="erro"><%= a %></p><% }) %>
+<% } else if (d.totalSlots === 0) { %>
+  <p class="erro">
+    Não há nenhum horário livre gerado. Clique em “Gerar horários” na tela de agendamentos —
+    salvar a configuração não regenera a agenda sozinho.
+  </p>
+<% } else { %>
+  <p class="ok">Nada fora do lugar: os períodos anunciados têm horário livre na agenda.</p>
+<% } %>
+
+<!-- ===================== 1. Horários livres por período ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Horários livres agora</h2>
+    <span class="muted">próximos <%= d.janelaDias %> dias · fuso <%= d.timezone %></span>
+  </div>
+  <div class="kpis">
+    <% ordem.forEach(function(p){ %>
+      <div class="kpi">
+        <span class="rot"><%= rot[p] %></span>
+        <span class="val"><%= num(d.total[p]) %></span>
+        <span class="sub">
+          <% if (d.total[p] === 0 && d.geraveis.indexOf(p) < 0) { %>
+            nenhum profissional atende nesse período
+          <% } else if (d.total[p] === 0) { %>
+            previsto na agenda, mas sem horário livre
+          <% } else { %>
+            horários de <%= rot[p].toLowerCase() %> disponíveis
+          <% } %>
+        </span>
+      </div>
+    <% }) %>
+  </div>
+  <p class="muted" style="margin-top:10px">
+    Total de <%= num(d.totalSlots) %> horários livres, em blocos de <%= d.duracao %> min.
+    <% if (d.truncado) { %>(leitura limitada — os números são um piso.)<% } %>
+    <% if (d.bloqueios) { %>Há <%= d.bloqueios %> bloqueio(s) ativo(s) de férias/feriado.<% } %>
+  </p>
+</div>
+
+<!-- ===================== 2. Por especialidade ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Por especialidade</h2>
+    <span class="muted">é assim que o assistente busca</span>
+  </div>
+  <% if (d.porEspecialidade.length === 0) { %>
+    <div class="empty">Nenhum horário livre em nenhuma especialidade.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Especialidade</th><% ordem.forEach(function(p){ %><th><%= rot[p] %></th><% }) %></tr></thead>
+        <tbody>
+          <% d.porEspecialidade.forEach(function(linha){ var nome = linha[0], m = linha[1]; %>
+            <tr>
+              <td><strong><%= nome %></strong></td>
+              <% ordem.forEach(function(p){ %>
+                <td style="font-variant-numeric:tabular-nums">
+                  <% if (m[p] === 0) { %><span class="muted">—</span><% } else { %><%= num(m[p]) %><% } %>
+                </td>
+              <% }) %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      Um “—” aqui é exatamente o que o paciente ouve como “não tem horário nesse período”
+      para aquela especialidade.
+    </p>
+  <% } %>
+</div>
+
+<!-- ===================== 3. Agenda de cada profissional ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Agenda de cada profissional</h2>
+    <span class="muted">é ela que gera os horários</span>
+  </div>
+  <p class="muted" style="margin:0 0 10px">
+    O horário de funcionamento da clínica (<%= d.anunciada.resumo %>) é o que o assistente
+    <em>anuncia</em>. Os horários que existem de verdade saem da agenda de cada profissional —
+    quando ele tem agenda própria, ela manda.
+  </p>
+  <% if (d.profissionais.length === 0) { %>
+    <div class="empty">Nenhum profissional ativo — a agenda sai vazia.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Profissional</th><th>Origem</th><th>Atende</th><th>Períodos</th></tr></thead>
+        <tbody>
+          <% d.profissionais.forEach(function(p){ %>
+            <tr>
+              <td>
+                <strong><%= p.nome %></strong>
+                <% if (p.semEspecialidade) { %><div class="muted">⚠ sem especialidade — não gera horário</div><% } %>
+                <% if (p.semUnidade) { %><div class="muted">⚠ sem unidade — não gera horário</div><% } %>
+              </td>
+              <td><span class="pill <%= p.propria ? 'on' : '' %>"><%= p.propria ? "agenda própria" : "horário da clínica" %></span></td>
+              <td class="muted"><%= p.resumo %></td>
+              <td class="muted"><%= p.periodos.map(function(x){ return rot[x]; }).join(", ") || "nenhum" %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<!-- ===================== 4. Dia a dia ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Dia a dia</h2>
+    <span class="muted">próximos dias com horário livre</span>
+  </div>
+  <% if (d.porDia.length === 0) { %>
+    <div class="empty">Nenhum dia com horário livre na janela.</div>
+  <% } else { %>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dia</th><% ordem.forEach(function(p){ %><th><%= rot[p] %></th><% }) %></tr></thead>
+        <tbody>
+          <% d.porDia.forEach(function(linha){ var dia = linha[0], m = linha[1]; %>
+            <tr>
+              <td style="white-space:nowrap"><%= dia %></td>
+              <% ordem.forEach(function(p){ %>
+                <td style="font-variant-numeric:tabular-nums">
+                  <% if (m[p] === 0) { %><span class="muted">—</span><% } else { %><%= num(m[p]) %><% } %>
+                </td>
+              <% }) %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
+<form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline" style="margin-top:4px">
+  <input type="hidden" name="days" value="<%= d.janelaDias %>" />
+  <button class="btn">Gerar horários para os próximos <%= d.janelaDias %> dias</button>
+</form>
+
+<%- include('partials/footer') %>

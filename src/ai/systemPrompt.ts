@@ -1,5 +1,5 @@
 import type { ResolvedTenant } from "../db/tenantRepository.js";
-import { janelaAtendimento, rotularPeriodos } from "../domain/horarios.js";
+import { janelaAtendimento, rotularPeriodos, type Periodo } from "../domain/horarios.js";
 import { MAX_BOTOES } from "../channels/format.js";
 
 /**
@@ -27,13 +27,20 @@ function escapePrompt(value: string, maxLength = 2000): string {
  * em si ainda NÃO está ligado: falta o `cache_control` na chamada (ver
  * engine.ts) e o SDK fixado (0.30.1) só o expõe na API beta.
  */
-export function buildSystemPrompt(tenant: ResolvedTenant): string {
+export function buildSystemPrompt(tenant: ResolvedTenant, periodosReais?: Periodo[]): string {
   const cfg = tenant.config;
 
   // O que a agenda REALMENTE tem. Sem isto o agente oferecia "noite" a uma
   // clínica que fecha às 18h.
   const janela = janelaAtendimento(cfg.businessHours.days, cfg.booking.slotDurationMinutes);
-  const periodos = janela.periodos.length ? rotularPeriodos(janela.periodos) : "manhã ou tarde";
+
+  // O horário de funcionamento é o que a clínica anuncia; os horários que
+  // existem saem da agenda de cada profissional. Quando ela já foi apurada
+  // (o motor a carrega do banco), é ela que manda — do contrário o agente
+  // pergunta "prefere manhã ou tarde?" numa clínica cujos profissionais só
+  // atendem de manhã, e a conversa morre em "não tem tarde".
+  const disponiveis = periodosReais ?? janela.periodos;
+  const periodos = disponiveis.length ? rotularPeriodos(disponiveis) : "manhã ou tarde";
 
   // Até MAX_BOTOES opções viram BOTÕES, que já mostram dia e hora ao paciente;
   // acima disso vira lista interativa, que ele só vê depois de tocar em "Ver
@@ -70,7 +77,7 @@ export function buildSystemPrompt(tenant: ResolvedTenant): string {
     "# Horário de atendimento da clínica",
     `- Funcionamento: ${janela.resumo}.`,
     `- Último horário que pode ser agendado em cada dia: ${janela.ultimoPorDia}.`,
-    `- Períodos que existem na agenda: ${periodos}. NUNCA ofereça nem pergunte por um período fora dessa lista.`,
+    `- Períodos que existem na agenda: ${periodos}. NUNCA ofereça nem pergunte por um período fora dessa lista — nem para "conferir", nem se o paciente insistir.`,
     "- Se o paciente pedir um horário depois do fechamento, diga qual é o último horário daquele dia e ofereça os mais próximos.",
     "- Profissionais podem ter agenda própria, diferente da clínica: para isso, consulte listar_medicos.",
     "",
