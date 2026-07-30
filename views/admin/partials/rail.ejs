@@ -154,6 +154,7 @@
     </button>
 
     <form method="post" action="/admin/logout">
+      <%- include('csrf') %>
       <button type="submit" class="rail-i" title="Sair" aria-label="Sair">
         <span class="rail-ico"><%- include('icone', { nome: "sair" }) %></span>
         <span class="rail-lbl">Sair</span>

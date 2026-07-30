@@ -15,6 +15,7 @@ import {
   registrarFalha,
   limparTentativas,
 } from "./auth.js";
+import { exposeCsrf, verifyCsrf } from "./csrf.js";
 import { podeGerenciarUsuarioDaClinica } from "./permissoes.js";
 import {
   listTenants,
@@ -58,6 +59,8 @@ import {
 import { setHandoff, logMessage } from "../db/conversationRepository.js";
 import { sendWhatsAppText } from "../channels/whatsapp/client.js";
 import { logger } from "../shared/logger.js";
+import { mascararTelefone, mascararIdentificador } from "../shared/pii.js";
+import { limiteLogin } from "../shared/rateLimit.js";
 import { serviceAccountEmail } from "../integrations/googleCalendar.js";
 import { findTenantById } from "../db/tenantRepository.js";
 import {
@@ -115,6 +118,12 @@ function clinicaUrl(
 export function makeAdminRouter(): Router {
   const router = express.Router();
 
+  // Token de CSRF disponível para todas as views e validado em todo POST — vale
+  // também para o login, que é alvo de login-CSRF (forçar a vítima a entrar numa
+  // conta do atacante). Precisa vir antes das rotas.
+  router.use(exposeCsrf);
+  router.use(verifyCsrf);
+
   // ----- Login (rotas públicas) -----
   router.get("/login", (req: Request, res: Response) => {
     if (isLoggedIn(req)) return res.redirect("/admin");
@@ -127,13 +136,16 @@ export function makeAdminRouter(): Router {
     res.render("admin/login", { erro });
   });
 
-  router.post("/login", async (req: Request, res: Response) => {
+  router.post("/login", limiteLogin, async (req: Request, res: Response) => {
     const user = String(req.body.user ?? "");
     const password = String(req.body.password ?? "");
     const chave = `${user.toLowerCase()}|${req.ip}`;
 
     if (loginBloqueado(chave)) {
-      logger.warn({ user, ip: req.ip }, "login bloqueado por excesso de tentativas");
+      logger.warn(
+        { user: mascararIdentificador(user), ip: req.ip },
+        "login bloqueado por excesso de tentativas",
+      );
       return res.redirect("/admin/login?erro=bloqueado");
     }
 
@@ -141,7 +153,7 @@ export function makeAdminRouter(): Router {
     if (!autenticado) registrarFalha(chave);
     if (autenticado) {
       limparTentativas(chave);
-      login(req, autenticado);
+      await login(req, autenticado);
       // Usuário de clínica vai direto para a sua clínica.
       return res.redirect(
         autenticado.role === Role.CLINIC && autenticado.tenantId
@@ -152,8 +164,8 @@ export function makeAdminRouter(): Router {
     res.redirect("/admin/login?erro=1");
   });
 
-  router.post("/logout", (req: Request, res: Response) => {
-    logout(req);
+  router.post("/logout", async (req: Request, res: Response) => {
+    await logout(req);
     res.redirect("/admin/login");
   });
 
@@ -469,7 +481,7 @@ export function makeAdminRouter(): Router {
       await logMessage(t.id, telefone, "OUT", texto, "HUMAN");
       res.redirect(voltar({ msg: "Mensagem enviada" }));
     } catch (err) {
-      logger.error({ err, telefone }, "falha ao responder pelo painel");
+      logger.error({ err, telefone: mascararTelefone(telefone) }, "falha ao responder pelo painel");
       res.redirect(
         voltar({
           erro: "Não foi possível enviar. Se passaram mais de 24h da última mensagem do paciente, a Meta bloqueia a resposta livre.",

@@ -1,7 +1,8 @@
 import { defineConfig } from "vitest/config";
 
-// Testes de integração — usam um SQLite temporário. Rodam com `npm run test:integration`.
-// O globalSetup cria o schema num banco de teste isolado antes de tudo.
+// Testes de integração — usam um PostgreSQL de teste apontado por TEST_DATABASE_URL.
+// Rodam com `npm run test:integration`. O globalSetup (test/integration/setup.ts) cria
+// o schema num banco isolado antes de tudo; sem a variável, os testes são pulados.
 export default defineConfig({
   test: {
     include: ["test/integration/**/*.test.ts"],

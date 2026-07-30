@@ -5,6 +5,7 @@ import { env } from "../config/env.js";
 import { prisma } from "../db/client.js";
 import { logger } from "../shared/logger.js";
 import { Role } from "../shared/enums.js";
+import { safeEqual } from "../shared/comparacao.js";
 
 const scrypt = promisify(crypto.scrypt) as (
   senha: string,
@@ -26,12 +27,6 @@ export interface AdminSession {
 
 function sess(req: Request): AdminSession {
   return req.session as unknown as AdminSession;
-}
-
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
 // ---------- Senhas (scrypt nativo — sem dependência extra) ----------
@@ -141,20 +136,39 @@ export function isLoggedIn(req: Request): boolean {
   return Boolean(sess(req).userId);
 }
 
-export function login(req: Request, user: UsuarioAutenticado): void {
-  const s = sess(req);
-  s.userId = user.userId;
-  s.nome = user.nome;
-  s.role = user.role;
-  s.tenantId = user.tenantId;
+/**
+ * Grava o usuário na sessão com um ID NOVO (session fixation).
+ *
+ * Sem `regenerate`, o ID de sessão de antes do login continua valendo depois
+ * dele: quem conseguisse plantar um cookie conhecido no navegador da vítima
+ * (link com o ID, XSS em subdomínio) passaria a estar logado junto com ela.
+ * `regenerate` descarta o ID antigo e emite outro, então o cookie plantado
+ * morre no momento do login.
+ */
+export function login(req: Request, user: UsuarioAutenticado): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) return reject(err);
+      const s = sess(req);
+      s.userId = user.userId;
+      s.nome = user.nome;
+      s.role = user.role;
+      s.tenantId = user.tenantId;
+      // Persiste antes de responder para o redirect já chegar autenticado.
+      req.session.save((erroSave) => (erroSave ? reject(erroSave) : resolve()));
+    });
+  });
 }
 
-export function logout(req: Request): void {
-  const s = sess(req);
-  s.userId = undefined;
-  s.nome = undefined;
-  s.role = undefined;
-  s.tenantId = undefined;
+/**
+ * Destrói a sessão no store, em vez de só apagar os campos. Antes o registro
+ * continuava existindo (e o cookie válido) após o logout — agora o ID é
+ * invalidado do lado do servidor.
+ */
+export function logout(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.destroy((err) => (err ? reject(err) : resolve()));
+  });
 }
 
 export function usuarioAtual(req: Request): AdminSession {

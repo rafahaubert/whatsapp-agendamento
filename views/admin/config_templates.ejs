@@ -10,6 +10,7 @@
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
 <form method="post" action="/admin/clinicas/<%= t.id %>" class="card">
+  <%- include('partials/csrf') %>
   <div class="card-head">
     <h2>Automações</h2>
     <button class="btn sm">Salvar templates</button>

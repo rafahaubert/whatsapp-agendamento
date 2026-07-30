@@ -48,6 +48,7 @@
                 <details style="margin-top:8px">
                   <summary>Horários de atendimento</summary>
                   <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/horarios" style="margin-top:8px">
+                    <%- include('partials/csrf') %>
                     <div class="checks">
                       <label><input type="checkbox" name="herdar" <%= herda ? "checked" : "" %> /> Usar o horário de funcionamento da clínica</label>
                     </div>
@@ -78,13 +79,15 @@
 
                 <% if (googleEmail) { %>
                   <form method="post" action="/admin/clinicas/<%= t.id %>/medicos/<%= d.id %>/google" class="inline" style="margin-top:8px;gap:6px">
+                    <%- include('partials/csrf') %>
                     <input name="googleCalendarId" value="<%= d.googleCalendarId || '' %>" placeholder="Google Calendar ID (…@group.calendar.google.com)" />
                     <button class="btn sm ghost">Salvar calendário</button>
                   </form>
                 <% } %>
               </td>
               <td class="acoes" style="vertical-align:top">
-                <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/doctor/<%= d.id %>"><button class="btn sm danger">Excluir</button></form>
+                <form method="post" action="/admin/clinicas/<%= t.id %>/excluir/doctor/<%= d.id %>">
+                  <%- include('partials/csrf') %><button class="btn sm danger">Excluir</button></form>
               </td>
             </tr>
           <% }) %>
@@ -94,6 +97,7 @@
   <% } %>
 
   <form method="post" action="/admin/clinicas/<%= t.id %>/medicos" style="margin-top:14px">
+    <%- include('partials/csrf') %>
     <h2>Novo profissional</h2>
     <div class="grid2">
       <label>Nome<input name="name" required /></label>
@@ -152,6 +156,7 @@
               <td class="muted"><%= b.motivo %></td>
               <td class="acoes">
                 <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios/<%= b.id %>/excluir">
+                  <%- include('partials/csrf') %>
                   <button class="btn sm danger">Remover</button>
                 </form>
               </td>
@@ -163,6 +168,7 @@
   <% } %>
 
   <form method="post" action="/admin/clinicas/<%= t.id %>/bloqueios" style="margin-top:12px">
+    <%- include('partials/csrf') %>
     <div class="grid2">
       <label>Profissional
         <select name="doctorId">

@@ -107,6 +107,96 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("scheduling (integração)", () 
     expect(dupe.erro).toBeDefined();
   });
 
+  it("REGRESSÃO: dois agendamentos SIMULTÂNEOS no mesmo slot — só um passa", async () => {
+    const [a, b] = await Promise.all([
+      scheduling.findOrCreatePatient(tenant.id, {
+        nome: "Corrida Um",
+        cpf: "111.444.777-35",
+        phone: "+5511900000001",
+      }) as Promise<{ patientId: string }>,
+      scheduling.findOrCreatePatient(tenant.id, {
+        nome: "Corrida Dois",
+        cpf: "222.555.888-46",
+        phone: "+5511900000002",
+      }) as Promise<{ patientId: string }>,
+    ]);
+
+    const slot = await prisma.slot.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: SlotStatus.AVAILABLE },
+      orderBy: { startsAt: "asc" },
+    });
+
+    // Disparadas juntas de propósito: antes as duas liam "livre" e as duas gravavam.
+    const [r1, r2] = await Promise.all([
+      scheduling.bookAppointment(tenant, a.patientId, slot.id, "PARTICULAR"),
+      scheduling.bookAppointment(tenant, b.patientId, slot.id, "PARTICULAR"),
+    ]);
+
+    const sucessos = [r1, r2].filter((r) => "status" in r && r.status === "AGENDADO");
+    const erros = [r1, r2].filter((r) => "erro" in r);
+    expect(sucessos).toHaveLength(1);
+    expect(erros).toHaveLength(1);
+
+    // E o banco tem exatamente UM agendamento vivo para o slot.
+    const vivos = await prisma.appointment.count({
+      where: { slotId: slot.id, status: { not: "CANCELLED" } },
+    });
+    expect(vivos).toBe(1);
+  });
+
+  it("REGRESSÃO: slots DISTINTOS do mesmo profissional no mesmo horário não geram overbooking", async () => {
+    // Este é o furo que o índice único em Appointment.slotId NÃO cobre: dois
+    // registros de slot diferentes, mesmo dentista, mesmo instante. Acontece de
+    // verdade porque cancelar cria um slot novo em vez de reabrir o antigo.
+    const base = await prisma.slot.findFirstOrThrow({
+      where: { tenantId: tenant.id, status: SlotStatus.AVAILABLE },
+      orderBy: { startsAt: "desc" },
+    });
+
+    const gemeo = await prisma.slot.create({
+      data: {
+        tenantId: base.tenantId,
+        unitId: base.unitId,
+        doctorId: base.doctorId, // MESMO profissional
+        specialtyId: base.specialtyId,
+        startsAt: base.startsAt, // MESMO horário
+        endsAt: base.endsAt,
+        status: SlotStatus.AVAILABLE,
+      },
+    });
+
+    const [c, d] = await Promise.all([
+      scheduling.findOrCreatePatient(tenant.id, {
+        nome: "Gemeo Um",
+        cpf: "333.666.999-57",
+        phone: "+5511900000003",
+      }) as Promise<{ patientId: string }>,
+      scheduling.findOrCreatePatient(tenant.id, {
+        nome: "Gemeo Dois",
+        cpf: "123.456.789-09",
+        phone: "+5511900000004",
+      }) as Promise<{ patientId: string }>,
+    ]);
+
+    const [r1, r2] = await Promise.all([
+      scheduling.bookAppointment(tenant, c.patientId, base.id, "PARTICULAR"),
+      scheduling.bookAppointment(tenant, d.patientId, gemeo.id, "PARTICULAR"),
+    ]);
+
+    const sucessos = [r1, r2].filter((r) => "status" in r && r.status === "AGENDADO");
+    expect(sucessos).toHaveLength(1);
+
+    // O dentista não pode terminar com duas consultas no mesmo instante.
+    const doDentista = await prisma.appointment.count({
+      where: {
+        tenantId: tenant.id,
+        status: { not: "CANCELLED" },
+        slot: { doctorId: base.doctorId, startsAt: base.startsAt },
+      },
+    });
+    expect(doDentista).toBe(1);
+  });
+
   it("REGRESSÃO: horário pedido num dia específico sai naquele dia, e não em vários", async () => {
     const amanha = DateTime.now().setZone(tenant.timezone).plus({ days: 1 });
 

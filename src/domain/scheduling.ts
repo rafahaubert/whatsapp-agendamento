@@ -31,6 +31,7 @@ import {
   deleteEvent,
 } from "../integrations/googleCalendar.js";
 import { sendWhatsAppTemplate } from "../channels/whatsapp/client.js";
+import { ConflitoAgendamento, transacaoSerializavel } from "./transacao.js";
 import type { ResolvedTenant } from "../db/tenantRepository.js";
 
 // Regras puras de horário: definidas em ./horarios.ts, re-exportadas aqui
@@ -491,14 +492,14 @@ export async function bookAppointment(
 ) {
   const tenantId = tenant.id;
 
-  const outcome = await prisma.$transaction(async (tx) => {
+  const outcome = await transacaoSerializavel("bookAppointment", async (tx) => {
     const slot = await tx.slot.findFirst({
       where: { id: slotId, tenantId },
       include: { doctor: true, unit: true, specialty: true },
     });
-    if (!slot) return { erro: "Horário não encontrado." };
+    if (!slot) throw new ConflitoAgendamento("Horário não encontrado.");
     if (slot.status !== SlotStatus.AVAILABLE) {
-      return { erro: "Esse horário acabou de ser reservado. Escolha outro." };
+      throw new ConflitoAgendamento("Esse horário acabou de ser reservado. Escolha outro.");
     }
 
     // Um slot só comporta um agendamento (índice único em slotId). Se sobrou
@@ -508,7 +509,9 @@ export async function bookAppointment(
       where: { slotId: slot.id },
       select: { id: true },
     });
-    if (jaUsado) return { erro: "Esse horário acabou de ser reservado. Escolha outro." };
+    if (jaUsado) {
+      throw new ConflitoAgendamento("Esse horário acabou de ser reservado. Escolha outro.");
+    }
 
     // O gerador cria um slot por unidade × especialidade do profissional: sem
     // esta checagem dois pacientes cairiam no mesmo profissional e horário.
@@ -524,7 +527,9 @@ export async function bookAppointment(
       },
       select: { id: true },
     });
-    if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
+    if (conflito) {
+      throw new ConflitoAgendamento("O profissional já tem consulta nesse horário. Escolha outro.");
+    }
 
     // O paciente é uma pessoa só: não pode estar em duas cadeiras ao mesmo
     // tempo. A trava acima não pega isto — cada profissional tem o SEU slot,
@@ -539,7 +544,7 @@ export async function bookAppointment(
       select: { id: true },
     });
     if (conflitoPaciente) {
-      return { erro: "Este paciente já tem uma consulta nesse horário. Escolha outro." };
+      throw new ConflitoAgendamento("Este paciente já tem uma consulta nesse horário. Escolha outro.");
     }
 
     let healthPlanId: string | null = null;
@@ -565,7 +570,18 @@ export async function bookAppointment(
         status: AppointmentStatus.SCHEDULED,
       },
     });
-    await tx.slot.update({ where: { id: slot.id }, data: { status: SlotStatus.BOOKED } });
+    // Lock otimista: só reserva se o slot AINDA estiver livre. O `update` simples
+    // gravava BOOKED por cima sem olhar o estado, então dois cliques quase
+    // simultâneos no mesmo horário viravam dois agendamentos. Com o `status` no
+    // WHERE, o Postgres serializa as duas na linha do slot e a segunda enxerga
+    // count = 0.
+    const reservado = await tx.slot.updateMany({
+      where: { id: slot.id, status: SlotStatus.AVAILABLE },
+      data: { status: SlotStatus.BOOKED },
+    });
+    if (reservado.count === 0) {
+      throw new ConflitoAgendamento("Esse horário acabou de ser reservado. Escolha outro.");
+    }
     return { appt, slot };
   });
 
@@ -631,15 +647,28 @@ export async function cancelAppointment(tenant: ResolvedTenant, appointmentId: s
   if (!tenant.config.booking.allowCancellation) {
     return { erro: "Cancelamento não permitido pelo assistente. Oriente a ligar para a recepção." };
   }
-  const outcome = await prisma.$transaction(async (tx) => {
+  const outcome = await transacaoSerializavel("cancelAppointment", async (tx) => {
     const appt = await tx.appointment.findFirst({
       where: { id: appointmentId, tenantId: tenant.id },
       include: { doctor: { select: { googleCalendarId: true } }, slot: true },
     });
-    if (!appt) return { erro: "Agendamento não encontrado." };
-    if (appt.status === AppointmentStatus.CANCELLED) return { erro: "Esse agendamento já está cancelado." };
+    if (!appt) throw new ConflitoAgendamento("Agendamento não encontrado.");
+    if (appt.status === AppointmentStatus.CANCELLED) {
+      throw new ConflitoAgendamento("Esse agendamento já está cancelado.");
+    }
 
-    await tx.appointment.update({ where: { id: appt.id }, data: { status: AppointmentStatus.CANCELLED } });
+    // Cancela condicionalmente: só o primeiro dos dois cliques passa. Sem o
+    // status no WHERE, dois cancelamentos simultâneos passavam os dois pela
+    // checagem acima, criavam DOIS slots livres para o mesmo horário e avisavam
+    // a fila de espera duas vezes — duas mensagens de template pagas, e dois
+    // pacientes convidados para uma vaga só.
+    const cancelado = await tx.appointment.updateMany({
+      where: { id: appt.id, status: { not: AppointmentStatus.CANCELLED } },
+      data: { status: AppointmentStatus.CANCELLED },
+    });
+    if (cancelado.count === 0) {
+      throw new ConflitoAgendamento("Esse agendamento já está cancelado.");
+    }
 
     // O slot NÃO volta a ficar livre: ele continua sendo o registro histórico
     // da consulta cancelada (todo o painel lê a data em appointment.slot) e a
@@ -694,20 +723,24 @@ export async function rescheduleAppointment(
 
 /** Núcleo da remarcação (sem checar a regra do assistente) — usado pelo agente e pelo painel. */
 async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoSlotId: string) {
-  const outcome = await prisma.$transaction(async (tx) => {
+  const outcome = await transacaoSerializavel("doReschedule", async (tx) => {
     const appt = await tx.appointment.findFirst({
       where: { id: appointmentId, tenantId: tenant.id },
       include: { doctor: { select: { googleCalendarId: true } } },
     });
-    if (!appt) return { erro: "Agendamento não encontrado." };
+    if (!appt) throw new ConflitoAgendamento("Agendamento não encontrado.");
 
     const novo = await tx.slot.findFirst({
       where: { id: novoSlotId, tenantId: tenant.id },
       include: { doctor: true, unit: true, specialty: true },
     });
-    if (!novo) return { erro: "Novo horário não encontrado." };
-    if (novo.status !== SlotStatus.AVAILABLE) return { erro: "Esse horário não está mais livre." };
-    if (novo.id === appt.slotId) return { erro: "O agendamento já está nesse horário." };
+    if (!novo) throw new ConflitoAgendamento("Novo horário não encontrado.");
+    if (novo.status !== SlotStatus.AVAILABLE) {
+      throw new ConflitoAgendamento("Esse horário não está mais livre.");
+    }
+    if (novo.id === appt.slotId) {
+      throw new ConflitoAgendamento("O agendamento já está nesse horário.");
+    }
 
     // Mesmas travas de bookAppointment: um slot só comporta um agendamento e o
     // profissional não pode ter duas consultas ao mesmo tempo.
@@ -715,7 +748,7 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
       where: { slotId: novo.id },
       select: { id: true },
     });
-    if (jaUsado) return { erro: "Esse horário não está mais livre." };
+    if (jaUsado) throw new ConflitoAgendamento("Esse horário não está mais livre.");
 
     const conflito = await tx.appointment.findFirst({
       where: {
@@ -730,7 +763,9 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
       },
       select: { id: true },
     });
-    if (conflito) return { erro: "O profissional já tem consulta nesse horário. Escolha outro." };
+    if (conflito) {
+      throw new ConflitoAgendamento("O profissional já tem consulta nesse horário. Escolha outro.");
+    }
 
     // Mesma regra do agendamento: o paciente não pode ficar com duas consultas
     // sobrepostas — nem remarcando por cima de outra que ele já tem.
@@ -745,12 +780,19 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
       select: { id: true },
     });
     if (conflitoPaciente) {
-      return { erro: "Este paciente já tem uma consulta nesse horário. Escolha outro." };
+      throw new ConflitoAgendamento("Este paciente já tem uma consulta nesse horário. Escolha outro.");
     }
 
     // O agendamento sai deste slot, então ele fica solto e pode voltar à agenda.
     await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
-    await tx.slot.update({ where: { id: novo.id }, data: { status: SlotStatus.BOOKED } });
+    // Mesmo lock otimista do agendamento: só toma o slot novo se ninguém tomou antes.
+    const reservado = await tx.slot.updateMany({
+      where: { id: novo.id, status: SlotStatus.AVAILABLE },
+      data: { status: SlotStatus.BOOKED },
+    });
+    if (reservado.count === 0) {
+      throw new ConflitoAgendamento("Esse horário não está mais livre.");
+    }
     const updated = await tx.appointment.update({
       where: { id: appt.id },
       data: {
@@ -1047,7 +1089,7 @@ export async function notificarFilaEspera(tenant: ResolvedTenant, slotId: string
   });
 
   logger.info(
-    { tenant: tenant.slug, paciente: candidato.patient.name, slotId },
+    { tenant: tenant.slug, pacienteId: candidato.patient.id, slotId },
     "fila de espera avisada sobre horário liberado",
   );
 }

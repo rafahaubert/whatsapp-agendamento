@@ -82,8 +82,21 @@ URL pública: `https://<app>.fly.dev`. Webhook da Meta:
 | `WHATSAPP_ACCESS_TOKEN` | Token de envio de mensagens |
 | `WHATSAPP_API_VERSION` | Ex.: `v21.0` |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Chave reserva do painel `/admin` (os demais acessos são criados em /admin/usuarios e entram pelo **e-mail**) |
-| `SESSION_SECRET` | Segredo aleatório longo para assinar a sessão do painel |
+| `SESSION_SECRET` | **Obrigatório em produção.** Segredo aleatório longo para assinar a sessão do painel |
+| `JOBS_TOKEN` | Protege `POST /jobs/run` e `/jobs/reminders`. **Sem ele os jobs respondem 401 a tudo** — necessário para o cron externo (ver [WHATSAPP-TEMPLATES.md](WHATSAPP-TEMPLATES.md)) |
 | `NODE_ENV` | `production` (logs em JSON) |
+
+> ⚠️ **`SESSION_SECRET` agora é obrigatório em produção: sem ele o processo NÃO
+> sobe.** Antes existia um valor padrão, e como ele está publicado neste
+> repositório qualquer pessoa conseguiria forjar um cookie de sessão e entrar no
+> painel como administrador. Havia um aviso de startup para esse caso, mas ele
+> comparava com uma string diferente do padrão real e nunca disparava — então o
+> deploy subia inseguro em silêncio. Agora a validação de ambiente barra o boot,
+> como já fazia com `DATABASE_URL`.
+>
+> No Render o `render.yaml` já gera o valor (`generateValue: true`). **No Fly.io é
+> preciso definir manualmente** — está no `fly secrets set` do passo 4 acima:
+> `SESSION_SECRET=$(openssl rand -hex 32)`.
 
 > **Painel atrás de HTTPS:** em produção, sirva sob HTTPS e considere `cookie.secure`
 > na sessão (com `app.set("trust proxy", 1)` se houver proxy). O `/admin` é para o
@@ -127,7 +140,19 @@ O webhook **precisa ser HTTPS público**. Coloque o app atrás de um proxy/https
 - **Token por clínica**: hoje o `WHATSAPP_ACCESS_TOKEN` é global. Para tokens
   distintos por clínica, guarde-os no `Tenant` (idealmente cifrados) e passe ao
   `sendWhatsAppText` — o ponto de extensão já existe em `src/channels/whatsapp/client.ts`.
-- **Idempotência**: a Meta pode reenviar webhooks. Para evitar processar a mesma
-  mensagem duas vezes, guarde os `messageId` já vistos (ex.: tabela ou cache).
+- **Idempotência**: já implementada. A Meta reenvia webhooks, e a tabela
+  `processed_messages` guarda os `messageId` (wamid) usando a chave primária como
+  trava atômica — ver `src/db/idempotency.ts`. Duas ressalvas conhecidas: o wamid
+  é marcado *antes* do processamento (então uma mensagem em voo se perde se o
+  processo morrer no meio, sem reentrega), e a tabela ainda **não tem rotina de
+  poda** — cresce indefinidamente.
+- **Sessão do painel**: fica no Postgres (tabela `sessions`, ver
+  `src/admin/sessionStore.ts`), não em memória — os operadores continuam logados
+  depois de um deploy. A poda dos registros expirados roda de hora em hora.
+- **Instância única**: o serviço é desenhado para UMA instância. O agrupamento de
+  mensagens (`src/core/inbox.ts`), o contador de força bruta do login e os rate
+  limits vivem em memória do processo. Com 2+ instâncias cada uma contaria em
+  separado e o lock por conversa deixaria de valer. `fly.toml` fixa
+  `min_machines_running = 1`; ao escalar, migrar esse estado para o banco antes.
 - **Fila**: sob alto volume, troque o processamento inline por uma fila
   (BullMQ/SQS) após o ACK, para não segurar a resposta à Meta.
