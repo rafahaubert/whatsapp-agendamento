@@ -67,7 +67,9 @@ npm run chat                  # conversa com o agente no terminal (QA sem WhatsA
 
 Servidor de webhook: `npm run dev`. Testes: `npm test` (unidade, sempre) e
 `npm run test:integration` (requer um Postgres de teste em `TEST_DATABASE_URL`).
-Deploy: [DEPLOY.md](DEPLOY.md) · Render blueprint em [render.yaml](render.yaml).
+Deploy: [DEPLOY.md](DEPLOY.md) — recomendado **Fly.io São Paulo, ~R$ 16/mês**
+([fly.toml](fly.toml) pronto). O agente **não funciona em plano que hiberna**;
+a comparação de custos está na seção 0 do DEPLOY.md.
 
 ## Painel de administração
 
@@ -137,10 +139,11 @@ Além de evitar a resposta dobrada, cada conversa roda **uma execução por vez*
 paralelas, cada uma lendo e sobrescrevendo o mesmo histórico.
 
 > Esse estado vive em memória, como o serviço roda hoje: **uma instância**
-> (`min_machines_running = 1` no fly.toml; plano free do Render também).
-> Ao escalar para várias instâncias, isto precisa migrar para um lock/fila
-> compartilhados (Redis ou o próprio Postgres). Se o processo reiniciar dentro
-> da janela de espera, o lote pendente se perde.
+> (`min_machines_running = 1` no fly.toml). Ao escalar para várias instâncias,
+> isto precisa migrar para um lock/fila compartilhados (Redis ou o próprio
+> Postgres). Se o processo reiniciar dentro da janela de espera, o lote pendente
+> se perde — por isso o serviço precisa de um plano **sem hibernação**
+> (ver seção 0 do [DEPLOY.md](DEPLOY.md)).
 
 ---
 

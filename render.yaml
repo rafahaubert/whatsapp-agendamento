@@ -7,7 +7,13 @@ services:
     name: whatsapp-agent
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free # sobe grátis; hiberna após ~15 min de inatividade
+    # US$ 7/mês (~R$ 36) — a menor instância que NÃO hiberna.
+    # O `free` hiberna após ~15 min sem tráfego e leva ~50 s para acordar: a Meta
+    # recebe timeout no webhook, os lembretes (setInterval) não rodam e o lote de
+    # mensagens em memória se perde. Ver a seção 0 do DEPLOY.md.
+    # Atenção: os US$ 25 que aparecem no site são o WORKSPACE Pro, que é opcional —
+    # o workspace Hobby é grátis e já aceita instâncias pagas como esta.
+    plan: starter
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV

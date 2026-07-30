@@ -29,6 +29,11 @@ primary_region = "gru" # São Paulo
     method = "GET"
     path = "/health"
 
+# ~US$ 3,20/mês (~R$ 16) sempre no ar. Descer para "256mb" corta para ~US$ 1,95,
+# mas Node + o engine do Prisma ficam apertados — só com o swap abaixo ligado.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"
+  # Rede de segurança contra OOM em picos (build do Prisma, vários turnos
+  # simultâneos): sem isso a máquina morre; com isso ela só fica lenta.
+  swap_size_mb = 512
