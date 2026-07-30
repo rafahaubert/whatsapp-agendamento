@@ -40,6 +40,7 @@
       <div class="card-head">
         <h2 style="font-variant-numeric:tabular-nums;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink)"><%= telefone %></h2>
         <form method="post" action="/admin/clinicas/<%= t.id %>/inbox/handoff">
+          <%- include('partials/csrf') %>
           <input type="hidden" name="telefone" value="<%= telefone %>" />
           <input type="hidden" name="ativar" value="<%= atual && atual.aguardando ? '' : 'on' %>" />
           <button class="btn sm <%= atual && atual.aguardando ? 'ghost' : '' %>">
@@ -66,6 +67,7 @@
       </div>
 
       <form method="post" action="/admin/clinicas/<%= t.id %>/inbox/responder" class="inline" style="margin-top:12px">
+        <%- include('partials/csrf') %>
         <input type="hidden" name="telefone" value="<%= telefone %>" />
         <label style="flex:1">Responder como recepção
           <input name="texto" placeholder="Escreva sua mensagem…" required />

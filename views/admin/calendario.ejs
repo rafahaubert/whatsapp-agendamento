@@ -45,6 +45,7 @@
 <dialog id="dlgNovo">
   <h2 style="margin-top:0">Novo agendamento</h2>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos">
+    <%- include('partials/csrf') %>
     <input type="hidden" name="voltar" value="calendario" />
     <label>Data e hora<input type="datetime-local" name="startsAt" id="fStartsAt" required /></label>
     <div class="grid2">
@@ -91,6 +92,7 @@
   <div class="row" style="justify-content:flex-end;gap:8px;margin-top:14px">
     <button type="button" class="btn sm ghost" onclick="document.getElementById('dlgInfo').close()">Fechar</button>
     <form method="post" id="formCancelar">
+      <%- include('partials/csrf') %>
       <input type="hidden" name="voltar" value="calendario" />
       <button class="btn sm danger">Cancelar consulta</button>
     </form>
@@ -107,6 +109,8 @@
       return;
     }
     var clinicaId = "<%= t.id %>";
+    // O arrastar/soltar abaixo é um POST, então precisa do token de CSRF.
+    var csrfToken = "<%= csrf %>";
     var filter = document.getElementById("doctorFilter");
     var dlgNovo = document.getElementById("dlgNovo");
     var dlgInfo = document.getElementById("dlgInfo");
@@ -186,7 +190,7 @@
       eventDrop: function (arg) {
         fetch("/admin/clinicas/" + clinicaId + "/agendamentos/" + arg.event.id + "/mover", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
           body: JSON.stringify({ startsAt: arg.event.start.toISOString() })
         })
           .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })

@@ -8,6 +8,7 @@
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
 <form method="post" action="/admin/clinicas" class="card" style="max-width:640px">
+  <%- include('partials/csrf') %>
   <div class="grid2">
     <label>Nome<input name="name" required /></label>
     <label>Slug (opcional)<input name="slug" placeholder="gerado a partir do nome" /></label>

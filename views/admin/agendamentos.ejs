@@ -18,6 +18,7 @@
     </div>
   </div>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline">
+    <%- include('partials/csrf') %>
     <label>Gerar horários livres para os próximos<input type="number" name="days" value="<%= cfg.booking.advanceBookingDays || 30 %>" style="max-width:90px" /> dias</label>
     <button class="btn sm">Gerar horários</button>
   </form>
@@ -47,6 +48,7 @@
                 <% if (!a.cancelado) { %>
                   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/cancelar"
                         onsubmit="return confirm('Cancelar a consulta de <%= a.paciente %>?')">
+                    <%- include('partials/csrf') %>
                     <button class="btn sm danger">Cancelar</button>
                   </form>
                 <% } %>
@@ -77,10 +79,12 @@
               <td class="acoes">
                 <div class="inline" style="gap:6px">
                   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                    <%- include('partials/csrf') %>
                     <input type="hidden" name="compareceu" value="1" />
                     <button class="btn sm ghost">Compareceu</button>
                   </form>
                   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos/<%= a.id %>/desfecho" style="flex:0 0 auto">
+                    <%- include('partials/csrf') %>
                     <input type="hidden" name="compareceu" value="0" />
                     <button class="btn sm danger">Faltou</button>
                   </form>
@@ -96,6 +100,7 @@
   <h2>Novo agendamento (manual)</h2>
   <p class="muted" style="margin-top:0">Para encaixes feitos por telefone ou na recepção. Cria o paciente e o horário se ainda não existirem.</p>
   <form method="post" action="/admin/clinicas/<%= t.id %>/agendamentos">
+    <%- include('partials/csrf') %>
     <div class="grid2">
       <label>Data e hora<input type="datetime-local" name="startsAt" required /></label>
       <label>Paciente<input name="nome" required placeholder="Nome completo" /></label>

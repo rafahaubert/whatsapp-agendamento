@@ -334,6 +334,21 @@ model AdminUser {
 }
 
 // =========================================================
+// SESSÃO DO PAINEL — substitui o MemoryStore do express-session
+// O store em memória perdia todos os logins a cada deploy e vazava memória
+// (o próprio express-session avisa que não serve para produção).
+// =========================================================
+model Session {
+  sid       String   @id // ID de sessão gerado pelo express-session
+  data      String // JSON serializado da sessão
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt]) // usado pela poda dos expirados
+  @@map("sessions")
+}
+
+// =========================================================
 // IDEMPOTÊNCIA — mensagens já processadas (evita reprocessar reentregas da Meta)
 // =========================================================
 model ProcessedMessage {

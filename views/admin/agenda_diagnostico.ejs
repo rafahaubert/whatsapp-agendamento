@@ -157,6 +157,7 @@
 </div>
 
 <form method="post" action="/admin/clinicas/<%= t.id %>/agenda/gerar" class="inline" style="margin-top:4px">
+  <%- include('partials/csrf') %>
   <input type="hidden" name="days" value="<%= d.janelaDias %>" />
   <button class="btn">Gerar horários para os próximos <%= d.janelaDias %> dias</button>
 </form>

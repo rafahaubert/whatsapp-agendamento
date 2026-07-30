@@ -1,4 +1,9 @@
-import express, { type Request, type Response, type Router } from "express";
+import express, {
+  type Request,
+  type Response,
+  type Router,
+  type NextFunction,
+} from "express";
 import { env } from "../../config/env.js";
 import { verifyWhatsAppSignature } from "./signature.js";
 import { parseWhatsAppWebhook } from "./parse.js";
@@ -8,6 +13,9 @@ import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
 import { markMessageProcessed } from "../../db/idempotency.js";
 import { agruparMensagem, chaveConversa } from "../../core/inbox.js";
 import { logger } from "../../shared/logger.js";
+import { mascararTelefone } from "../../shared/pii.js";
+import { safeEqual } from "../../shared/comparacao.js";
+import { limiteWebhook } from "../../shared/rateLimit.js";
 import type { MessageHandler, Reply } from "../types.js";
 import type { WhatsAppWebhookBody } from "./types.js";
 
@@ -40,7 +48,7 @@ async function enviarResposta(
   } catch (err) {
     // Nunca deixar o paciente sem resposta: se o formato interativo falhar,
     // manda o mesmo conteúdo como texto simples.
-    logger.error({ err, to: para }, "falha ao enviar resposta — tentando texto");
+    logger.error({ err, to: mascararTelefone(para) }, "falha ao enviar resposta — tentando texto");
     const lista = (reply.opcoes ?? [])
       .map((o, i) => `${i + 1}. ${o.titulo}${o.descricao ? ` — ${o.descricao}` : ""}`)
       .join("\n");
@@ -65,26 +73,35 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    if (mode === "subscribe" && token === env.WHATSAPP_VERIFY_TOKEN) {
+    if (
+      mode === "subscribe" &&
+      typeof token === "string" &&
+      safeEqual(token, env.WHATSAPP_VERIFY_TOKEN)
+    ) {
       res.status(200).send(String(challenge));
       return;
     }
     res.sendStatus(403);
   });
 
-  // 2) Recebimento de mensagens.
-  router.post("/", async (req: Request, res: Response) => {
+  /**
+   * Barra tudo que não vem assinado pela Meta. Middleware separado para que o
+   * rate limit possa vir DEPOIS dele: assim uma enxurrada não assinada é
+   * descartada aqui e não ocupa espaço no contador do limitador.
+   */
+  function exigirAssinatura(req: Request, res: Response, next: NextFunction): void {
     const rawBody = (req as unknown as { rawBody?: Buffer }).rawBody;
     const signature = req.header("x-hub-signature-256");
 
-    if (
-      !rawBody ||
-      !verifyWhatsAppSignature(env.WHATSAPP_APP_SECRET, rawBody, signature)
-    ) {
+    if (!rawBody || !verifyWhatsAppSignature(env.WHATSAPP_APP_SECRET, rawBody, signature)) {
       res.sendStatus(401);
       return;
     }
+    next();
+  }
 
+  // 2) Recebimento de mensagens.
+  router.post("/", exigirAssinatura, limiteWebhook, async (req: Request, res: Response) => {
     // A Meta exige um ACK rápido (poucos segundos). Respondemos já e
     // processamos em seguida, sem bloquear a resposta.
     res.sendStatus(200);
@@ -136,7 +153,10 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
               const reply = await handler.handle(lote);
               if (reply) await enviarResposta(tenant.whatsappPhoneNumberId, parsed.from, reply);
             } catch (err) {
-              logger.error({ err, to: parsed.from }, "falha ao processar o lote de mensagens");
+              logger.error(
+                { err, to: mascararTelefone(parsed.from) },
+                "falha ao processar o lote de mensagens",
+              );
             }
           },
         );

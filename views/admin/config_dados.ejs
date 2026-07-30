@@ -13,6 +13,7 @@
 <% if (erro) { %><p class="erro"><%= erro %></p><% } %>
 
 <form method="post" action="/admin/clinicas/<%= t.id %>" class="card" id="config">
+  <%- include('partials/csrf') %>
   <%# Só o que esta página edita — o resto da config fica intacto no servidor. %>
   <input type="hidden" name="_blocos" value="identificacao mensagens horario regras ia faq" />
   <input type="hidden" name="_voltar" value="/config" />
@@ -126,6 +127,7 @@
               <td class="muted"><%= new Date(c.lastMessageAt).toLocaleString("pt-BR") %></td>
               <td class="acoes">
                 <form method="post" action="/admin/clinicas/<%= t.id %>/conversa/reiniciar">
+                  <%- include('partials/csrf') %>
                   <input type="hidden" name="phone" value="<%= c.patientPhone %>" />
                   <button class="btn sm ghost">Reiniciar</button>
                 </form>

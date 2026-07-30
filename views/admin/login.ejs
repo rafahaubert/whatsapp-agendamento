@@ -4,6 +4,7 @@
 <body>
   <div class="login-wrap">
     <form method="post" action="/admin/login" class="card login">
+      <%- include('partials/csrf') %>
       <div class="brand-block">
         <%- include('partials/marca', { marcaVariante: "bloco" }) %>
       </div>

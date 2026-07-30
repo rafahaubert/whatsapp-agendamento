@@ -34,15 +34,18 @@
               <td class="acoes">
                 <div class="inline" style="gap:6px">
                   <form method="post" action="/admin/usuarios/<%= u.id %>/senha" class="inline" style="gap:6px;flex:0 0 auto">
+                    <%- include('partials/csrf') %>
                     <input name="senha" type="password" placeholder="Nova senha" style="max-width:140px" />
                     <button class="btn sm ghost">Redefinir</button>
                   </form>
                   <form method="post" action="/admin/usuarios/<%= u.id %>/ativo" style="flex:0 0 auto">
+                    <%- include('partials/csrf') %>
                     <input type="hidden" name="ativar" value="<%= u.isActive ? '' : 'on' %>" />
                     <button class="btn sm ghost"><%= u.isActive ? "Suspender" : "Reativar" %></button>
                   </form>
                   <form method="post" action="/admin/usuarios/<%= u.id %>/excluir" style="flex:0 0 auto"
                         onsubmit="return confirm('Remover o acesso de <%= u.name %>?')">
+                    <%- include('partials/csrf') %>
                     <button class="btn sm danger">Excluir</button>
                   </form>
                 </div>
@@ -58,6 +61,7 @@
 <div class="card">
   <div class="card-head"><h2>Novo acesso</h2></div>
   <form method="post" action="/admin/usuarios">
+    <%- include('partials/csrf') %>
     <div class="grid2">
       <label>Nome<input name="nome" required placeholder="Recepção da Cassol" /></label>
       <label>E-mail<input name="email" type="email" required placeholder="recepcao@clinica.com.br" /></label>

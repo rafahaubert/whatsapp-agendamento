@@ -37,7 +37,9 @@ export async function transcreverAudio(
     });
 
     if (!res.ok) {
-      logger.error({ status: res.status, body: await res.text() }, "falha na transcrição de áudio");
+      // Sem o corpo da resposta: ele vem de fora e já trouxe eco de credencial
+      // em API parecida. O status basta para diagnosticar.
+      logger.error({ status: res.status }, "falha na transcrição de áudio");
       return null;
     }
 

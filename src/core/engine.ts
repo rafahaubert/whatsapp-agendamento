@@ -20,6 +20,7 @@ import {
 import { ehPedidoDeConfirmacao } from "../shared/confirmacao.js";
 import type { Periodo } from "../domain/horarios.js";
 import { logger } from "../shared/logger.js";
+import { mascararTelefone } from "../shared/pii.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
 /**
@@ -163,11 +164,11 @@ async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
       const midia = await baixarMidia(message.audioId);
       const transcrito = midia ? await transcreverAudio(midia.buffer, midia.mimeType) : null;
       if (transcrito) {
-        logger.info({ from: message.from }, "áudio transcrito");
+        logger.info({ from: mascararTelefone(message.from) }, "áudio transcrito");
         return { texto: transcrito, log: transcrito };
       }
     } catch (err) {
-      logger.error({ err, from: message.from }, "falha ao processar áudio");
+      logger.error({ err, from: mascararTelefone(message.from) }, "falha ao processar áudio");
     }
     return {
       texto: null,
@@ -232,7 +233,7 @@ export const conversationEngine: MessageHandler = {
     // ---------- Rate limiting ----------
     const rate = checarRateLimit(chaveConversa(tenant.id, from));
     if (rate.limitado) {
-      logger.warn({ from, tenant: tenant.slug }, "rate limit excedido");
+      logger.warn({ from: mascararTelefone(from), tenant: tenant.slug }, "rate limit excedido");
       // Em atendimento humano o bot é mudo — nem para avisar de excesso.
       if (!rate.avisar || conversa.humanHandoff) return null;
       const aviso =
@@ -243,7 +244,10 @@ export const conversationEngine: MessageHandler = {
 
     // ---------- Timeout de conversa: descarta histórico antigo ----------
     if (conversa.lastActivity && Date.now() - conversa.lastActivity.getTime() > CONVERSA_TTL_MS) {
-      logger.info({ from, tenant: tenant.slug }, "conversa expirada — histórico resetado");
+      logger.info(
+        { from: mascararTelefone(from), tenant: tenant.slug },
+        "conversa expirada — histórico resetado",
+      );
       conversa.history = [];
     }
 
@@ -274,7 +278,10 @@ export const conversationEngine: MessageHandler = {
 
     // ---------- 2. Atendimento humano em andamento: bot silencia ----------
     if (conversa.humanHandoff) {
-      logger.info({ from }, "conversa em atendimento humano — bot não respondeu");
+      logger.info(
+        { from: mascararTelefone(from) },
+        "conversa em atendimento humano — bot não respondeu",
+      );
       return null;
     }
 
@@ -441,7 +448,10 @@ export const conversationEngine: MessageHandler = {
         break;
       }
     } catch (err) {
-      logger.error({ err, tenant: tenant.slug, from }, "erro na conversa com o Claude");
+      logger.error(
+        { err, tenant: tenant.slug, from: mascararTelefone(from) },
+        "erro na conversa com o Claude",
+      );
       const aviso = tenant.config.branding.fallbackMessage;
       // O turno falhou, mas o que já foi consumido até aqui foi cobrado.
       await logMessage(tenant.id, from, "OUT", aviso, "BOT", consumo);

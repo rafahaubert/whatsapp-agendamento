@@ -5,11 +5,15 @@ import { env } from "./config/env.js";
 import { makeWhatsAppRouter } from "./channels/whatsapp/webhook.js";
 import { conversationEngine } from "./core/engine.js";
 import { makeAdminRouter } from "./admin/router.js";
+import { PrismaSessionStore } from "./admin/sessionStore.js";
 import { carregarProposta } from "./marketing/proposta.js";
 import { enviarLembretes } from "./jobs/reminders.js";
 import { renovarAgendas } from "./jobs/agenda.js";
 import { enviarReativacoes } from "./jobs/recall.js";
 import { logger } from "./shared/logger.js";
+import { safeEqual } from "./shared/comparacao.js";
+import { limiteJobs } from "./shared/rateLimit.js";
+import { prisma } from "./db/client.js";
 
 const app = express();
 
@@ -50,29 +54,62 @@ app.use(
 // Formulários do painel.
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
+// Requisições JSON do painel (o arrastar/soltar do calendário). Vem DEPOIS do
+// parser específico do webhook, que precisa capturar o corpo cru para o HMAC.
+// Sem isto, `req.body` chegava vazio em POST /clinicas/:id/agendamentos/:id/mover
+// e o arrastar/soltar respondia 400 sempre.
+app.use(express.json({ limit: "1mb" }));
+
 // Atrás do proxy do provedor (Render/Fly): necessário para o cookie `secure`
 // e para o IP real do cliente.
 const emProducao = env.NODE_ENV === "production";
 if (emProducao) app.set("trust proxy", 1);
 
-// Sessão do painel de administração.
+// Sessão do painel de administração. O store fica no Postgres: com o MemoryStore
+// padrão, todo deploy derrubava a sessão de todos os operadores.
 app.use(
   session({
+    store: new PrismaSessionStore(),
     secret: env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     name: "haubert.sid", // não usa o nome padrão connect.sid
+    rolling: true, // renova a validade a cada requisição (o store implementa touch)
     cookie: {
       httpOnly: true, // fora do alcance de JavaScript
-      sameSite: "lax", // corta CSRF entre sites nos POSTs do painel
+      sameSite: "lax", // primeira barreira de CSRF; o token em admin/csrf.ts é a segunda
       secure: emProducao, // só trafega por HTTPS em produção
       maxAge: 1000 * 60 * 60 * 8,
     },
   }),
 );
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "whatsapp-clinic-agent" });
+/**
+ * Healthcheck usado por Render (`healthCheckPath`) e Fly (`http_service.checks`).
+ *
+ * Consulta o banco de propósito: antes devolvia 200 estático, então uma instância
+ * com o Postgres inacessível continuava sendo considerada saudável e recebendo
+ * tráfego — o webhook aceitava mensagens que não conseguia gravar. Sem banco,
+ * este serviço não faz nada de útil, então "sem banco" é "não saudável".
+ *
+ * O timeout é menor que o do provedor (2s no fly.toml) para responder 503 em vez
+ * de estourar o prazo do check.
+ */
+const HEALTH_TIMEOUT_MS = 1200;
+
+app.get("/health", async (_req, res) => {
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_ok, reject) =>
+        setTimeout(() => reject(new Error("timeout na consulta ao banco")), HEALTH_TIMEOUT_MS),
+      ),
+    ]);
+    res.json({ ok: true, service: "whatsapp-clinic-agent", db: "up" });
+  } catch (err) {
+    logger.error({ err }, "healthcheck falhou — banco inacessível");
+    res.status(503).json({ ok: false, service: "whatsapp-clinic-agent", db: "down" });
+  }
 });
 
 // Raiz → painel.
@@ -102,9 +139,11 @@ app.use("/admin", makeAdminRouter());
  * Protegido por JOBS_TOKEN — útil porque o plano free hiberna e o setInterval
  * abaixo pode não rodar no horário.
  */
-app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
-  const token = req.header("x-jobs-token") ?? req.query.token;
-  if (!env.JOBS_TOKEN || token !== env.JOBS_TOKEN) {
+app.post(["/jobs/run", "/jobs/reminders"], limiteJobs, async (req, res) => {
+  // Só pelo header: aceitar `?token=` colocava o segredo na URL, que vai para o
+  // access log do provedor, para o histórico do navegador e para o Referer.
+  const token = req.header("x-jobs-token");
+  if (!env.JOBS_TOKEN || !token || !safeEqual(token, env.JOBS_TOKEN)) {
     logger.warn({ ip: req.ip, path: req.path }, "tentativa de acesso não autorizado aos jobs");
     return res.sendStatus(401);
   }
@@ -122,13 +161,14 @@ app.post(["/jobs/run", "/jobs/reminders"], async (req, res) => {
 });
 
 // Verificação de configurações críticas no startup.
-if (emProducao) {
-  if (!env.JOBS_TOKEN) {
-    logger.warn("JOBS_TOKEN não configurado — endpoints de job ficam desprotegidos");
-  }
-  if (env.SESSION_SECRET === "change-me-in-production") {
-    logger.warn("SESSION_SECRET está usando o valor padrão — altere em produção!");
-  }
+// SESSION_SECRET não entra aqui: em produção o boot falha em config/env.ts se não
+// for definido, o que é mais forte que um aviso (e o aviso antigo comparava com
+// uma string que nunca era o default, então nunca disparava).
+if (emProducao && !env.JOBS_TOKEN) {
+  logger.warn(
+    "JOBS_TOKEN não configurado — /jobs/run e /jobs/reminders responderão 401 a TODAS " +
+      "as chamadas. Defina a variável para habilitar o cron externo.",
+  );
 }
 
 app.listen(env.PORT, () => {
