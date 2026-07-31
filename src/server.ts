@@ -173,6 +173,14 @@ if (emProducao && !env.JOBS_TOKEN) {
   );
 }
 
+if (emProducao && !env.ADMIN_PASSWORD_HASH && env.ADMIN_PASSWORD) {
+  logger.warn(
+    "ADMIN_PASSWORD está em texto plano no ambiente. Gere um hash com " +
+      "`npm run admin -- hash <senha>` e troque por ADMIN_PASSWORD_HASH — a senha " +
+      "em claro fica visível no dashboard do provedor e em dumps de ambiente.",
+  );
+}
+
 const server = app.listen(env.PORT, () => {
   logger.info(
     { port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp", proposta: "/proposta" },

@@ -9,6 +9,7 @@
  *   npm run admin -- criar <e-mail> <senha> [nome]   (cria um SUPER)
  *   npm run admin -- senha <e-mail> <senha>          (redefine a senha)
  *   npm run admin -- ativar <e-mail>
+ *   npm run admin -- hash <senha>                    (gera ADMIN_PASSWORD_HASH)
  */
 import { prisma } from "../src/db/client.js";
 import { hashSenha } from "../src/admin/auth.js";
@@ -23,6 +24,7 @@ Uso:
   npm run admin -- criar <e-mail> <senha> [nome]
   npm run admin -- senha <e-mail> <senha>
   npm run admin -- ativar <e-mail>
+  npm run admin -- hash <senha>
 `);
   process.exit(1);
 }
@@ -97,6 +99,20 @@ async function main() {
       });
       if (count === 0) uso(`Nenhum usuário com o e-mail "${email}". Veja: npm run admin -- listar`);
       console.log(`✅ Acesso reativado: ${email}`);
+      break;
+    }
+
+    /**
+     * Gera o valor de ADMIN_PASSWORD_HASH. Não toca no banco — é só o scrypt,
+     * o mesmo usado nas senhas dos usuários do painel.
+     */
+    case "hash": {
+      const senha = validarSenha(args[0]);
+      const hash = await hashSenha(senha);
+      console.log(`\nADMIN_PASSWORD_HASH=${hash}\n`);
+      console.log("Defina esta variável no provedor e REMOVA a ADMIN_PASSWORD.");
+      console.log("  Fly:    fly secrets set 'ADMIN_PASSWORD_HASH=...' && fly secrets unset ADMIN_PASSWORD");
+      console.log("  Render: painel → Environment (marque como secret)\n");
       break;
     }
 

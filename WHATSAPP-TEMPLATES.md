@@ -43,8 +43,28 @@ Podemos confirmar sua presença?
 2. `Remarcar`
 3. `Cancelar`
 
-> ⚠️ A **ordem importa**: o sistema envia os payloads `CONFIRMAR:…`, `REMARCAR:…` e
-> `CANCELAR:…` conforme a posição (0, 1, 2). Trocar a ordem troca as ações.
+> ⚠️ A **ordem importa**: a API da Meta endereça botão por posição (0, 1, 2), não
+> pelo rótulo. Se o seu template ficou em outra ordem, o payload `CONFIRMAR:` cai
+> no botão escrito "Cancelar" — e o paciente que toca em "Cancelar" confirma a
+> consulta.
+>
+> **Cadastrou em outra ordem?** Não precisa refazer o template: declare a ordem
+> real na configuração da clínica, em `reminders.botoes`. Exemplo para um
+> template cadastrado como Cancelar / Remarcar / Confirmar:
+>
+> ```json
+> "reminders": {
+>   "enabled": true,
+>   "hoursBefore": 24,
+>   "templateName": "lembrete_consulta",
+>   "templateLang": "pt_BR",
+>   "botoes": ["CANCELAR", "REMARCAR", "CONFIRMAR"]
+> }
+> ```
+>
+> Omitir o campo mantém a ordem acima (Confirmar / Remarcar / Cancelar). Uma
+> ordem inválida — ação repetida, faltando ou desconhecida — é ignorada em favor
+> do padrão, com um erro no log.
 
 Envie para aprovação — costuma levar de minutos a algumas horas.
 

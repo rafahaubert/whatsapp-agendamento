@@ -29,6 +29,7 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  estaOcupadoNoGoogle,
 } from "../integrations/googleCalendar.js";
 import { sendWhatsAppTemplate } from "../channels/whatsapp/client.js";
 import { ConflitoAgendamento, transacaoSerializavel } from "./transacao.js";
@@ -483,6 +484,41 @@ function periodoDaFaixa(faixa: [number, number]): Periodo {
 }
 
 // ---------- Agendar ----------
+
+/**
+ * Verifica se o horário já está ocupado na agenda pessoal do dentista no Google.
+ *
+ * A integração era só de escrita, então um bloqueio criado direto no Google
+ * (férias, cirurgia, compromisso pessoal) era invisível aqui e o agente marcava
+ * consulta por cima. Esta é a leitura que faltava.
+ *
+ * Best-effort por decisão: se o Google não está configurado, o dentista não tem
+ * calendário ligado, ou a consulta falha, o agendamento SEGUE. O banco continua
+ * sendo a fonte da verdade — uma indisponibilidade do Google não pode parar de
+ * atender paciente.
+ *
+ * Devolve a mensagem de erro quando há conflito, ou `null` para seguir.
+ */
+async function conflitoNoGoogle(tenantId: string, slotId: string): Promise<string | null> {
+  if (!isGoogleConfigured()) return null;
+
+  const slot = await prisma.slot.findFirst({
+    where: { id: slotId, tenantId },
+    select: { startsAt: true, endsAt: true, doctor: { select: { googleCalendarId: true } } },
+  });
+  if (!slot?.doctor.googleCalendarId) return null;
+
+  const ocupado = await estaOcupadoNoGoogle(
+    slot.doctor.googleCalendarId,
+    slot.startsAt,
+    slot.endsAt,
+  );
+  if (ocupado !== true) return null;
+
+  logger.info({ slotId }, "horário bloqueado na agenda do Google — agendamento recusado");
+  return "Esse horário acabou de ficar indisponível na agenda do profissional. Escolha outro.";
+}
+
 export async function bookAppointment(
   tenant: ResolvedTenant,
   patientId: string,
@@ -491,6 +527,12 @@ export async function bookAppointment(
   plano?: string,
 ) {
   const tenantId = tenant.id;
+
+  // Conflito no Google Calendar: checado ANTES da transação, de propósito. É uma
+  // chamada de rede, e segurar os locks de uma transação SERIALIZABLE durante
+  // I/O externo travaria os outros agendamentos pelo tempo da resposta do Google.
+  const conflitoExterno = await conflitoNoGoogle(tenantId, slotId);
+  if (conflitoExterno) return { erro: conflitoExterno };
 
   const outcome = await transacaoSerializavel("bookAppointment", async (tx) => {
     const slot = await tx.slot.findFirst({
@@ -723,6 +765,11 @@ export async function rescheduleAppointment(
 
 /** Núcleo da remarcação (sem checar a regra do assistente) — usado pelo agente e pelo painel. */
 async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoSlotId: string) {
+  // Mesma checagem do agendamento, e pelo mesmo motivo: o horário de destino
+  // pode ter sido bloqueado direto no Google. Fora da transação.
+  const conflitoExterno = await conflitoNoGoogle(tenant.id, novoSlotId);
+  if (conflitoExterno) return { erro: conflitoExterno };
+
   const outcome = await transacaoSerializavel("doReschedule", async (tx) => {
     const appt = await tx.appointment.findFirst({
       where: { id: appointmentId, tenantId: tenant.id },

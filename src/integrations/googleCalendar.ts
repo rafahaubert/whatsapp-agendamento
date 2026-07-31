@@ -90,3 +90,66 @@ export async function deleteEvent(calendarId: string, eventId: string): Promise<
   if (!cal || !calendarId || !eventId) return;
   await cal.events.delete({ calendarId, eventId });
 }
+
+/**
+ * Prazo da consulta ao Google. O paciente está esperando no WhatsApp: melhor
+ * seguir sem a checagem do que travar o agendamento numa API lenta.
+ */
+const PRAZO_FREEBUSY_MS = 4000;
+
+/**
+ * Diz se o calendário do dentista já tem compromisso no intervalo.
+ *
+ * `true` ocupado · `false` livre · `null` não deu para saber (Google não
+ * configurado, dentista sem calendário, erro ou timeout).
+ *
+ * Fecha a metade que faltava da integração: ela só escrevia, então um bloqueio
+ * que o dentista criasse direto no Google Calendar era invisível para o agente,
+ * que seguia oferecendo e confirmando aquele horário.
+ *
+ * `freebusy` em vez de `events.list` porque devolve só os intervalos ocupados —
+ * não traz título nem descrição dos compromissos, que costumam ser dados de
+ * outros pacientes.
+ *
+ * O `null` é deliberadamente distinto de `false`: quem chama trata "não sei"
+ * como liberado (o banco continua sendo a fonte da verdade), mas o registro no
+ * log diferencia "estava livre" de "não consegui checar".
+ */
+export async function estaOcupadoNoGoogle(
+  calendarId: string | null | undefined,
+  inicio: Date,
+  fim: Date,
+): Promise<boolean | null> {
+  const cal = client();
+  if (!cal || !calendarId) return null;
+
+  try {
+    const res = await Promise.race([
+      cal.freebusy.query({
+        requestBody: {
+          timeMin: inicio.toISOString(),
+          timeMax: fim.toISOString(),
+          items: [{ id: calendarId }],
+        },
+      }),
+      new Promise<never>((_ok, reject) =>
+        setTimeout(() => reject(new Error("timeout na consulta ao Google")), PRAZO_FREEBUSY_MS),
+      ),
+    ]);
+
+    const agenda = res.data.calendars?.[calendarId];
+    // O Google reporta erro por calendário (ex.: não compartilhado com a conta
+    // de serviço) em vez de falhar a requisição inteira.
+    if (agenda?.errors?.length) {
+      logger.warn(
+        { calendarId, errors: agenda.errors },
+        "Google recusou a consulta de disponibilidade — o calendário está compartilhado?",
+      );
+      return null;
+    }
+    return (agenda?.busy?.length ?? 0) > 0;
+  } catch (err) {
+    logger.warn({ err, calendarId }, "falha ao consultar disponibilidade no Google");
+    return null;
+  }
+}

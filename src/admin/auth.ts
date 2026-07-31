@@ -88,6 +88,23 @@ export interface UsuarioAutenticado {
 }
 
 /**
+ * Confere a senha da chave reserva do ambiente.
+ *
+ * `ADMIN_PASSWORD_HASH` tem precedência: guardar a senha em texto plano expõe
+ * ela no dashboard do provedor, em `fly secrets list`, em dumps de ambiente e em
+ * qualquer lugar onde a config vaze. O hash é scrypt, o mesmo formato usado para
+ * os usuários do banco.
+ *
+ * `ADMIN_PASSWORD` continua aceita para não quebrar quem já está no ar; o aviso
+ * de startup indica a migração.
+ */
+async function senhaReservaConfere(senha: string): Promise<boolean> {
+  if (env.ADMIN_PASSWORD_HASH) return verificarSenha(senha, env.ADMIN_PASSWORD_HASH);
+  if (env.ADMIN_PASSWORD) return safeEqual(senha, env.ADMIN_PASSWORD);
+  return false; // config/env.ts barra este caso no boot
+}
+
+/**
  * Autentica pelo banco (o identificador é o E-MAIL do usuário).
  *
  * As credenciais do ambiente (ADMIN_USER/ADMIN_PASSWORD) continuam valendo como
@@ -124,7 +141,7 @@ export async function autenticar(
     };
   }
 
-  if (safeEqual(identificador, env.ADMIN_USER) && safeEqual(senha, env.ADMIN_PASSWORD)) {
+  if (safeEqual(identificador, env.ADMIN_USER) && (await senhaReservaConfere(senha))) {
     logger.warn({ user: env.ADMIN_USER }, "login pela credencial do ambiente (chave reserva)");
     return { userId: "bootstrap", nome: env.ADMIN_USER, role: Role.SUPER, tenantId: null };
   }

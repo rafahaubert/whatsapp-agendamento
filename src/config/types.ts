@@ -10,6 +10,12 @@
  * Regra de ouro: o que muda entre clínicas é CONFIGURAÇÃO, não código.
  */
 
+/** Ações dos botões de resposta rápida do template de lembrete. */
+export type AcaoBotaoLembrete = "CONFIRMAR" | "REMARCAR" | "CANCELAR";
+
+/** Ordem dos botões documentada em WHATSAPP-TEMPLATES.md — o padrão. */
+export const ORDEM_BOTOES_LEMBRETE: AcaoBotaoLembrete[] = ["CONFIRMAR", "REMARCAR", "CANCELAR"];
+
 // ---------- Horário de um dia ----------
 /**
  * Faixa de atendimento de um dia, com intervalo opcional (almoço).
@@ -82,6 +88,22 @@ export interface TenantConfig {
     templateName: string;
     /** Código do idioma do template (ex.: "pt_BR"). */
     templateLang: string;
+    /**
+     * Ordem em que os botões de resposta rápida aparecem no template APROVADO
+     * na Meta.
+     *
+     * A API da Meta endereça botão por posição, não por rótulo: o payload vai
+     * amarrado ao índice 0, 1, 2. Se a clínica cadastrou os botões em outra
+     * ordem, o payload `CONFIRMAR:` gruda no botão escrito "Cancelar" — e o
+     * paciente que toca em "Cancelar" confirma a consulta.
+     *
+     * Antes essa ordem era uma suposição implícita no código, com um aviso em
+     * prosa na documentação. Declarando aqui, quem cadastrou diferente ajusta a
+     * configuração em vez de descobrir pelo paciente errado.
+     *
+     * Ausente = a ordem documentada em WHATSAPP-TEMPLATES.md.
+     */
+    botoes?: AcaoBotaoLembrete[];
   };
 
   /** Fila de espera: avisa quando um horário é liberado por cancelamento. */

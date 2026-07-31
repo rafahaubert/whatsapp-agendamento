@@ -81,7 +81,8 @@ URL pública: `https://<app>.fly.dev`. Webhook da Meta:
 | `WHATSAPP_APP_SECRET` | Segredo do app (valida a assinatura do webhook) |
 | `WHATSAPP_ACCESS_TOKEN` | Token de envio de mensagens |
 | `WHATSAPP_API_VERSION` | Ex.: `v21.0` |
-| `ADMIN_USER` / `ADMIN_PASSWORD` | Chave reserva do painel `/admin` (os demais acessos são criados em /admin/usuarios e entram pelo **e-mail**) |
+| `ADMIN_USER` + `ADMIN_PASSWORD_HASH` | Chave reserva do painel `/admin` (os demais acessos são criados em /admin/usuarios e entram pelo **e-mail**). Gere o hash com `npm run admin -- hash <senha>` |
+| `ADMIN_PASSWORD` | Alternativa à anterior, com a senha em texto plano. Continua funcionando, mas prefira o hash — ver o aviso abaixo |
 | `SESSION_SECRET` | **Obrigatório em produção.** Segredo aleatório longo para assinar a sessão do painel |
 | `JOBS_TOKEN` | Protege `POST /jobs/run` e `/jobs/reminders`. **Sem ele os jobs respondem 401 a tudo** — necessário para o cron externo (ver [WHATSAPP-TEMPLATES.md](WHATSAPP-TEMPLATES.md)) |
 | `NODE_ENV` | `production` (logs em JSON) |
@@ -97,6 +98,23 @@ URL pública: `https://<app>.fly.dev`. Webhook da Meta:
 > No Render o `render.yaml` já gera o valor (`generateValue: true`). **No Fly.io é
 > preciso definir manualmente** — está no `fly secrets set` do passo 4 acima:
 > `SESSION_SECRET=$(openssl rand -hex 32)`.
+
+> **Senha da chave reserva: prefira o hash.** `ADMIN_PASSWORD` guarda a senha em
+> texto plano, e ela fica legível no dashboard do provedor, em `fly secrets list`
+> e em qualquer dump de ambiente. Gere o hash (scrypt, o mesmo dos usuários do
+> banco) e troque a variável:
+>
+> ```bash
+> npm run admin -- hash 'uma-senha-forte'
+> # → ADMIN_PASSWORD_HASH=<salt>:<hash>
+>
+> fly secrets set 'ADMIN_PASSWORD_HASH=<salt>:<hash>'
+> fly secrets unset ADMIN_PASSWORD
+> ```
+>
+> As duas formas seguem aceitas (defina ao menos uma, senão o boot falha); quando
+> as duas existem, o hash vence. Rodar em produção só com `ADMIN_PASSWORD` gera
+> um aviso no startup.
 
 > **Painel atrás de HTTPS:** em produção, sirva sob HTTPS e considere `cookie.secure`
 > na sessão (com `app.set("trust proxy", 1)` se houver proxy). O `/admin` é para o

@@ -131,7 +131,16 @@ export async function sendWhatsAppList(
  * (ex.: lembrete de consulta) fora da janela de 24h.
  *
  * `bodyParams` preenche as variáveis {{1}}, {{2}}… do corpo, na ordem.
- * `buttonPayloads` define o payload de cada botão de resposta rápida do template.
+ *
+ * `buttonPayloads` é POSICIONAL, e isso é imposição da API da Meta: ela endereça
+ * botão por índice (`index: "0"`), nunca por rótulo. O elemento 0 deste array
+ * vira o payload do PRIMEIRO botão do template aprovado, seja qual for o texto
+ * dele. Se as duas ordens não baterem, o paciente toca em "Cancelar" e o sistema
+ * confirma a consulta.
+ *
+ * Por isso quem chama não deve escrever a ordem à mão: o job de lembretes a
+ * obtém de `ordemDosBotoes()` (src/jobs/reminders.ts), que a lê da configuração
+ * da clínica e valida.
  */
 export async function sendWhatsAppTemplate(
   phoneNumberId: string,

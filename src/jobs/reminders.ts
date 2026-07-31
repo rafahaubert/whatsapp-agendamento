@@ -10,7 +10,7 @@ import { sendWhatsAppTemplate } from "../channels/whatsapp/client.js";
 import { AppointmentStatus } from "../shared/enums.js";
 import { formatDateTime } from "../shared/datetime.js";
 import { logger } from "../shared/logger.js";
-import type { TenantConfig } from "../config/types.js";
+import { ORDEM_BOTOES_LEMBRETE, type AcaoBotaoLembrete, type TenantConfig } from "../config/types.js";
 
 /** Status que ainda merecem lembrete (cancelado/faltou não recebem). */
 const ELEGIVEIS: string[] = [
@@ -22,6 +22,39 @@ const ELEGIVEIS: string[] = [
 /** Janela de envio: só envia lembretes entre 8h e 20h no fuso da clínica. */
 const HORA_INICIO_ENVIO = 8;
 const HORA_FIM_ENVIO = 20;
+
+/**
+ * Ordem em que os payloads são amarrados aos botões do template.
+ *
+ * A API da Meta endereça botão por POSIÇÃO (`index: "0" | "1" | "2"`), não por
+ * rótulo. Se a clínica aprovou o template com os botões em outra ordem, o
+ * payload `CONFIRMAR:` cai no botão escrito "Cancelar" — e quem toca em
+ * "Cancelar" confirma a consulta.
+ *
+ * Uma ordem inválida na configuração (ação repetida, faltando ou desconhecida)
+ * é descartada em favor do padrão: melhor o comportamento documentado do que um
+ * mapeamento pela metade, que é justamente o cenário perigoso.
+ */
+export function ordemDosBotoes(cfg?: {
+  botoes?: AcaoBotaoLembrete[];
+}): AcaoBotaoLembrete[] {
+  const declarada = cfg?.botoes;
+  if (!declarada?.length) return ORDEM_BOTOES_LEMBRETE;
+
+  const valida =
+    declarada.length === ORDEM_BOTOES_LEMBRETE.length &&
+    ORDEM_BOTOES_LEMBRETE.every((acao) => declarada.filter((d) => d === acao).length === 1);
+
+  if (!valida) {
+    logger.error(
+      { declarada, padrao: ORDEM_BOTOES_LEMBRETE },
+      "ordem de botões do lembrete inválida — usando a ordem padrão. " +
+        "Cada ação deve aparecer exatamente uma vez.",
+    );
+    return ORDEM_BOTOES_LEMBRETE;
+  }
+  return declarada;
+}
 
 /** Cache de configuração por tenant (evita reparsear JSON a cada execução). */
 const configCache = new Map<string, { config: TenantConfig; ts: number }>();
@@ -134,11 +167,9 @@ export async function enviarLembretes(agora = new Date()): Promise<{ enviados: n
               appt.doctor.name,
               appt.unit.name,
             ],
-            buttonPayloads: [
-              `CONFIRMAR:${appt.id}`,
-              `REMARCAR:${appt.id}`,
-              `CANCELAR:${appt.id}`,
-            ],
+            // A ordem vem da configuração da clínica: ela precisa espelhar a
+            // ordem dos botões no template aprovado na Meta.
+            buttonPayloads: ordemDosBotoes(cfg).map((acao) => `${acao}:${appt.id}`),
           });
 
           await prisma.appointment.update({

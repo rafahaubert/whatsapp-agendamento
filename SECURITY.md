@@ -17,8 +17,10 @@ for auditar não repetir trabalho e para não confundir "número no `npm audit`"
 | Isolamento entre clínicas | `requireTenant` em todas as rotas `/clinicas/:id/*` |
 | Views | Dados de paciente e de clínica sempre com `<%= %>` (escapado). Nenhum `<%- %>` recebe dado de usuário |
 | Logs | `redact` do pino em segredos (sempre) e dados pessoais (em produção); telefone e identificador de login mascarados na origem (`src/shared/pii.ts`) |
-| Integridade do agendamento | Transações em `SERIALIZABLE` com retry, mais lock otimista na reserva do slot (`updateMany` condicional). Ver `src/domain/transacao.ts` |
+| Integridade do agendamento | Transações em `SERIALIZABLE` com retry, mais lock otimista na reserva do slot (`updateMany` condicional). Ver `src/domain/transacao.ts`. Antes de confirmar, consulta a disponibilidade no Google Calendar do dentista |
 | `/health` | Consulta o banco de verdade; responde 503 se ele estiver inacessível |
+| Encerramento | SIGTERM/SIGINT param de aceitar conexões, processam os lotes de mensagens pendentes e só então saem |
+| Imagem de produção | Multi-stage, sem devDependencies, rodando como usuário sem privilégios |
 
 ## Estado do `npm audit`
 
@@ -71,22 +73,41 @@ do CLI `prisma`, que é devDependency — mover para `dependencies` antes.
 
 - **Instância única.** Agrupamento de mensagens, lock por conversa, contador de
   força bruta e rate limits vivem na memória do processo. Com 2+ instâncias os
-  tetos multiplicam e o lock por conversa deixa de valer.
-- **Webhook é at-most-once.** O wamid é marcado como processado antes do
-  processamento e o ACK 200 sai antes também, então uma mensagem em voo se perde
-  se o processo morrer na janela de agrupamento (8s) — e a Meta não reenvia. Não
-  há graceful shutdown.
-- **`processed_messages` cresce sem limite.** Falta rotina de poda.
-- **`ADMIN_PASSWORD` em texto plano** no ambiente. A comparação é em tempo
-  constante, então não há timing attack; o risco residual é a senha aparecer no
-  dashboard do provedor e em dumps de ambiente. Um `ADMIN_PASSWORD_HASH` seria
-  melhor.
-- **Google Calendar é one-way.** O sistema só escreve. Bloqueio feito direto no
-  Google não é visto pelo agente, que continua oferecendo aquele horário.
-- **Sem CI.** Nada roda `npm test` nem `npm run build` automaticamente, e o
-  `tsconfig` só cobre `src/`, então `test/` e `scripts/` podem quebrar o
-  type-check sem ninguém notar.
-- **Ordem dos botões de template.** O envio amarra payload à posição
-  (`index: String(i)` em `src/channels/whatsapp/client.ts`). Reordenar os botões
-  no painel da Meta troca as ações — "Cancelar" passaria a confirmar. A recepção
-  é segura (usa o payload textual, validado contra uma lista).
+  tetos multiplicam e o lock por conversa deixa de valer. `fly.toml` fixa
+  `min_machines_running = 1`; ao escalar, migrar esse estado para o banco antes.
+- **Recuperação de queda abrupta.** O encerramento por SIGTERM processa os lotes
+  pendentes antes de sair (é o caso do deploy). Uma morte sem SIGTERM — OOM,
+  SIGKILL, queda de máquina — ainda perde o lote que estava na janela de
+  agrupamento: a marca de idempotência é liberada só pelo caminho de erro, que
+  não roda quando o processo morre de uma vez. Fechar isso exigiria persistir a
+  mensagem e retomá-la no boot.
+- **Plano free do Render hiberna**, o que faz a Meta receber timeout no webhook.
+  Ver o comentário no `render.yaml`. É decisão de custo, não de código.
+- **Checagem do Google acontece na confirmação, não na listagem.** O paciente
+  pode ver um horário que o dentista bloqueou no Google e só receber a recusa ao
+  confirmar. Detalhes em `GOOGLE.md`.
+- **Sem `packageManager` fixado.** `engines` declara Node >= 20; o gerenciador
+  de pacotes não está travado.
+
+## Itens já resolvidos
+
+Ficam registrados porque apareceram em auditorias anteriores e a documentação
+antiga ainda pode circular:
+
+- ~~Webhook at-most-once perdia mensagem no deploy~~ → SIGTERM/SIGINT drenam a
+  caixa de entrada (`drenarCaixaDeEntrada`), o `CMD` do Dockerfile usa `exec`
+  para o Node receber o sinal, e `kill_timeout` de 30s no `fly.toml`.
+- ~~Marca de idempotência ficava presa após falha~~ → liberada quando o
+  processamento falha ou quando nada chega ao paciente.
+- ~~`processed_messages` crescia sem limite~~ → poda diária, retenção de 30 dias.
+- ~~`ADMIN_PASSWORD` só em texto plano~~ → `ADMIN_PASSWORD_HASH` (scrypt) com
+  precedência; o texto plano segue aceito para não quebrar deploy existente, com
+  aviso no startup. Gere com `npm run admin -- hash <senha>`.
+- ~~Google Calendar era só escrita~~ → consulta `freebusy` antes de confirmar
+  agendamento e remarcação.
+- ~~Ordem dos botões de template era suposição implícita~~ → declarada em
+  `reminders.botoes` e validada (`ordemDosBotoes`).
+- ~~Sem CI~~ → workflow rodando build, lint, testes de unidade e de integração
+  contra Postgres, mais o build da imagem Docker.
+- ~~devDependencies iam para a imagem de produção~~ → Dockerfile multi-stage com
+  prune, rodando como usuário `node`.

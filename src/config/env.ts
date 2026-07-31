@@ -30,7 +30,13 @@ const schema = z.object({
 
   // Painel de administração
   ADMIN_USER: z.string().min(1).default("admin"),
-  ADMIN_PASSWORD: z.string().min(1),
+  // Senha da chave reserva. Uma das duas formas basta:
+  //   ADMIN_PASSWORD_HASH  (preferida) — scrypt no formato "salt:hash",
+  //                        gerado por `npm run admin -- hash <senha>`
+  //   ADMIN_PASSWORD       — a senha em texto plano
+  // Ver a validação cruzada logo abaixo.
+  ADMIN_PASSWORD: z.string().min(1).optional(),
+  ADMIN_PASSWORD_HASH: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(1).default(SESSION_SECRET_DEV),
 
   // Google Calendar (opcional) — chave JSON da conta de serviço.
@@ -53,6 +59,19 @@ const schema = z.object({
  * Agora o boot falha, do mesmo jeito que falha sem DATABASE_URL.
  */
 const schemaValidado = schema.superRefine((valores, ctx) => {
+  // A chave reserva do painel precisa de UMA das duas formas de senha. Antes
+  // ADMIN_PASSWORD era obrigatória; agora ela é o fallback de quem ainda não
+  // migrou para o hash, então a obrigatoriedade passou para cá.
+  if (!valores.ADMIN_PASSWORD && !valores.ADMIN_PASSWORD_HASH) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ADMIN_PASSWORD_HASH"],
+      message:
+        "defina ADMIN_PASSWORD_HASH (preferido — gere com `npm run admin -- hash <senha>`) " +
+        "ou ADMIN_PASSWORD",
+    });
+  }
+
   if (valores.NODE_ENV !== "production") return;
 
   if (valores.SESSION_SECRET === SESSION_SECRET_DEV) {
