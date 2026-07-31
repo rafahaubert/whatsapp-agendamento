@@ -1,7 +1,10 @@
 node_modules
 dist
 .git
+.github
 .env
-*.db
-*.db-journal
-test-integration.db
+# Não vão para a imagem: o build só precisa de src/, prisma/, views/, public/,
+# config/ e marketing/. (As entradas *.db daqui eram resíduo da época em que o
+# banco era SQLite — o projeto usa PostgreSQL desde então.)
+test
+*.log

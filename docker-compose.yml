@@ -1,5 +1,6 @@
-# Sobe PostgreSQL + o agente. Para produção, troque o provider do
-# prisma/schema.prisma para "postgresql" antes de buildar (ver DEPLOY.md).
+# Sobe PostgreSQL + o agente para desenvolvimento local.
+# (O schema já usa `provider = "postgresql"`; a instrução de trocar o provider
+# que ficava aqui era resíduo da época do SQLite.)
 services:
   db:
     image: postgres:16

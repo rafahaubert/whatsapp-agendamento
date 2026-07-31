@@ -8,6 +8,12 @@
 app = "whatsapp-agent"
 primary_region = "gru" # São Paulo
 
+# Tempo entre o SIGTERM e o SIGKILL. O padrão do Fly é 5s, curto demais: no
+# encerramento o processo ainda precisa processar os lotes de mensagens que
+# estavam na janela de agrupamento, e um turno do Claude leva alguns segundos.
+# O servidor tem prazo próprio de 20s (ver PRAZO_ENCERRAMENTO_MS em src/server.ts).
+kill_timeout = "30s"
+
 [build]
 
 [env]

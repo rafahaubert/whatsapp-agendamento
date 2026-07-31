@@ -10,11 +10,12 @@ import { parseWhatsAppWebhook } from "./parse.js";
 import { sendWhatsAppText, sendWhatsAppButtons, sendWhatsAppList } from "./client.js";
 import { MAX_BOTOES, semOpcoesRepetidas } from "../format.js";
 import { findTenantByPhoneNumberId } from "../../db/tenantRepository.js";
-import { markMessageProcessed } from "../../db/idempotency.js";
+import { markMessageProcessed, unmarkMessageProcessed } from "../../db/idempotency.js";
 import { agruparMensagem, chaveConversa } from "../../core/inbox.js";
 import { logger } from "../../shared/logger.js";
 import { mascararTelefone } from "../../shared/pii.js";
 import { safeEqual } from "../../shared/comparacao.js";
+import { texto } from "../../shared/texto.js";
 import { limiteWebhook } from "../../shared/rateLimit.js";
 import type { MessageHandler, Reply } from "../types.js";
 import type { WhatsAppWebhookBody } from "./types.js";
@@ -22,12 +23,19 @@ import type { WhatsAppWebhookBody } from "./types.js";
 /** Espera padrão antes de responder, quando a clínica não configurou uma. */
 const ESPERA_PADRAO_SEGUNDOS = 8;
 
-/** Envia a resposta do motor, com degradação para texto puro se o formato interativo falhar. */
+/**
+ * Envia a resposta do motor, com degradação para texto puro se o formato
+ * interativo falhar.
+ *
+ * Devolve `false` quando NADA chegou ao paciente (as duas tentativas falharam).
+ * Antes esse caso era engolido em silêncio: a mensagem ficava marcada como
+ * processada, o paciente não recebia nada e não havia como reprocessar.
+ */
 async function enviarResposta(
   numeroClinica: string,
   para: string,
   reply: Reply,
-): Promise<void> {
+): Promise<boolean> {
   try {
     if (reply.opcoes?.length) {
       // Até 3 opções cabem em botões; acima disso, lista interativa.
@@ -45,6 +53,7 @@ async function enviarResposta(
     } else {
       await sendWhatsAppText(numeroClinica, para, reply.texto);
     }
+    return true;
   } catch (err) {
     // Nunca deixar o paciente sem resposta: se o formato interativo falhar,
     // manda o mesmo conteúdo como texto simples.
@@ -52,11 +61,17 @@ async function enviarResposta(
     const lista = (reply.opcoes ?? [])
       .map((o, i) => `${i + 1}. ${o.titulo}${o.descricao ? ` — ${o.descricao}` : ""}`)
       .join("\n");
-    await sendWhatsAppText(
-      numeroClinica,
-      para,
-      lista ? `${reply.texto}\n\n${lista}` : reply.texto,
-    ).catch((e) => logger.error({ err: e }, "falha também no envio de texto"));
+    try {
+      await sendWhatsAppText(
+        numeroClinica,
+        para,
+        lista ? `${reply.texto}\n\n${lista}` : reply.texto,
+      );
+      return true;
+    } catch (e) {
+      logger.error({ err: e, to: mascararTelefone(para) }, "falha também no envio de texto");
+      return false;
+    }
   }
 }
 
@@ -78,7 +93,7 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
       typeof token === "string" &&
       safeEqual(token, env.WHATSAPP_VERIFY_TOKEN)
     ) {
-      res.status(200).send(String(challenge));
+      res.status(200).send(texto(challenge));
       return;
     }
     res.sendStatus(403);
@@ -149,14 +164,30 @@ export function makeWhatsAppRouter(handler: MessageHandler): Router {
           },
           espera,
           async (lote) => {
+            // Libera as marcas de idempotência do lote. Elas são gravadas ANTES
+            // do processamento (é o que serializa as reentregas simultâneas da
+            // Meta), então sem isto uma falha aqui deixava as mensagens marcadas
+            // para sempre: nunca respondidas e nunca reprocessáveis.
+            const liberar = () =>
+              Promise.all(lote.map((m) => unmarkMessageProcessed(m.messageId)));
+
             try {
               const reply = await handler.handle(lote);
-              if (reply) await enviarResposta(tenant.whatsappPhoneNumberId, parsed.from, reply);
+              if (!reply) return;
+
+              const entregue = await enviarResposta(
+                tenant.whatsappPhoneNumberId,
+                parsed.from,
+                reply,
+              );
+              // O motor respondeu, mas nada chegou ao paciente.
+              if (!entregue) await liberar();
             } catch (err) {
               logger.error(
                 { err, to: mascararTelefone(parsed.from) },
                 "falha ao processar o lote de mensagens",
               );
+              await liberar();
             }
           },
         );

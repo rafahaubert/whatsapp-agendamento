@@ -14,6 +14,8 @@ import { logger } from "./shared/logger.js";
 import { safeEqual } from "./shared/comparacao.js";
 import { limiteJobs } from "./shared/rateLimit.js";
 import { prisma } from "./db/client.js";
+import { drenarCaixaDeEntrada, pendenciasAbertas } from "./core/inbox.js";
+import { podarMensagensProcessadas } from "./db/idempotency.js";
 
 const app = express();
 
@@ -171,7 +173,7 @@ if (emProducao && !env.JOBS_TOKEN) {
   );
 }
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   logger.info(
     { port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp", proposta: "/proposta" },
     "servidor no ar",
@@ -194,7 +196,57 @@ app.listen(env.PORT, () => {
     () => {
       renovarAgendas().catch((err) => logger.error({ err }, "falha ao renovar agendas"));
       enviarReativacoes().catch((err) => logger.error({ err }, "falha nas reativações"));
+      podarMensagensProcessadas().catch((err) =>
+        logger.error({ err }, "falha ao podar marcas de idempotência"),
+      );
     },
     24 * 60 * 60 * 1000,
   ).unref();
 });
+
+/**
+ * Encerramento gracioso.
+ *
+ * O agrupamento de mensagens vive em memória e espera alguns segundos antes de
+ * processar (ver src/core/inbox.ts). Sem isto, um deploy no meio dessa janela
+ * matava o lote — e como o wamid já estava marcado como processado, a Meta não
+ * reenviava e a mensagem do paciente sumia sem nenhum registro. Agora paramos de
+ * aceitar conexões, processamos o que está pendente e só então saímos.
+ *
+ * O prazo total é menor que o `kill_timeout` do fly.toml, para o processo sair
+ * por conta própria antes de levar SIGKILL.
+ */
+const PRAZO_ENCERRAMENTO_MS = 20_000;
+let encerrando = false;
+
+async function encerrar(sinal: string): Promise<void> {
+  if (encerrando) return;
+  encerrando = true;
+
+  const pendencias = pendenciasAbertas();
+  logger.info({ sinal, ...pendencias }, "encerrando — parando de aceitar conexões");
+
+  // Para de aceitar novas conexões; as em curso terminam.
+  server.close();
+
+  // Rede de segurança: se algo travar, sai mesmo assim em vez de ficar pendurado.
+  const desistir = setTimeout(() => {
+    logger.warn("prazo de encerramento esgotado — saindo com lotes possivelmente pendentes");
+    process.exit(1);
+  }, PRAZO_ENCERRAMENTO_MS + 3_000);
+  desistir.unref();
+
+  try {
+    await drenarCaixaDeEntrada(PRAZO_ENCERRAMENTO_MS);
+    logger.info(pendenciasAbertas(), "caixa de entrada drenada");
+  } catch (err) {
+    logger.error({ err }, "falha ao drenar a caixa de entrada");
+  }
+
+  await prisma.$disconnect().catch(() => {});
+  logger.info("encerrado");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void encerrar("SIGTERM"));
+process.on("SIGINT", () => void encerrar("SIGINT"));

@@ -1,0 +1,9 @@
+dist
+node_modules
+package-lock.json
+prisma/migrations
+marketing/*.html
+public/**/*.svg
+# As views EJS não são HTML válido para o Prettier (blocos <% %> no meio de
+# atributos); formatá-las quebraria a marcação.
+views

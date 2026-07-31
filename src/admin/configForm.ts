@@ -13,6 +13,7 @@
  * abaixo só reescreve os blocos declarados. O resto vem da config atual.
  */
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
+import { texto, textoAparado } from "../shared/texto.js";
 
 /** Blocos editáveis. O nome vai no `_blocos` do formulário que os contém. */
 export const BLOCOS = [
@@ -36,7 +37,7 @@ function bool(v: unknown): boolean {
 }
 
 function num(v: unknown, padrao: number): number {
-  const n = Number.parseInt(String(v ?? ""), 10);
+  const n = Number.parseInt(texto(v), 10);
   return Number.isFinite(n) ? n : padrao;
 }
 
@@ -52,7 +53,7 @@ const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
  * escreve texto livre — instruções inclusive — dentro do prompt do agente.
  */
 function hora(v: unknown, padrao: string): string {
-  const s = String(v ?? "").trim();
+  const s = textoAparado(v);
   return HORA_RE.test(s) ? s : padrao;
 }
 

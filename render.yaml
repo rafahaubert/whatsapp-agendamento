@@ -7,7 +7,17 @@ services:
     name: whatsapp-agent
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free # sobe grátis; hiberna após ~15 min de inatividade
+    # ATENÇÃO: o plano free hiberna após ~15 min sem tráfego, e acordar leva
+    # dezenas de segundos. A Meta espera resposta rápida no webhook — enquanto o
+    # serviço acorda ela recebe timeout, marca a entrega como falha e, se isso
+    # se repetir, chega a desativar a inscrição do webhook. Some-se a isso o
+    # `setInterval` dos lembretes, que não roda com o serviço dormindo.
+    #
+    # Para uso real, troque por um plano que não hiberne (`starter` ou acima) —
+    # é uma decisão de custo, por isso não vem trocado aqui. Mantendo o free,
+    # configure o cron externo do JOBS_TOKEN (abaixo), que ao menos mantém os
+    # lembretes funcionando e o serviço acordado.
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -31,4 +41,11 @@ services:
       - key: WHATSAPP_ACCESS_TOKEN
         sync: false
       - key: ADMIN_PASSWORD
+        sync: false
+      # Protege POST /jobs/run e /jobs/reminders. É OBRIGATÓRIO no plano free:
+      # o serviço hiberna, o setInterval interno para, e os lembretes passam a
+      # depender de um cron externo chamando /jobs/run com este token. Sem a
+      # variável o endpoint responde 401 a tudo e os lembretes nunca saem.
+      # Ver WHATSAPP-TEMPLATES.md.
+      - key: JOBS_TOKEN
         sync: false

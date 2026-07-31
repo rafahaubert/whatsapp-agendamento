@@ -77,6 +77,42 @@ export function agruparMensagem(
   pendentes.set(chave, { mensagens, timer, processar });
 }
 
+/** Quantos lotes ainda não foram processados (pendentes + em execução). */
+export function pendenciasAbertas(): { emEspera: number; emExecucao: number } {
+  return { emEspera: pendentes.size, emExecucao: filas.size };
+}
+
+/**
+ * Processa AGORA tudo que está esperando e aguarda o que já está rodando.
+ *
+ * Chamado no encerramento (SIGTERM). Sem isto, um deploy no meio da janela de
+ * espera descartava o lote — e como o wamid já fora marcado como processado, a
+ * Meta não reenviava: a mensagem do paciente sumia em silêncio.
+ *
+ * `limiteMs` é a rede de segurança: se um turno travar (chamada ao Claude sem
+ * resposta), o encerramento não fica pendurado além do prazo que o provedor dá
+ * antes do SIGKILL.
+ */
+export async function drenarCaixaDeEntrada(limiteMs = 20_000): Promise<void> {
+  const prazo = Date.now() + limiteMs;
+
+  // Dispara imediatamente os lotes que ainda esperavam o debounce.
+  for (const [chave, p] of [...pendentes.entries()]) {
+    clearTimeout(p.timer);
+    pendentes.delete(chave);
+    void enfileirar(chave, () => p.processar(p.mensagens));
+  }
+
+  // Espera as filas esvaziarem. Um turno pode enfileirar trabalho novo, daí o
+  // laço; o servidor HTTP já está fechado, então nada externo entra mais.
+  while (filas.size > 0 && Date.now() < prazo) {
+    await Promise.race([
+      Promise.allSettled([...filas.values()]),
+      new Promise((r) => setTimeout(r, Math.max(0, prazo - Date.now()))),
+    ]);
+  }
+}
+
 /** Só para testes: descarta lotes pendentes e filas. */
 export function limparCaixaDeEntrada(): void {
   for (const p of pendentes.values()) clearTimeout(p.timer);

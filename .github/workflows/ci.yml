@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Uma execução por branch: um push novo cancela o anterior em vez de enfileirar.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Build, lint e testes
+    runs-on: ubuntu-latest
+
+    services:
+      # Postgres real para os testes de integração. O schema usa recursos de
+      # Postgres (e as transações SERIALIZABLE do agendamento só se comportam
+      # como em produção aqui), então não dá para trocar por SQLite.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: whatsapp
+          POSTGRES_PASSWORD: whatsapp
+          POSTGRES_DB: whatsapp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gerar o Prisma Client
+        run: npx prisma generate
+
+      # O tsconfig cobre só src/, então o build não valida test/ nem scripts/.
+      # O lint cobre esses diretórios e é o que os segura.
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      # `npm run format:check` NÃO roda aqui de propósito. O código foi escrito
+      # antes do Prettier e 39 arquivos divergem do estilo dele; reformatar tudo
+      # de uma vez sujaria o histórico e o `git blame` sem pegar um bug sequer.
+      # O comando existe (`npm run format`) para quando essa reformatação for
+      # feita deliberadamente, num commit só dela — aí é só ligar este passo.
+
+      - name: Testes de unidade
+        run: npm test
+        env:
+          # O validador de ambiente (src/config/env.ts) roda na importação, e os
+          # testes importam módulos que passam por ele. Valores de fachada: nada
+          # aqui toca serviço externo.
+          NODE_ENV: test
+          DATABASE_URL: postgresql://whatsapp:whatsapp@localhost:5432/whatsapp_test
+          WHATSAPP_VERIFY_TOKEN: ci
+          WHATSAPP_APP_SECRET: ci
+          WHATSAPP_ACCESS_TOKEN: ci
+          ADMIN_PASSWORD: ci
+          SESSION_SECRET: ci-nao-usar-em-producao
+
+      - name: Testes de integração
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://whatsapp:whatsapp@localhost:5432/whatsapp_test
+          TEST_DATABASE_URL: postgresql://whatsapp:whatsapp@localhost:5432/whatsapp_test
+          WHATSAPP_VERIFY_TOKEN: ci
+          WHATSAPP_APP_SECRET: ci
+          WHATSAPP_ACCESS_TOKEN: ci
+          ADMIN_PASSWORD: ci
+          SESSION_SECRET: ci-nao-usar-em-producao
+
+  imagem:
+    name: Build da imagem Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # O Dockerfile é multi-stage e roda `prisma generate` e `tsc`: se ele
+      # quebrar, o deploy quebra. Só builda, não publica.
+      - name: Build
+        run: docker build -t whatsapp-agent:ci .

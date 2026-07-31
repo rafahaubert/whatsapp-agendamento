@@ -2,8 +2,10 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   agruparMensagem,
   chaveConversa,
+  drenarCaixaDeEntrada,
   enfileirar,
   limparCaixaDeEntrada,
+  pendenciasAbertas,
 } from "../../src/core/inbox.js";
 import type { IncomingMessage } from "../../src/channels/types.js";
 
@@ -68,6 +70,80 @@ describe("agruparMensagem", () => {
   it("monta a chave por clínica + telefone", () => {
     expect(chaveConversa("t1", "+5551999999999")).toBe("t1:+5551999999999");
     expect(chaveConversa("t1", "+555188888888")).not.toBe(chaveConversa("t2", "+555188888888"));
+  });
+});
+
+describe("drenarCaixaDeEntrada", () => {
+  it("REGRESSÃO: lote na janela de espera é processado no encerramento, não descartado", async () => {
+    const lotes: string[][] = [];
+    const processar = async (m: IncomingMessage[]) => {
+      lotes.push(m.map((x) => x.text ?? ""));
+    };
+
+    // Espera longa: sem o dreno, um deploy aqui perderia a mensagem para sempre
+    // (o wamid já foi marcado como processado e a Meta não reenvia).
+    agruparMensagem("d1", msg("preciso remarcar"), 60_000, processar);
+    expect(lotes).toEqual([]);
+    expect(pendenciasAbertas().emEspera).toBe(1);
+
+    await drenarCaixaDeEntrada();
+
+    expect(lotes).toEqual([["preciso remarcar"]]);
+    expect(pendenciasAbertas()).toEqual({ emEspera: 0, emExecucao: 0 });
+  });
+
+  it("espera terminar o que já está em execução", async () => {
+    const ordem: string[] = [];
+    let liberar!: () => void;
+    const travado = new Promise<void>((r) => {
+      liberar = r;
+    });
+
+    void enfileirar("d2", async () => {
+      ordem.push("inicio");
+      await travado;
+      ordem.push("fim");
+    });
+
+    setTimeout(liberar, 10);
+    await drenarCaixaDeEntrada();
+    expect(ordem).toEqual(["inicio", "fim"]);
+  });
+
+  it("drena várias conversas de uma vez", async () => {
+    const vistos: string[] = [];
+    const processarDe = (nome: string) => async () => {
+      vistos.push(nome);
+    };
+
+    agruparMensagem("d3", msg("a"), 30_000, processarDe("a"));
+    agruparMensagem("d4", msg("b"), 30_000, processarDe("b"));
+    agruparMensagem("d5", msg("c"), 30_000, processarDe("c"));
+
+    await drenarCaixaDeEntrada();
+    expect(vistos.sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("desiste no prazo em vez de pendurar o encerramento", async () => {
+    // Turno que nunca termina (ex.: chamada ao Claude sem resposta).
+    void enfileirar("d6", () => new Promise<void>(() => {}));
+
+    const inicio = Date.now();
+    await drenarCaixaDeEntrada(100);
+    expect(Date.now() - inicio).toBeLessThan(1500);
+  });
+
+  it("uma falha no lote não impede o dreno das outras conversas", async () => {
+    const vistos: string[] = [];
+    agruparMensagem("d7", msg("x"), 30_000, async () => {
+      throw new Error("boom");
+    });
+    agruparMensagem("d8", msg("y"), 30_000, async () => {
+      vistos.push("y");
+    });
+
+    await drenarCaixaDeEntrada();
+    expect(vistos).toEqual(["y"]);
   });
 });
 

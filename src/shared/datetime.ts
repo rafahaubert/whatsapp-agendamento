@@ -1,4 +1,5 @@
 import { DateTime } from "luxon";
+import { textoAparado } from "./texto.js";
 
 /**
  * Data/hora digitada no painel (`<input type="datetime-local">`, que manda
@@ -14,9 +15,9 @@ import { DateTime } from "luxon";
  * luxon usa o offset da própria string quando ele existe.
  */
 export function parseDataHoraLocal(valor: unknown, timeZone: string): Date | null {
-  const texto = String(valor ?? "").trim();
-  if (!texto) return null;
-  const dt = DateTime.fromISO(texto, { zone: timeZone });
+  const bruto = textoAparado(valor);
+  if (!bruto) return null;
+  const dt = DateTime.fromISO(bruto, { zone: timeZone });
   return dt.isValid ? dt.toJSDate() : null;
 }
 

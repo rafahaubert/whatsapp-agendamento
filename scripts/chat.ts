@@ -36,7 +36,7 @@ async function main() {
   console.log("   Digite sua mensagem. Ctrl+C para sair.\n");
 
   const rl = createInterface({ input: stdin, output: stdout });
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     const text = (await rl.question("você: ")).trim();
     if (!text) continue;

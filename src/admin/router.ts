@@ -61,6 +61,7 @@ import { sendWhatsAppText } from "../channels/whatsapp/client.js";
 import { logger } from "../shared/logger.js";
 import { mascararTelefone, mascararIdentificador } from "../shared/pii.js";
 import { limiteLogin } from "../shared/rateLimit.js";
+import { texto } from "../shared/texto.js";
 import { serviceAccountEmail } from "../integrations/googleCalendar.js";
 import { findTenantById } from "../db/tenantRepository.js";
 import {
@@ -71,7 +72,7 @@ import {
 } from "../domain/scheduling.js";
 import { calcularMetricas } from "./metrics.js";
 import { parseConfig, blocosDoCorpo, lerTimezone } from "./configForm.js";
-import type { TenantConfig, DiaAtendimento } from "../config/types.js";
+import type { DiaAtendimento } from "../config/types.js";
 
 // ---------- helpers ----------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -446,7 +447,7 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
 
-    const telefone = req.query.telefone ? String(req.query.telefone) : null;
+    const telefone = texto(req.query.telefone) || null;
     const [conversas, thread] = await Promise.all([
       listInbox(t.id, t.timezone),
       telefone ? listThread(t.id, telefone, t.timezone) : Promise.resolve([]),
@@ -507,12 +508,12 @@ export function makeAdminRouter(): Router {
     const t = await getTenant(req.params.id);
     if (!t) return res.redirect("/admin");
 
-    const pedida = String(req.query.ordem ?? "");
+    const pedida = texto(req.query.ordem);
     const ordem: OrdemPacientes = ORDENS.includes(pedida as OrdemPacientes)
       ? (pedida as OrdemPacientes)
       : "recentes";
-    const q = String(req.query.q ?? "");
-    const pagina = Number.parseInt(String(req.query.pagina ?? "1"), 10) || 1;
+    const q = texto(req.query.q);
+    const pagina = Number.parseInt(texto(req.query.pagina) || "1", 10) || 1;
 
     const resultado = await listPatients(t.id, t.timezone, { q, ordem, pagina });
     res.render("admin/pacientes", { t, q, ordem, ...resultado });
@@ -586,10 +587,10 @@ export function makeAdminRouter(): Router {
   });
 
   router.get("/clinicas/:id/eventos.json", async (req: Request, res: Response) => {
-    const start = String(req.query.start ?? "");
-    const end = String(req.query.end ?? "");
+    const start = texto(req.query.start);
+    const end = texto(req.query.end);
     if (!start || !end) return res.json([]);
-    const doctorId = req.query.doctorId ? String(req.query.doctorId) : undefined;
+    const doctorId = texto(req.query.doctorId) || undefined;
     const eventos = await listAppointmentsRange(req.params.id, start, end, { doctorId });
     res.json(eventos);
   });
