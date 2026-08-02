@@ -25,6 +25,7 @@ export const BLOCOS = [
   "lembrete", // lembrete de consulta
   "fila", // fila de espera
   "reativacao", // reativação de pacientes
+  "followup", // follow-up de conversa abandonada
 ] as const;
 export type Bloco = (typeof BLOCOS)[number];
 
@@ -180,6 +181,14 @@ export function parseConfig(
       months: num(body.recall_months, 6),
       templateName: (body.recall_templateName ?? "").trim(),
       templateLang: (body.recall_templateLang ?? "pt_BR").trim() || "pt_BR",
+    };
+  }
+
+  if (tem("followup")) {
+    cfg.followUp = {
+      enabled: bool(body.followUp_enabled),
+      minutesAfter: num(body.followUp_minutesAfter, 30),
+      message: (body.followUp_message ?? "").trim() || undefined,
     };
   }
 

@@ -4,6 +4,12 @@ import { prisma } from "./client.js";
 /** Dados estruturados que sobrevivem entre mensagens (além do histórico). */
 export interface ConversationState {
   patientId?: string;
+  /**
+   * Quando a conversa fechou um agendamento (ISO). É o que separa "o paciente
+   * sumiu no meio do fluxo" de "a conversa terminou porque deu certo" — sem
+   * isso o follow-up cutucaria quem acabou de agendar.
+   */
+  concluiuEm?: string;
 }
 
 export interface ConversationSnapshot {
@@ -78,6 +84,18 @@ export async function setHandoff(
   });
 }
 
+/**
+ * Consumo de um turno de IA. As faixas de input vêm separadas porque têm preços
+ * diferentes: `input` é o não-cacheado (1x), `cacheCreation` custa 1,25x e
+ * `cacheRead` custa 0,1x. Ver o cálculo em src/admin/metrics.ts.
+ */
+export interface ConsumoTurno {
+  input: number;
+  output: number;
+  cacheCreation?: number;
+  cacheRead?: number;
+}
+
 /** Registra a mensagem no log legível da caixa de entrada. */
 export async function logMessage(
   tenantId: string,
@@ -85,7 +103,7 @@ export async function logMessage(
   direction: "IN" | "OUT",
   text: string,
   sentBy: "BOT" | "HUMAN" | "PATIENT",
-  tokens?: { input: number; output: number },
+  tokens?: ConsumoTurno,
 ): Promise<void> {
   await prisma.message.create({
     data: {
@@ -96,6 +114,8 @@ export async function logMessage(
       sentBy,
       inputTokens: tokens?.input ?? null,
       outputTokens: tokens?.output ?? null,
+      cacheCreationTokens: tokens?.cacheCreation ?? null,
+      cacheReadTokens: tokens?.cacheRead ?? null,
     },
   });
 }

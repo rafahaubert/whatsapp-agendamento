@@ -142,6 +142,31 @@ Cada paciente recebe no máximo **um convite a cada 90 dias**.
 
 ---
 
+## A automação que NÃO precisa de template: follow-up de conversa parada
+
+O paciente começa a agendar e some no meio ("qual seu nome completo?" e silêncio). Meia
+hora depois o sistema manda **uma** mensagem retomando a conversa.
+
+Como a última mensagem dele foi há poucos minutos, isso acontece **dentro da janela de
+24h** — e dentro dela a resposta é texto livre. Sem template, sem aprovação na Meta e
+sem o custo por template dos outros três. É a automação mais barata do sistema.
+
+Regras embutidas, para não virar perseguição:
+
+- **Uma só por conversa**, nunca repete (marca `followUpSentAt`).
+- Nunca cutuca quem **já agendou** — silêncio depois do agendamento é conversa que deu certo.
+- Nunca cutuca conversa em **atendimento humano**: quando a recepção assume, o bot é mudo.
+- Nunca cutuca quando quem falou por último foi o **paciente** — se ele ficou sem resposta,
+  o problema é outro, e um "quer seguir?" por cima seria constrangedor.
+- Respeita a janela de **8h às 20h** no fuso da clínica.
+- Desiste depois de **20h de silêncio**: aí a janela da Meta está acabando e só um template
+  passaria.
+
+Ative em **Follow-up de conversa parada** na página de automações, ajustando os minutos de
+silêncio (padrão: 30) e, se quiser, o texto.
+
+---
+
 ## Observações
 
 - **Janela de 24h**: fora dela, só é possível iniciar conversa por template — vale também

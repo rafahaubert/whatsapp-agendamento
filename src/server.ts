@@ -10,6 +10,7 @@ import { carregarProposta } from "./marketing/proposta.js";
 import { enviarLembretes } from "./jobs/reminders.js";
 import { renovarAgendas } from "./jobs/agenda.js";
 import { enviarReativacoes } from "./jobs/recall.js";
+import { enviarFollowUps } from "./jobs/followUp.js";
 import { logger } from "./shared/logger.js";
 import { safeEqual } from "./shared/comparacao.js";
 import { limiteJobs } from "./shared/rateLimit.js";
@@ -148,12 +149,14 @@ app.post(["/jobs/run", "/jobs/reminders"], limiteJobs, async (req, res) => {
     return res.sendStatus(401);
   }
   try {
-    // Lembretes sempre; a agenda só na rota unificada (mantém /jobs/reminders leve
-    // para quem já configurou o cron antigo).
+    // Lembretes sempre; o resto só na rota unificada (mantém /jobs/reminders
+    // leve para quem já configurou o cron antigo).
     const lembretes = await enviarLembretes();
-    const agenda = req.path === "/jobs/run" ? await renovarAgendas() : null;
-    const reativacoes = req.path === "/jobs/run" ? await enviarReativacoes() : null;
-    res.json({ ok: true, lembretes, agenda, reativacoes });
+    const unificada = req.path === "/jobs/run";
+    const agenda = unificada ? await renovarAgendas() : null;
+    const reativacoes = unificada ? await enviarReativacoes() : null;
+    const followUps = unificada ? await enviarFollowUps() : null;
+    res.json({ ok: true, lembretes, agenda, reativacoes, followUps });
   } catch (err) {
     logger.error({ err }, "falha ao executar os jobs");
     res.status(500).json({ ok: false });
@@ -177,10 +180,13 @@ app.listen(env.PORT, () => {
     "servidor no ar",
   );
 
-  // Verificação periódica dos lembretes (a cada 10 min) enquanto o processo vive.
+  // Verificação periódica dos lembretes e follow-ups (a cada 10 min) enquanto o
+  // processo vive. O ciclo de 10 min é a granularidade real do follow-up: com
+  // `minutesAfter = 30`, a cutucada sai entre 30 e 40 minutos de silêncio.
   setInterval(
     () => {
       enviarLembretes().catch((err) => logger.error({ err }, "falha no ciclo de lembretes"));
+      enviarFollowUps().catch((err) => logger.error({ err }, "falha no ciclo de follow-ups"));
     },
     10 * 60 * 1000,
   ).unref();

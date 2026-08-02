@@ -2,7 +2,7 @@
 <div class="page-head">
   <div>
     <h1>Templates de mensagens</h1>
-    <p class="muted" style="margin:4px 0 0">As três automações que falam com o paciente sozinhas. Cada uma exige um template aprovado na Meta — veja <code>WHATSAPP-TEMPLATES.md</code>.</p>
+    <p class="muted" style="margin:4px 0 0">As automações que falam com o paciente sozinhas. As três primeiras exigem um template aprovado na Meta (veja <code>WHATSAPP-TEMPLATES.md</code>); o follow-up de conversa parada não exige.</p>
   </div>
 </div>
 
@@ -16,7 +16,7 @@
     <button class="btn sm">Salvar templates</button>
   </div>
   <%# Só as automações: salvar aqui não encosta no resto da configuração. %>
-  <input type="hidden" name="_blocos" value="lembrete fila reativacao" />
+  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup" />
   <input type="hidden" name="_voltar" value="/config/templates" />
 
   <h2>Lembrete de consulta (reduz faltas)</h2>
@@ -71,6 +71,22 @@
       <input type="hidden" name="recall_templateLang" value="<%= rc.templateLang || 'pt_BR' %>" />
     <% } %>
   </div>
+
+  <h2>Follow-up de conversa parada (recupera quem sumiu no meio)</h2>
+  <% var fu = cfg.followUp || { enabled: false, minutesAfter: 30, message: "" }; %>
+  <p class="muted">Quando o paciente começa a agendar e some no meio, manda <strong>uma</strong> mensagem
+    retomando a conversa. <strong>Não precisa de template aprovado</strong>: dentro das 24h da última
+    mensagem dele a resposta é livre. Nunca cutuca duas vezes, nem quem já agendou, nem quem está
+    em atendimento humano.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="followUp_enabled" <%= fu.enabled ? "checked" : "" %> /> Ativar follow-up</label>
+  </div>
+  <div class="grid3">
+    <label>Minutos de silêncio<input type="number" name="followUp_minutesAfter" value="<%= fu.minutesAfter || 30 %>" /></label>
+  </div>
+  <label style="display:block;margin-top:8px">Mensagem (vazio = padrão)
+    <input name="followUp_message" value="<%= fu.message || '' %>" placeholder="Oi! Vi que nossa conversa parou por aqui 🙂 Quer que eu siga com o seu agendamento?" />
+  </label>
 
   <div style="margin-top:14px"><button class="btn">Salvar templates</button></div>
 </form>
