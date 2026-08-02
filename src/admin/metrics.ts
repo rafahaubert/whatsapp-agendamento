@@ -15,6 +15,53 @@ const PRECO_POR_MTOK: Record<string, { entrada: number; saida: number }> = {
 };
 
 /**
+ * Multiplicadores do prompt caching sobre o preço de ENTRADA.
+ * Gravar no cache custa mais que input normal; ler custa quase nada. Ignorar
+ * isso e cobrar tudo a 1x mostraria uma economia que não existe (ou esconderia
+ * o custo extra da escrita).
+ */
+const MULT_ESCRITA_CACHE = 1.25;
+const MULT_LEITURA_CACHE = 0.1;
+
+/** Consumo de um período, nas quatro faixas que a API cobra separado. */
+export interface ConsumoTokens {
+  entrada: number;
+  saida: number;
+  cacheEscrita: number;
+  cacheLeitura: number;
+}
+
+/**
+ * Regra pura (testável): quanto custou o consumo e quanto o cache poupou.
+ *
+ * Fica separada porque é onde o erro passa despercebido: cobrar tudo a 1x
+ * mostraria uma economia inexistente (a escrita de cache custa MAIS que input
+ * normal) e esconderia o custo real por clínica.
+ */
+export function calcularCustoUSD(
+  consumo: ConsumoTokens,
+  modelo: string,
+): { custoUSD: number; economiaCacheUSD: number } {
+  const preco = PRECO_POR_MTOK[modelo] ?? PRECO_POR_MTOK["claude-haiku-4-5"];
+  const porMtok = (tokens: number, precoMtok: number) => (tokens / 1_000_000) * precoMtok;
+
+  const custoUSD =
+    porMtok(consumo.entrada, preco.entrada) +
+    porMtok(consumo.cacheEscrita, preco.entrada * MULT_ESCRITA_CACHE) +
+    porMtok(consumo.cacheLeitura, preco.entrada * MULT_LEITURA_CACHE) +
+    porMtok(consumo.saida, preco.saida);
+
+  // O que os tokens LIDOS do cache teriam custado a preço cheio, menos o que
+  // custaram de fato. A escrita não entra: ela é o investimento, não a economia.
+  const economiaCacheUSD = porMtok(
+    consumo.cacheLeitura,
+    preco.entrada * (1 - MULT_LEITURA_CACHE),
+  );
+
+  return { custoUSD, economiaCacheUSD };
+}
+
+/**
  * A mensagem chegou fora do horário de funcionamento? (regra pura, testável)
  * É o argumento de venda: "X% dos pacientes escreveram quando a clínica estava
  * fechada — e todos foram atendidos".
@@ -54,7 +101,11 @@ export interface Metricas {
   // Só para o operador da plataforma:
   tokensEntrada: number;
   tokensSaida: number;
+  tokensCacheEscrita: number;
+  tokensCacheLeitura: number;
   custoEstimadoUSD: number;
+  /** Quanto o prompt caching poupou no período (US$). 0 = cache não pegou. */
+  economiaCacheUSD: number;
 }
 
 export async function calcularMetricas(
@@ -85,7 +136,12 @@ export async function calcularMetricas(
     prisma.conversation.count({ where: { tenantId, lastMessageAt: { gte: desde } } }),
     prisma.message.aggregate({
       where: { tenantId, createdAt: { gte: desde } },
-      _sum: { inputTokens: true, outputTokens: true },
+      _sum: {
+        inputTokens: true,
+        outputTokens: true,
+        cacheCreationTokens: true,
+        cacheReadTokens: true,
+      },
     }),
   ]);
 
@@ -103,9 +159,20 @@ export async function calcularMetricas(
 
   const lembretesConfirmados = lembretes.filter((a) => a.confirmedAt !== null).length;
 
-  const preco = PRECO_POR_MTOK[config.ai.model] ?? PRECO_POR_MTOK["claude-haiku-4-5"];
   const tokensEntrada = consumo._sum.inputTokens ?? 0;
   const tokensSaida = consumo._sum.outputTokens ?? 0;
+  const tokensCacheEscrita = consumo._sum.cacheCreationTokens ?? 0;
+  const tokensCacheLeitura = consumo._sum.cacheReadTokens ?? 0;
+
+  const { custoUSD, economiaCacheUSD } = calcularCustoUSD(
+    {
+      entrada: tokensEntrada,
+      saida: tokensSaida,
+      cacheEscrita: tokensCacheEscrita,
+      cacheLeitura: tokensCacheLeitura,
+    },
+    config.ai.model,
+  );
 
   return {
     dias,
@@ -125,7 +192,9 @@ export async function calcularMetricas(
     conversas,
     tokensEntrada,
     tokensSaida,
-    custoEstimadoUSD:
-      (tokensEntrada / 1_000_000) * preco.entrada + (tokensSaida / 1_000_000) * preco.saida,
+    tokensCacheEscrita,
+    tokensCacheLeitura,
+    custoEstimadoUSD: custoUSD,
+    economiaCacheUSD,
   };
 }

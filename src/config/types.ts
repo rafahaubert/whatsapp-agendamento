@@ -99,6 +99,21 @@ export interface TenantConfig {
     templateName: string;
     templateLang: string;
   };
+
+  /**
+   * Follow-up de conversa abandonada: cutuca UMA vez quem parou no meio do
+   * fluxo (ex.: sumiu depois de "qual seu nome?").
+   *
+   * Não precisa de template aprovado: dentro da janela de 24h da Meta a
+   * resposta é mensagem livre. Por isso é a automação mais barata das quatro.
+   */
+  followUp?: {
+    enabled: boolean;
+    /** Minutos de silêncio antes de cutucar (padrão: 30). */
+    minutesAfter: number;
+    /** Texto da cutucada. Vazio = usa o padrão do job. */
+    message?: string;
+  };
 }
 
 // ---------- Catálogo (seed) ----------

@@ -257,7 +257,7 @@ describe("consumo de tokens", () => {
     await conversationEngine.handle([msg("oi")]);
 
     const saida = logMessage.mock.calls.find((c) => c[2] === "OUT");
-    expect(saida?.[5]).toEqual({ input: 100, output: 20 });
+    expect(saida?.[5]).toEqual({ input: 100, output: 20, cacheCreation: 0, cacheRead: 0 });
   });
 
   it("soma o consumo de todas as idas ao modelo no turno", async () => {
@@ -273,7 +273,7 @@ describe("consumo de tokens", () => {
     await conversationEngine.handle([msg("o que vocês atendem?")]);
 
     const saida = logMessage.mock.calls.find((c) => c[2] === "OUT");
-    expect(saida?.[5]).toEqual({ input: 800, output: 100 });
+    expect(saida?.[5]).toEqual({ input: 800, output: 100, cacheCreation: 0, cacheRead: 0 });
   });
 
   it("registra o consumo mesmo quando o turno falha", async () => {
@@ -283,7 +283,57 @@ describe("consumo de tokens", () => {
 
     expect(reply?.texto).toBe("Não entendi.");
     const saida = logMessage.mock.calls.find((c) => c[2] === "OUT");
-    expect(saida?.[5]).toEqual({ input: 0, output: 0 });
+    expect(saida?.[5]).toEqual({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
+  });
+
+  // As faixas de cache têm preços diferentes do input normal (1,25x na escrita,
+  // 0,1x na leitura). Se elas se perderem aqui, o painel calcula um custo errado.
+  it("separa escrita e leitura de cache do input normal", async () => {
+    criarMensagem
+      .mockResolvedValueOnce({
+        content: [{ type: "tool_use", id: "tu1", name: "listar_especialidades", input: {} }],
+        stop_reason: "tool_use",
+        // Primeira ida ao modelo: grava o prefixo no cache.
+        usage: {
+          input_tokens: 40,
+          output_tokens: 10,
+          cache_creation_input_tokens: 3500,
+          cache_read_input_tokens: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text", text: "Temos várias opções." }],
+        stop_reason: "end_turn",
+        // Segunda: lê o mesmo prefixo, a 10% do preço.
+        usage: {
+          input_tokens: 60,
+          output_tokens: 25,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 3500,
+        },
+      });
+    executarFerramenta.mockResolvedValue([]);
+
+    await conversationEngine.handle([msg("o que vocês atendem?")]);
+
+    const saida = logMessage.mock.calls.find((c) => c[2] === "OUT");
+    expect(saida?.[5]).toEqual({
+      input: 100,
+      output: 35,
+      cacheCreation: 3500,
+      cacheRead: 3500,
+    });
+  });
+
+  it("manda o system como bloco cacheável", async () => {
+    await conversationEngine.handle([msg("oi")]);
+
+    const chamada = criarMensagem.mock.calls[0][0] as {
+      system: { type: string; text: string; cache_control?: { type: string } }[];
+    };
+    expect(chamada.system).toEqual([
+      { type: "text", text: "system de teste", cache_control: { type: "ephemeral" } },
+    ]);
   });
 });
 

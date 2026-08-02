@@ -387,20 +387,30 @@ export const conversationEngine: MessageHandler = {
     /** A consulta saiu neste turno? Depois disso não há mais o que confirmar. */
     let concluiu = false;
     // Consumo do turno inteiro (várias idas ao modelo) — base de custo por clínica.
-    const consumo = { input: 0, output: 0 };
+    // As três faixas de input têm PREÇOS diferentes (1x, 1,25x na escrita do
+    // cache, 0,1x na leitura), por isso são contadas separadas: somá-las daria
+    // um custo errado no painel.
+    const consumo = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
 
     try {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
         const response = await anthropic.messages.create({
           model,
           max_tokens: 1024,
-          system,
+          // O breakpoint de cache no `system` cobre TUDO que vem antes dele na
+          // ordem do prefixo (tools → system → messages), ou seja: ferramentas
+          // e prompt juntos, ~3,5k tokens. Como este laço vai ao modelo até
+          // MAX_TURNS vezes com o mesmo prefixo, o cache já se paga DENTRO de
+          // uma única mensagem do paciente — não só entre mensagens.
+          system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
           tools,
           messages,
         });
         messages.push({ role: "assistant", content: response.content });
         consumo.input += response.usage?.input_tokens ?? 0;
         consumo.output += response.usage?.output_tokens ?? 0;
+        consumo.cacheCreation += response.usage?.cache_creation_input_tokens ?? 0;
+        consumo.cacheRead += response.usage?.cache_read_input_tokens ?? 0;
 
         if (response.stop_reason === "tool_use") {
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
@@ -466,7 +476,13 @@ export const conversationEngine: MessageHandler = {
       await setHandoff(tenant.id, from, true);
     }
 
-    await saveConversation(tenant.id, from, messages, { patientId: ctx.patientId });
+    // `concluiuEm` sobrevive ao turno: é por ele que o follow-up sabe que esta
+    // conversa não foi abandonada, terminou em agendamento. Uma vez marcado,
+    // não se apaga — remarcar depois não torna a conversa "abandonada".
+    await saveConversation(tenant.id, from, messages, {
+      patientId: ctx.patientId,
+      concluiuEm: concluiu ? new Date().toISOString() : conversa.state.concluiuEm,
+    });
 
     // Consumo do turno vai junto da resposta — é a base de custo por clínica.
     await logMessage(tenant.id, from, "OUT", replyText, "BOT", consumo);

@@ -10,7 +10,7 @@ import { sendWhatsAppTemplate } from "../channels/whatsapp/client.js";
 import { AppointmentStatus } from "../shared/enums.js";
 import { formatDateTime } from "../shared/datetime.js";
 import { logger } from "../shared/logger.js";
-import type { TenantConfig } from "../config/types.js";
+import { dentroDaJanelaDeEnvio, getTenantConfig } from "./janela.js";
 
 /** Status que ainda merecem lembrete (cancelado/faltou não recebem). */
 const ELEGIVEIS: string[] = [
@@ -19,25 +19,29 @@ const ELEGIVEIS: string[] = [
   AppointmentStatus.RESCHEDULED,
 ];
 
-/** Janela de envio: só envia lembretes entre 8h e 20h no fuso da clínica. */
-const HORA_INICIO_ENVIO = 8;
-const HORA_FIM_ENVIO = 20;
-
-/** Cache de configuração por tenant (evita reparsear JSON a cada execução). */
-const configCache = new Map<string, { config: TenantConfig; ts: number }>();
-const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+/**
+ * Tentativas de envio antes de desistir de um lembrete.
+ *
+ * Sem este corte o agendamento cujo envio falha nunca grava `reminderSentAt` e
+ * volta à fila a cada ciclo do cron — para sempre. Com um template rejeitado
+ * pela Meta isso vira chamada infinita à Graph API, gastando quota e enchendo o
+ * log, sem que ninguém seja avisado.
+ */
+export const MAX_TENTATIVAS = 3;
 
 export interface AgendamentoLembrete {
   id: string;
   status: string;
   reminderSentAt: Date | null;
   startsAt: Date;
+  /** Envios que já falharam para este agendamento. */
+  reminderRetryCount: number;
 }
 
 /**
  * Regra pura (testável): quais agendamentos devem receber lembrete agora.
- * Elegível = status ativo, ainda sem lembrete e começando dentro da janela
- * [agora, agora + hoursBefore].
+ * Elegível = status ativo, ainda sem lembrete, com tentativas de sobra e
+ * começando dentro da janela [agora, agora + hoursBefore].
  */
 export function selecionarParaLembrete<T extends AgendamentoLembrete>(
   agendamentos: T[],
@@ -48,35 +52,11 @@ export function selecionarParaLembrete<T extends AgendamentoLembrete>(
   return agendamentos.filter(
     (a) =>
       a.reminderSentAt == null &&
+      a.reminderRetryCount < MAX_TENTATIVAS &&
       ELEGIVEIS.includes(a.status) &&
       a.startsAt > agora &&
       a.startsAt <= limite,
   );
-}
-
-/** Verifica se o horário atual está dentro da janela de envio da clínica. */
-function dentroDaJanelaDeEnvio(timezone: string, agora: Date): boolean {
-  const hora = parseInt(
-    agora.toLocaleString("pt-BR", { timeZone: timezone, hour: "numeric", hour12: false }),
-    10,
-  );
-  return hora >= HORA_INICIO_ENVIO && hora < HORA_FIM_ENVIO;
-}
-
-/** Obtém config do tenant com cache em memória. */
-function getTenantConfig(tenant: { id: string; config: string }): TenantConfig | null {
-  const cached = configCache.get(tenant.id);
-  const now = Date.now();
-  if (cached && now - cached.ts < CONFIG_CACHE_TTL_MS) {
-    return cached.config;
-  }
-  try {
-    const parsed = JSON.parse(tenant.config) as TenantConfig;
-    configCache.set(tenant.id, { config: parsed, ts: now });
-    return parsed;
-  } catch {
-    return null;
-  }
 }
 
 /** Executa os lembretes de todas as clínicas com o recurso ligado. */
@@ -111,9 +91,9 @@ export async function enviarLembretes(agora = new Date()): Promise<{ enviados: n
           reminderSentAt: null,
           status: { in: ELEGIVEIS },
           slot: { startsAt: { gt: agora, lte: limite } },
-          // Só tenta enviar lembretes que falharam até 3 vezes.
-          // NOTA: adicione `reminderRetryCount Int @default(0)` ao schema do Appointment.
-          // reminderRetryCount: { lt: 3 },
+          // Quem já esgotou as tentativas sai da fila — sem isto o envio que
+          // falha volta a cada ciclo do cron, indefinidamente.
+          reminderRetryCount: { lt: MAX_TENTATIVAS },
         },
         include: { patient: true, doctor: true, unit: true, specialty: true, slot: true },
         take: pageSize,
@@ -145,30 +125,44 @@ export async function enviarLembretes(agora = new Date()): Promise<{ enviados: n
             where: { id: appt.id },
             data: {
               reminderSentAt: new Date(),
-              // Limpar contador de retry no sucesso:
-              // reminderRetryCount: 0,
-              // reminderLastError: null,
+              reminderRetryCount: 0,
+              reminderLastError: null,
             },
           });
           enviados++;
         } catch (err) {
           falhas++;
-          logger.error({ err, appointmentId: appt.id }, "falha ao enviar lembrete");
+          const tentativas = appt.reminderRetryCount + 1;
+          logger.error(
+            { err, appointmentId: appt.id, tentativas },
+            "falha ao enviar lembrete",
+          );
 
-          // Incrementar retry e registrar erro:
-          // NOTA: requer campos `reminderRetryCount` e `reminderLastError` no schema.
-          // await prisma.appointment.update({
-          //   where: { id: appt.id },
-          //   data: {
-          //     reminderRetryCount: { increment: 1 },
-          //     reminderLastError: String(err),
-          //   },
-          // });
+          // A tentativa gasta é registrada ANTES de qualquer outra coisa: é ela
+          // que tira o agendamento da fila quando o erro é permanente.
+          await prisma.appointment
+            .update({
+              where: { id: appt.id },
+              data: {
+                reminderRetryCount: { increment: 1 },
+                // O erro da Meta traz o motivo (template rejeitado, número
+                // inválido); cortado para não estourar a coluna com um HTML.
+                reminderLastError: String(err).slice(0, 500),
+              },
+            })
+            .catch((e) =>
+              logger.error({ err: e, appointmentId: appt.id }, "falha ao registrar a tentativa"),
+            );
 
-          // Alertar admin após 2 falhas consecutivas:
-          // if ((appt as any).reminderRetryCount >= 2) {
-          //   await notificarAdmin(tenant.id, `Falha persistente no lembrete do paciente ${appt.patient.name}`);
-          // }
+          if (tentativas >= MAX_TENTATIVAS) {
+            // Erro sistêmico (template rejeitado, token vencido) atinge a clínica
+            // inteira, não um paciente. Fica em WARN próprio para dar gancho ao
+            // alerta no painel, que ainda não existe.
+            logger.warn(
+              { tenant: tenant.slug, appointmentId: appt.id, tentativas },
+              "lembrete desistido após esgotar as tentativas",
+            );
+          }
         }
       }
 

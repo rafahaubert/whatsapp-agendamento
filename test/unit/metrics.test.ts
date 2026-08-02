@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foraDoHorario } from "../../src/admin/metrics.js";
+import { foraDoHorario, calcularCustoUSD } from "../../src/admin/metrics.js";
 
 const TZ = "America/Sao_Paulo";
 const dias = {
@@ -45,5 +45,43 @@ describe("foraDoHorario", () => {
     expect(foraDoHorario(new Date("2026-07-27T23:00:00Z"), TZ, dias)).toBe(true);
     // 12:00 UTC = 09:00 em São Paulo → dentro
     expect(foraDoHorario(new Date("2026-07-27T12:00:00Z"), TZ, dias)).toBe(false);
+  });
+});
+
+describe("calcularCustoUSD", () => {
+  // Haiku: US$ 1/Mtok de entrada, US$ 5/Mtok de saída.
+  const zerado = { entrada: 0, saida: 0, cacheEscrita: 0, cacheLeitura: 0 };
+
+  it("cobra entrada e saída pelo preço do modelo", () => {
+    const r = calcularCustoUSD(
+      { ...zerado, entrada: 1_000_000, saida: 1_000_000 },
+      "claude-haiku-4-5",
+    );
+    expect(r.custoUSD).toBeCloseTo(6, 6);
+    expect(r.economiaCacheUSD).toBe(0);
+  });
+
+  // O ponto que mais erra: escrever no cache custa MAIS que input normal.
+  it("cobra a escrita de cache a 1,25x", () => {
+    const r = calcularCustoUSD({ ...zerado, cacheEscrita: 1_000_000 }, "claude-haiku-4-5");
+    expect(r.custoUSD).toBeCloseTo(1.25, 6);
+    // Escrita não é economia — é o investimento que a torna possível.
+    expect(r.economiaCacheUSD).toBe(0);
+  });
+
+  it("cobra a leitura de cache a 0,1x e credita a economia", () => {
+    const r = calcularCustoUSD({ ...zerado, cacheLeitura: 1_000_000 }, "claude-haiku-4-5");
+    expect(r.custoUSD).toBeCloseTo(0.1, 6);
+    expect(r.economiaCacheUSD).toBeCloseTo(0.9, 6);
+  });
+
+  it("usa o preço do modelo caro quando é ele que está configurado", () => {
+    const r = calcularCustoUSD({ ...zerado, entrada: 1_000_000 }, "claude-sonnet-5");
+    expect(r.custoUSD).toBeCloseTo(3, 6);
+  });
+
+  it("cai no preço do Haiku quando o modelo é desconhecido", () => {
+    const r = calcularCustoUSD({ ...zerado, entrada: 1_000_000 }, "modelo-que-nao-existe");
+    expect(r.custoUSD).toBeCloseTo(1, 6);
   });
 });
