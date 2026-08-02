@@ -253,6 +253,11 @@ model Appointment {
   googleEventId  String? // ID do evento no Google Calendar (para atualizar/remover)
   reminderSentAt DateTime? // quando o lembrete foi enviado (evita reenvio)
   confirmedAt    DateTime? // quando o paciente confirmou presença
+  // Falha no envio não grava `reminderSentAt`, então sem um contador o mesmo
+  // lembrete voltava a cada ciclo do cron para sempre (template rejeitado pela
+  // Meta = chamadas infinitas). Depois de MAX_TENTATIVAS o candidato sai da fila.
+  reminderRetryCount Int     @default(0)
+  reminderLastError  String? // último erro de envio, para diagnóstico no painel
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -371,6 +376,7 @@ model Conversation {
   humanHandoff  Boolean   @default(false) // true = atendimento humano (bot silencia)
   handoffAt     DateTime?
   lastMessageAt DateTime  @default(now())
+  followUpSentAt DateTime? // cutucada enviada em conversa abandonada (só uma, nunca repete)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -394,8 +400,14 @@ model Message {
   sentBy    String   @default("BOT") // BOT | HUMAN | PATIENT
   text      String
   // Consumo do turno de IA (só nas respostas do bot) — base de custo por clínica.
-  inputTokens  Int?
-  outputTokens Int?
+  // Com prompt caching ligado a API separa o input em três faixas de PREÇO
+  // diferente: `inputTokens` é só o não-cacheado (1x), escrita de cache custa
+  // 1,25x e leitura 0,1x. Somar tudo em `inputTokens` faria o painel reportar
+  // uma economia que não existe — por isso as três colunas.
+  inputTokens         Int?
+  outputTokens        Int?
+  cacheCreationTokens Int?
+  cacheReadTokens     Int?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
