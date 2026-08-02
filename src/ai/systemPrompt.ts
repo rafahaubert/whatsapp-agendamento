@@ -72,11 +72,15 @@ function passoIdentificacao(paciente: PacienteDaConversa): string {
  * por cliente (persona, textos, regras de agendamento) entra aqui — o mesmo
  * código serve qualquer clínica.
  *
- * NOTA DE PERFORMANCE: a data/hora NÃO entra mais neste prompt. Ela é passada
- * como uma mensagem user no engine.ts, para o prompt ser byte a byte igual
- * entre as mensagens — pré-requisito do prompt caching da Anthropic. O caching
- * em si ainda NÃO está ligado: falta o `cache_control` na chamada (ver
- * engine.ts) e o SDK fixado (0.30.1) só o expõe na API beta.
+ * NOTA DE PERFORMANCE: a data/hora NÃO entra neste prompt. Ela é passada como
+ * uma mensagem user no engine.ts, para o prompt ser byte a byte igual entre as
+ * mensagens — pré-requisito do prompt caching, que está ligado (o
+ * `cache_control` vai no `system` da chamada, em engine.ts).
+ *
+ * Consequência prática: qualquer coisa que varie a cada mensagem — hora, id,
+ * contador — invalida o cache do prefixo inteiro se entrar aqui. O que varia
+ * por CONVERSA (paciente identificado, períodos da agenda) pode ficar: muda de
+ * conversa em conversa, mas é estável dentro de uma.
  */
 export function buildSystemPrompt(
   tenant: ResolvedTenant,

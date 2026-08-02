@@ -190,6 +190,13 @@
         <span class="val sm">US$ <%= m.custoEstimadoUSD.toFixed(2) %></span>
         <span class="sub">modelo <code><%= t.parsedConfig.ai.model %></code></span>
       </div>
+      <%# O prefixo (ferramentas + prompt) é reenviado a cada ida ao modelo, e
+          são várias por mensagem do paciente. O cache cobra 10% na releitura. %>
+      <div class="kpi" style="box-shadow:none;background:var(--card-2)">
+        <span class="rot">Economia com cache</span>
+        <span class="val sm">US$ <%= m.economiaCacheUSD.toFixed(2) %></span>
+        <span class="sub"><%= num(m.tokensCacheLeitura) %> tokens lidos do cache</span>
+      </div>
     </div>
     <p class="muted" style="margin-bottom:0">
       Estimativa com base nos preços por milhão de tokens do modelo configurado —
