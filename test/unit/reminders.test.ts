@@ -1,11 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { selecionarParaLembrete, type AgendamentoLembrete } from "../../src/jobs/reminders.js";
+import {
+  selecionarParaLembrete,
+  MAX_TENTATIVAS,
+  type AgendamentoLembrete,
+} from "../../src/jobs/reminders.js";
 
 const agora = new Date("2026-07-27T10:00:00.000Z");
 const daqui = (horas: number) => new Date(agora.getTime() + horas * 3_600_000);
 
 function ag(over: Partial<AgendamentoLembrete> & { id: string }): AgendamentoLembrete {
-  return { status: "SCHEDULED", reminderSentAt: null, startsAt: daqui(5), ...over };
+  return {
+    status: "SCHEDULED",
+    reminderSentAt: null,
+    startsAt: daqui(5),
+    reminderRetryCount: 0,
+    ...over,
+  };
 }
 
 describe("selecionarParaLembrete", () => {
@@ -36,5 +46,17 @@ describe("selecionarParaLembrete", () => {
       ag({ id: "confirmado", status: "CONFIRMED" }),
     ];
     expect(selecionarParaLembrete(lista, agora, 24).map((a) => a.id)).toEqual(["confirmado"]);
+  });
+
+  // Sem este corte o envio que falha nunca grava `reminderSentAt` e volta à fila
+  // a cada ciclo do cron, para sempre.
+  it("desiste de quem já esgotou as tentativas", () => {
+    const lista = [ag({ id: "esgotado", reminderRetryCount: MAX_TENTATIVAS })];
+    expect(selecionarParaLembrete(lista, agora, 24)).toHaveLength(0);
+  });
+
+  it("ainda tenta quem falhou menos que o limite", () => {
+    const lista = [ag({ id: "penultima", reminderRetryCount: MAX_TENTATIVAS - 1 })];
+    expect(selecionarParaLembrete(lista, agora, 24).map((a) => a.id)).toEqual(["penultima"]);
   });
 });
