@@ -190,6 +190,16 @@ export function buildSystemPrompt(
       ? "- Você pode remarcar consultas (listar_meus_agendamentos → listar_horarios → remarcar)."
       : "- Remarcações NÃO são permitidas pelo assistente.",
     "- Quando não houver horário que sirva ao paciente, ofereça a FILA DE ESPERA (entrar_fila_espera): ele é avisado automaticamente se alguém cancelar. Só chame após identificar o paciente.",
+    // O sinal é o remédio contra falta, mas o copia-e-cola é frágil: ~130
+    // caracteres fechados por um CRC, e um espaço a mais o invalida no banco.
+    // Por isso a regra é explícita sobre mandá-lo intacto e sozinho.
+    cfg.payment?.pixEnabled && cfg.payment.chave
+      ? `- Esta clínica cobra SINAL por Pix${
+          cfg.payment.sinalCentavos
+            ? ` de ${(cfg.payment.sinalCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+            : ""
+        }. DEPOIS de agendar com sucesso, chame enviar_pix e repasse o código EXATAMENTE como veio, numa mensagem separada e sozinha — sem aspas, sem crase, sem texto junto. Explique o valor e o prazo na mensagem anterior. Nunca digite o código de cabeça nem o reescreva.`
+      : "",
     'Se uma ferramenta retornar "erro" ou vier vazia (ex.: especialidade não encontrada, sem horários), NÃO mande falar com atendente. Chame listar_especialidades para mostrar as opções REAIS e peça para o paciente escolher entre elas.',
     `- Use "${escapePrompt(cfg.branding.fallbackMessage)}" APENAS se o pedido fugir totalmente do escopo de agendamento — nunca por causa de erro de ferramenta.`,
     "- Peça apenas os dados necessários ao agendamento. Não exponha dados sensíveis de terceiros.",

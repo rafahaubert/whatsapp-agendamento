@@ -118,6 +118,30 @@ export interface TenantConfig {
     templateLang: string;
   };
 
+  /**
+   * Sinal por Pix — o único remédio de verdade contra falta: quem pagou aparece.
+   *
+   * O agente manda o copia-e-cola pronto (gerado localmente, sem gateway), o
+   * paciente cola no banco e o valor já vem preenchido. A BAIXA É MANUAL: o
+   * sistema não confirma o pagamento, só facilita fazê-lo. Integrar um gateway
+   * (Mercado Pago, Asaas) automatizaria a confirmação — é decisão de fornecedor,
+   * não detalhe de implementação.
+   */
+  payment?: {
+    pixEnabled: boolean;
+    /** A chave, como cadastrada no banco. */
+    chave: string;
+    tipoChave: "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
+    /** Nome do beneficiário no comprovante (sem acento, até 25 caracteres). */
+    beneficiario: string;
+    /** Cidade do beneficiário (até 15 caracteres). */
+    cidade: string;
+    /** Valor do sinal em CENTAVOS. 0 ou vazio = o paciente digita o valor. */
+    sinalCentavos?: number;
+    /** Texto que acompanha o Pix (prazo, o que fazer com o comprovante…). */
+    instrucoes?: string;
+  };
+
   /** Fila de espera: avisa quando um horário é liberado por cancelamento. */
   waitlist?: {
     enabled: boolean;

@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { foraDoHorario, calcularCustoUSD, diagnosticarCache } from "../../src/admin/metrics.js";
+import {
+  foraDoHorario,
+  calcularCustoUSD,
+  diagnosticarCache,
+  calcularFaturamento,
+  calcularOcupacao,
+  type ConsultaFaturavel,
+} from "../../src/admin/metrics.js";
 
 const TZ = "America/Sao_Paulo";
 const dias = {
@@ -125,5 +132,91 @@ describe("diagnosticarCache", () => {
 
   it("qualquer leitura de cache já prova que está pegando", () => {
     expect(diagnosticarCache({ ...zerado, entrada: 200_000, cacheLeitura: 1 }, 10, 50)).toBe(true);
+  });
+});
+
+describe("calcularFaturamento", () => {
+  const c = (over: Partial<ConsultaFaturavel> = {}): ConsultaFaturavel => ({
+    status: "COMPLETED",
+    precoCentavos: 15000,
+    especialidade: "Clínico Geral",
+    paymentType: "PARTICULAR",
+    ...over,
+  });
+
+  it("soma o que já aconteceu e o que está marcado, separados", () => {
+    const r = calcularFaturamento([
+      c({ status: "COMPLETED" }),
+      c({ status: "SCHEDULED" }),
+      c({ status: "CONFIRMED" }),
+    ]);
+    expect(r.realizadoCentavos).toBe(15000);
+    expect(r.previstoCentavos).toBe(30000);
+  });
+
+  it("cancelada e falta não faturam", () => {
+    const r = calcularFaturamento([c({ status: "CANCELLED" }), c({ status: "NO_SHOW" })]);
+    expect(r.realizadoCentavos).toBe(0);
+    expect(r.previstoCentavos).toBe(0);
+  });
+
+  // Somar o preço particular de um atendimento por convênio inflaria o
+  // faturamento com dinheiro que nunca entrou — o valor depende do plano e do
+  // repasse, que o sistema não conhece.
+  it("convênio fica de fora", () => {
+    const r = calcularFaturamento([c({ paymentType: "HEALTH_PLAN" })]);
+    expect(r.realizadoCentavos).toBe(0);
+    expect(r.semPreco).toBe(0);
+  });
+
+  // REGRESSÃO EM POTENCIAL: tratar preço ausente como zero somaria em silêncio
+  // para baixo, e a clínica acharia que fatura menos do que fatura.
+  it("consulta sem preço é contada à parte, não como zero", () => {
+    const r = calcularFaturamento([c(), c({ precoCentavos: null }), c({ precoCentavos: null })]);
+    expect(r.realizadoCentavos).toBe(15000);
+    expect(r.semPreco).toBe(2);
+  });
+
+  it("agrupa por especialidade, da maior para a menor", () => {
+    const r = calcularFaturamento([
+      c({ especialidade: "Limpeza", precoCentavos: 10000 }),
+      c({ especialidade: "Canal", precoCentavos: 90000 }),
+      c({ especialidade: "Limpeza", precoCentavos: 10000 }),
+    ]);
+    expect(r.porEspecialidade).toEqual([
+      { especialidade: "Canal", centavos: 90000, consultas: 1 },
+      { especialidade: "Limpeza", centavos: 20000, consultas: 2 },
+    ]);
+  });
+
+  // O agrupamento é do REALIZADO: misturar o previsto faria a clínica ler como
+  // receita algo que ainda pode ser cancelado.
+  it("o agrupamento por especialidade não inclui o previsto", () => {
+    const r = calcularFaturamento([c({ status: "SCHEDULED", especialidade: "Canal" })]);
+    expect(r.porEspecialidade).toEqual([]);
+    expect(r.previstoCentavos).toBe(15000);
+  });
+
+  it("lista vazia não quebra", () => {
+    expect(calcularFaturamento([])).toEqual({
+      realizadoCentavos: 0,
+      previstoCentavos: 0,
+      semPreco: 0,
+      porEspecialidade: [],
+    });
+  });
+});
+
+describe("calcularOcupacao", () => {
+  it("calcula a porcentagem preenchida", () => {
+    expect(calcularOcupacao(1, 3)).toBe(25);
+    expect(calcularOcupacao(3, 1)).toBe(75);
+    expect(calcularOcupacao(4, 0)).toBe(100);
+    expect(calcularOcupacao(0, 4)).toBe(0);
+  });
+
+  // Sem agenda gerada, 0% e 100% seriam igualmente falsos.
+  it("sem agenda nenhuma, não arrisca um número", () => {
+    expect(calcularOcupacao(0, 0)).toBe(null);
   });
 });

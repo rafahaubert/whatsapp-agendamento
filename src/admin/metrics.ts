@@ -119,6 +119,42 @@ export interface Metricas {
   cacheAtivo: boolean | null;
   /** Prefixo mínimo que o modelo configurado exige para cachear (tokens). */
   minPrefixoCacheModelo: number;
+
+  // ---------- Dinheiro e agenda cheia ----------
+  /**
+   * Faturamento REALIZADO no período (centavos): consultas que aconteceram.
+   *
+   * Sai de `Specialty.priceCents`, então só conta o que tem preço cadastrado —
+   * `consultasSemPreco` diz quanto ficou de fora. Convênio não entra: o valor
+   * depende do plano e a clínica não o registra aqui.
+   */
+  faturamentoCentavos: number;
+  /** Faturamento AGENDADO e ainda não realizado (centavos). */
+  faturamentoPrevistoCentavos: number;
+  /**
+   * Consultas do período que não puderam ser precificadas.
+   *
+   * Vai junto do faturamento de propósito: um número grande aqui significa que
+   * o total mostrado é uma fração do real, e apresentá-lo sem esse contexto
+   * faria a clínica achar que fatura menos do que fatura.
+   */
+  consultasSemPreco: number;
+  /** Faturamento realizado por especialidade, do maior para o menor. */
+  faturamentoPorEspecialidade: { especialidade: string; centavos: number; consultas: number }[];
+
+  /**
+   * Ocupação da agenda À FRENTE (%), não do período que passou.
+   *
+   * A distinção não é preciosismo: os horários livres do passado são APAGADOS
+   * na renovação diária, então não existe mais como saber quantos ficaram
+   * vazios ontem. O que dá para medir — e é o que a clínica pode agir sobre — é
+   * quanto da agenda que vem já está preenchido.
+   */
+  ocupacaoAdiante: number | null;
+  /** Horários livres na janela à frente (a agenda ociosa que dá para vender). */
+  horariosLivresAdiante: number;
+  /** Dias da janela à frente considerados na ocupação. */
+  diasAdiante: number;
 }
 
 /**
@@ -138,6 +174,87 @@ export function diagnosticarCache(
   return consumo.cacheLeitura > 0;
 }
 
+/** Uma consulta, do ponto de vista do faturamento. */
+export interface ConsultaFaturavel {
+  status: string;
+  /** Preço da especialidade em centavos; `null` = sem preço cadastrado. */
+  precoCentavos: number | null;
+  especialidade: string;
+  /** PARTICULAR | HEALTH_PLAN. */
+  paymentType: string;
+}
+
+export interface Faturamento {
+  realizadoCentavos: number;
+  previstoCentavos: number;
+  semPreco: number;
+  porEspecialidade: { especialidade: string; centavos: number; consultas: number }[];
+}
+
+/**
+ * Regra pura (testável): quanto a clínica faturou e quanto tem a faturar.
+ *
+ * Duas exclusões deliberadas, e as duas mudam o número:
+ *
+ * - CONVÊNIO fica de fora. O valor depende do plano e do repasse, e a clínica
+ *   não registra isso aqui — somar o preço particular de um atendimento por
+ *   convênio inflaria o faturamento com dinheiro que não entrou.
+ * - Consulta SEM PREÇO cadastrado não vira zero, vira `semPreco`. Zero somaria
+ *   silenciosamente para baixo e a clínica acharia que fatura menos do que fatura.
+ */
+export function calcularFaturamento(consultas: ConsultaFaturavel[]): Faturamento {
+  const realizados: string[] = [AppointmentStatus.COMPLETED];
+  const previstos: string[] = [
+    AppointmentStatus.SCHEDULED,
+    AppointmentStatus.CONFIRMED,
+    AppointmentStatus.RESCHEDULED,
+  ];
+
+  let realizadoCentavos = 0;
+  let previstoCentavos = 0;
+  let semPreco = 0;
+  const porEsp = new Map<string, { centavos: number; consultas: number }>();
+
+  for (const c of consultas) {
+    const conta = realizados.includes(c.status) || previstos.includes(c.status);
+    if (!conta) continue; // cancelada ou falta não fatura
+    if (c.paymentType !== "PARTICULAR") continue;
+
+    if (c.precoCentavos == null) {
+      semPreco++;
+      continue;
+    }
+
+    if (realizados.includes(c.status)) {
+      realizadoCentavos += c.precoCentavos;
+      const atual = porEsp.get(c.especialidade) ?? { centavos: 0, consultas: 0 };
+      porEsp.set(c.especialidade, {
+        centavos: atual.centavos + c.precoCentavos,
+        consultas: atual.consultas + 1,
+      });
+    } else {
+      previstoCentavos += c.precoCentavos;
+    }
+  }
+
+  const porEspecialidade = [...porEsp.entries()]
+    .map(([especialidade, v]) => ({ especialidade, ...v }))
+    .sort((a, b) => b.centavos - a.centavos);
+
+  return { realizadoCentavos, previstoCentavos, semPreco, porEspecialidade };
+}
+
+/**
+ * Regra pura (testável): quanto da agenda à frente já está preenchido.
+ *
+ * `null` quando não há agenda gerada — sem horário nenhum, 0% e 100% seriam
+ * igualmente falsos.
+ */
+export function calcularOcupacao(ocupados: number, livres: number): number | null {
+  const total = ocupados + livres;
+  return total > 0 ? (ocupados / total) * 100 : null;
+}
+
 export async function calcularMetricas(
   tenantId: string,
   config: TenantConfig,
@@ -145,8 +262,22 @@ export async function calcularMetricas(
   dias: number,
 ): Promise<Metricas> {
   const desde = new Date(Date.now() - dias * 86_400_000);
+  // A ocupação olha para a frente pela mesma janela de dias que o relatório
+  // olha para trás — assim os dois números falam da mesma escala de tempo.
+  const diasAdiante = Math.min(dias, config.booking.advanceBookingDays || 30);
+  const ateAdiante = new Date(Date.now() + diasAdiante * 86_400_000);
 
-  const [porStatus, criados, lembretes, mensagens, conversas, consumo, presumidos] = await Promise.all([
+  const [
+    porStatus,
+    criados,
+    lembretes,
+    mensagens,
+    conversas,
+    consumo,
+    presumidos,
+    paraFaturar,
+    slotsAdiante,
+  ] = await Promise.all([
     // Desfecho das consultas do período (pela data da consulta).
     prisma.appointment.groupBy({
       by: ["status"],
@@ -176,6 +307,24 @@ export async function calcularMetricas(
     // Quanto da taxa de falta é presunção, e não desfecho apurado.
     prisma.appointment.count({
       where: { tenantId, outcomeAuto: true, slot: { startsAt: { gte: desde } } },
+    }),
+    // Faturamento: preço vem da especialidade, não da consulta.
+    prisma.appointment.findMany({
+      where: { tenantId, slot: { startsAt: { gte: desde } } },
+      select: {
+        status: true,
+        paymentType: true,
+        specialty: { select: { name: true, priceCents: true } },
+      },
+      take: 20_000,
+    }),
+    // Ocupação: só faz sentido ADIANTE. Os horários livres do passado são
+    // apagados na renovação diária, então não há como saber quantos ficaram
+    // vazios ontem — ver o comentário em `Metricas.ocupacaoAdiante`.
+    prisma.slot.groupBy({
+      by: ["status"],
+      where: { tenantId, startsAt: { gte: new Date(), lte: ateAdiante } },
+      _count: { _all: true },
     }),
   ]);
 
@@ -207,6 +356,20 @@ export async function calcularMetricas(
 
   const { custoUSD, economiaCacheUSD } = calcularCustoUSD(consumoTokens, config.ai.model);
 
+  const faturamento = calcularFaturamento(
+    paraFaturar.map((a) => ({
+      status: a.status,
+      paymentType: a.paymentType,
+      especialidade: a.specialty.name,
+      precoCentavos: a.specialty.priceCents,
+    })),
+  );
+
+  const contarSlots = (status: string) =>
+    slotsAdiante.find((s) => s.status === status)?._count._all ?? 0;
+  const ocupados = contarSlots("BOOKED");
+  const livres = contarSlots("AVAILABLE");
+
   return {
     dias,
     agendamentos: criados,
@@ -232,5 +395,12 @@ export async function calcularMetricas(
     economiaCacheUSD,
     cacheAtivo: diagnosticarCache(consumoTokens, 10, mensagens.length - recebidas.length),
     minPrefixoCacheModelo: perfilDoModelo(config.ai.model).minPrefixoCache,
+    faturamentoCentavos: faturamento.realizadoCentavos,
+    faturamentoPrevistoCentavos: faturamento.previstoCentavos,
+    consultasSemPreco: faturamento.semPreco,
+    faturamentoPorEspecialidade: faturamento.porEspecialidade,
+    ocupacaoAdiante: calcularOcupacao(ocupados, livres),
+    horariosLivresAdiante: livres,
+    diasAdiante,
   };
 }

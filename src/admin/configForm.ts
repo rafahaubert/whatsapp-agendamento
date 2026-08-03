@@ -28,6 +28,7 @@ export const BLOCOS = [
   "reativacao", // reativação de pacientes
   "followup", // follow-up de conversa abandonada
   "desfecho", // apuração de comparecimento (base da taxa de falta)
+  "pagamento", // sinal por Pix
 ] as const;
 export type Bloco = (typeof BLOCOS)[number];
 
@@ -41,6 +42,22 @@ function bool(v: unknown): boolean {
 function num(v: unknown, padrao: number): number {
   const n = Number.parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : padrao;
+}
+
+/**
+ * Valor em reais digitado no painel → centavos. `null` quando não dá para ler.
+ *
+ * Duplica de propósito o helper de tenantAdmin.ts: importar de lá arrastaria o
+ * Prisma para dentro do parser de formulário, que hoje é puro e testável sem
+ * banco nenhum.
+ */
+export function reaisParaCentavosForm(v: unknown): number | null {
+  const bruto = String(v ?? "").trim();
+  if (!bruto) return null;
+  const limpo = bruto.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(limpo);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
 }
 
 /** "08:00" … "23:59". */
@@ -201,6 +218,24 @@ export function parseConfig(
       enabled: bool(body.followUp_enabled),
       minutesAfter: num(body.followUp_minutesAfter, 30),
       message: (body.followUp_message ?? "").trim() || undefined,
+    };
+  }
+
+  if (tem("pagamento")) {
+    const tipos = ["cpf", "cnpj", "email", "telefone", "aleatoria"] as const;
+    const tipo = String(body.payment_tipoChave ?? "");
+    cfg.payment = {
+      pixEnabled: bool(body.payment_pixEnabled),
+      chave: (body.payment_chave ?? "").trim(),
+      // Tipo desconhecido cairia no gerador e produziria um código que o banco
+      // recusa sem dizer por quê.
+      tipoChave: (tipos as readonly string[]).includes(tipo)
+        ? (tipo as (typeof tipos)[number])
+        : "aleatoria",
+      beneficiario: (body.payment_beneficiario ?? "").trim(),
+      cidade: (body.payment_cidade ?? "").trim(),
+      sinalCentavos: reaisParaCentavosForm(body.payment_sinal) ?? 0,
+      instrucoes: (body.payment_instrucoes ?? "").trim() || undefined,
     };
   }
 

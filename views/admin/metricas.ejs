@@ -78,6 +78,59 @@
   </p>
 <% } %>
 
+<!-- ===================== Dinheiro e agenda cheia ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Faturamento e ocupação</h2>
+    <span class="muted">últimos <%= m.dias %> dias</span>
+  </div>
+  <% var reais = function(c){ return (c/100).toLocaleString("pt-BR", {style:"currency", currency:"BRL"}); }; %>
+  <div class="kpis">
+    <div class="kpi">
+      <span class="rot">Faturado (particular)</span>
+      <span class="val"><%= reais(m.faturamentoCentavos) %></span>
+      <span class="sub">consultas já realizadas</span>
+    </div>
+    <div class="kpi">
+      <span class="rot">Agendado a receber</span>
+      <span class="val"><%= reais(m.faturamentoPrevistoCentavos) %></span>
+      <span class="sub">consultas marcadas e ainda não realizadas</span>
+    </div>
+    <div class="kpi">
+      <span class="rot">Ocupação dos próximos <%= m.diasAdiante %> dias</span>
+      <span class="val"><%= pct(m.ocupacaoAdiante) %></span>
+      <span class="meter m-info"><i style="width:<%= larg(m.ocupacaoAdiante) %>%"></i></span>
+      <span class="sub"><b><%= num(m.horariosLivresAdiante) %></b> horários livres para vender</span>
+    </div>
+  </div>
+
+  <% if (m.consultasSemPreco) { %>
+    <p class="muted" style="margin:8px 0 0">
+      <strong><%= num(m.consultasSemPreco) %></strong> consulta(s) do período ficaram de fora por não terem
+      <strong>valor particular</strong> cadastrado — o total acima é menor que o real. Cadastre os valores em
+      <a href="/admin/clinicas/<%= t.id %>/config/catalogo#especialidades">Catálogo → Especialidades</a>.
+    </p>
+  <% } %>
+  <p class="muted" style="margin:8px 0 0">Atendimentos por <strong>convênio</strong> não entram: o valor depende do plano e do repasse, que o sistema não conhece.</p>
+
+  <% if (m.faturamentoPorEspecialidade.length) { %>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Especialidade</th><th>Consultas</th><th>Faturado</th></tr></thead>
+        <tbody>
+          <% m.faturamentoPorEspecialidade.forEach(function(e){ %>
+            <tr>
+              <td><%= e.especialidade %></td>
+              <td><%= num(e.consultas) %></td>
+              <td><%= reais(e.centavos) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+
 <!-- ===================== Consultas ===================== -->
 <div class="card">
   <div class="card-head">

@@ -3,6 +3,43 @@ import type { ResolvedTenant } from "../db/tenantRepository.js";
 import { PaymentType } from "../shared/enums.js";
 import { ehConfirmacao } from "../shared/confirmacao.js";
 import * as scheduling from "../domain/scheduling.js";
+import { gerarCopiaECola } from "../domain/pix.js";
+
+/**
+ * Monta o Pix do sinal desta clínica.
+ *
+ * O copia-e-cola é gerado AQUI, e não pedido ao modelo: são ~130 caracteres com
+ * um CRC no fim, e qualquer alteração — um espaço, uma quebra de linha — o
+ * invalida no banco. O modelo só repassa o que a ferramenta devolveu.
+ */
+function gerarPixDoSinal(tenant: ResolvedTenant, appointmentId?: string) {
+  const pg = tenant.config.payment;
+  if (!pg?.pixEnabled || !pg.chave) {
+    return { erro: "Esta clínica não cobra sinal por Pix. Não ofereça pagamento antecipado." };
+  }
+
+  const copiaECola = gerarCopiaECola({
+    chave: pg.chave,
+    tipo: pg.tipoChave,
+    beneficiario: pg.beneficiario || tenant.name,
+    cidade: pg.cidade || "",
+    valorCentavos: pg.sinalCentavos,
+    // A identificação ajuda a recepção a casar o comprovante com a consulta.
+    identificador: appointmentId ? appointmentId.slice(-12) : undefined,
+  });
+
+  const valor = pg.sinalCentavos
+    ? (pg.sinalCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : null;
+
+  return {
+    copiaECola,
+    valor,
+    instrucoes: pg.instrucoes || null,
+    comoResponder:
+      "Mande o campo copiaECola numa mensagem SEPARADA, sozinho, sem aspas, sem crase e sem texto em volta — ele precisa chegar intacto para o banco aceitar. Explique o valor e o prazo na mensagem anterior.",
+  };
+}
 
 /**
  * Contexto que atravessa uma conversa. `patientId` é preenchido quando
@@ -51,6 +88,20 @@ const TODAS: Anthropic.Tool[] = [
         },
       },
       required: ["especialidade"],
+    },
+  },
+  {
+    name: "enviar_pix",
+    description:
+      "Gera o Pix copia-e-cola do SINAL da consulta e devolve o código para o paciente colar no banco. Use DEPOIS de a consulta estar agendada, quando a clínica cobra sinal. Envie o código exatamente como veio, numa mensagem separada e sem nada em volta — qualquer caractere a mais o invalida.",
+    input_schema: {
+      type: "object",
+      properties: {
+        appointmentId: {
+          type: "string",
+          description: "ID do agendamento que o sinal está pagando (opcional, vira identificação da cobrança)",
+        },
+      },
     },
   },
   {
@@ -192,9 +243,15 @@ const TODAS: Anthropic.Tool[] = [
  * A porta se fecha aqui, removendo o que não faz sentido.
  */
 export function buildTools(tenant: ResolvedTenant): Anthropic.Tool[] {
-  if (tenant.config.booking.askInsurance) return TODAS;
+  // Sinal desligado: a ferramenta some. Deixá-la à mesa é o mesmo convite que
+  // `listar_convenios` era numa clínica sem convênio — o modelo oferece um
+  // pagamento antecipado que a clínica não cobra.
+  const cobraSinal = Boolean(tenant.config.payment?.pixEnabled && tenant.config.payment.chave);
+  const base = cobraSinal ? TODAS : TODAS.filter((t) => t.name !== "enviar_pix");
 
-  return TODAS.filter((t) => t.name !== "listar_convenios").map((t) => {
+  if (tenant.config.booking.askInsurance) return base;
+
+  return base.filter((t) => t.name !== "listar_convenios").map((t) => {
     if (t.name !== "agendar") return t;
     return {
       ...t,
@@ -253,6 +310,9 @@ export async function executeTool(
         return { erro: "Identifique o paciente (nome e CPF) antes de entrar na fila." };
       }
       return scheduling.entrarFilaEspera(t, ctx.patientId, input.especialidade, input.periodo);
+
+    case "enviar_pix":
+      return gerarPixDoSinal(t, input.appointmentId);
 
     case "chamar_atendente":
       ctx.handoffRequested = true;

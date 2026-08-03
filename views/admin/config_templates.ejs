@@ -16,7 +16,7 @@
     <button class="btn sm">Salvar templates</button>
   </div>
   <%# Só as automações: salvar aqui não encosta no resto da configuração. %>
-  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup desfecho" />
+  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup desfecho pagamento" />
   <input type="hidden" name="_voltar" value="/config/templates" />
 
   <h2>Lembrete de consulta (reduz faltas)</h2>
@@ -111,6 +111,39 @@
       <small>0 = nunca presume (só conta o que for confirmado).</small>
     </label>
   </div>
+
+  <h2>Sinal por Pix (o que realmente derruba a falta)</h2>
+  <% var pg = cfg.payment || { pixEnabled: false, chave: "", tipoChave: "aleatoria", beneficiario: "", cidade: "", sinalCentavos: 0, instrucoes: "" }; %>
+  <p class="muted">Quem paga, aparece. Com isto ligado, o agente manda o <strong>Pix copia-e-cola</strong> logo depois de agendar —
+    o paciente cola no aplicativo do banco e o valor já vem preenchido, sem risco de digitar a chave errada.</p>
+  <p class="muted"><strong>A baixa é manual:</strong> o sistema gera a cobrança, não confirma o pagamento. A recepção confere o comprovante como já faz hoje.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="payment_pixEnabled" <%= pg.pixEnabled ? "checked" : "" %> /> Cobrar sinal por Pix</label>
+  </div>
+  <div class="grid3">
+    <label>Tipo da chave
+      <select name="payment_tipoChave">
+        <% ["cpf","cnpj","email","telefone","aleatoria"].forEach(function(tp){ %>
+          <option value="<%= tp %>" <%= (pg.tipoChave || "aleatoria") === tp ? "selected" : "" %>><%= tp %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>Chave Pix<input name="payment_chave" value="<%= pg.chave || '' %>" placeholder="contato@clinica.com.br" /></label>
+    <label>Valor do sinal
+      <input name="payment_sinal" value="<%= pg.sinalCentavos ? (pg.sinalCentavos / 100).toFixed(2).replace('.', ',') : '' %>" placeholder="ex.: 50,00" />
+      <small>Vazio = o paciente digita o valor.</small>
+    </label>
+    <label>Beneficiário
+      <input name="payment_beneficiario" value="<%= pg.beneficiario || '' %>" placeholder="<%= t.name %>" maxlength="25" />
+      <small>Como aparece no comprovante (até 25 caracteres, sem acento).</small>
+    </label>
+    <label>Cidade
+      <input name="payment_cidade" value="<%= pg.cidade || '' %>" placeholder="Novo Hamburgo" maxlength="15" />
+    </label>
+  </div>
+  <label style="display:block;margin-top:8px">Instruções que acompanham o Pix (opcional)
+    <input name="payment_instrucoes" value="<%= pg.instrucoes || '' %>" placeholder="O sinal garante seu horário e é abatido do valor da consulta. Mande o comprovante por aqui." />
+  </label>
 
   <div style="margin-top:14px"><button class="btn">Salvar templates</button></div>
 </form>
