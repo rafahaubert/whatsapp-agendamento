@@ -8,6 +8,10 @@ export default defineConfig({
     include: ["test/integration/**/*.test.ts"],
     environment: "node",
     globalSetup: ["test/integration/setup.ts"],
+    // Mesmo motivo dos testes de unidade: sem as variáveis obrigatórias,
+    // src/config/env.ts derruba o processo na COLETA e nenhum teste roda. Só
+    // o banco vem de fora (TEST_DATABASE_URL). Ver test/setupEnv.ts.
+    setupFiles: ["test/setupEnv.ts"],
     fileParallelism: false,
     hookTimeout: 60_000,
     testTimeout: 30_000,

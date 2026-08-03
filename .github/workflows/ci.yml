@@ -9,8 +9,12 @@
 name: CI
 
 on:
+  # `push` só no ramo principal. Ramo de trabalho é coberto pelo `pull_request` —
+  # aceitar os dois em todo ramo rodava o CI DUAS vezes a cada push num PR, e a
+  # chave de concorrência abaixo não junta as duas (o `github.ref` de um é
+  # `refs/heads/...` e o do outro é `refs/pull/N/merge`).
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 # Um push novo cancela a execução anterior do mesmo ramo — não adianta gastar
@@ -35,7 +39,7 @@ jobs:
           POSTGRES_DB: whatsapp_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U whatsapp -d whatsapp_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -76,7 +80,10 @@ jobs:
       # código espera — e o sintoma só aparece em produção.
       - name: Conferir migrations contra o schema
         run: |
-          psql "$DATABASE_URL" -c 'CREATE DATABASE shadow_ci;' >/dev/null
+          # `?schema=public` é parâmetro do Prisma, não do libpq: com ele o psql
+          # recusa a URI inteira ("invalid URI query parameter") e sai com 2.
+          # Corta a query string — o banco e as credenciais continuam na URI.
+          psql "${DATABASE_URL%%\?*}" -c 'CREATE DATABASE shadow_ci;' >/dev/null
           npx prisma migrate diff \
             --from-migrations prisma/migrations \
             --to-schema-datamodel prisma/schema.prisma \
