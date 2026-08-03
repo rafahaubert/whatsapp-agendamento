@@ -16,7 +16,7 @@
     <button class="btn sm">Salvar templates</button>
   </div>
   <%# Só as automações: salvar aqui não encosta no resto da configuração. %>
-  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup desfecho pagamento" />
+  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup desfecho pagamento plano resumo" />
   <input type="hidden" name="_voltar" value="/config/templates" />
 
   <h2>Lembrete de consulta (reduz faltas)</h2>
@@ -144,6 +144,56 @@
   <label style="display:block;margin-top:8px">Instruções que acompanham o Pix (opcional)
     <input name="payment_instrucoes" value="<%= pg.instrucoes || '' %>" placeholder="O sinal garante seu horário e é abatido do valor da consulta. Mande o comprovante por aqui." />
   </label>
+
+  <h2>Resumo diário para o responsável</h2>
+  <% var dd = cfg.dailyDigest || { enabled: false, phone: "", hora: 8, templateName: "", templateLang: "pt_BR" }; %>
+  <p class="muted">Uma mensagem por dia no WhatsApp do dono, com a agenda de hoje, as confirmações,
+    os horários vagos e as faltas de ontem. Mantém o valor do sistema visível para quem decide a renovação.</p>
+  <p class="muted"><strong>Exige template aprovado</strong> — diferente do follow-up e do desfecho, aqui a
+    janela de 24h nunca está aberta, porque o dono não escreve para o bot.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="dailyDigest_enabled" <%= dd.enabled ? "checked" : "" %> /> Ativar resumo diário</label>
+  </div>
+  <div class="grid3">
+    <label>WhatsApp do responsável
+      <input name="dailyDigest_phone" value="<%= dd.phone || '' %>" placeholder="+5551999998888" />
+    </label>
+    <label>Hora do envio
+      <input type="number" name="dailyDigest_hora" min="0" max="23" value="<%= dd.hora ?? 8 %>" />
+      <small>No fuso da clínica.</small>
+    </label>
+    <% if (ehSuper) { %>
+      <label>Nome do template<input name="dailyDigest_templateName" value="<%= dd.templateName || '' %>" placeholder="resumo_diario" /></label>
+      <label>Idioma do template<input name="dailyDigest_templateLang" value="<%= dd.templateLang || 'pt_BR' %>" /></label>
+    <% } else { %>
+      <input type="hidden" name="dailyDigest_templateName" value="<%= dd.templateName || '' %>" />
+      <input type="hidden" name="dailyDigest_templateLang" value="<%= dd.templateLang || 'pt_BR' %>" />
+    <% } %>
+  </div>
+
+  <% if (ehSuper) { %>
+    <h2>Plano contratado</h2>
+    <% var pl = cfg.plan || { nome: "", cotaMensal: 0, excedenteCentavos: 0 }; %>
+    <p class="muted">A cota de agendamentos do plano e o preço do excedente. O consumo do mês aparece
+      em <a href="/admin/clinicas/<%= t.id %>/metricas">Métricas</a>, com aviso a partir de 80% — a clínica
+      não deve descobrir o excedente na fatura.</p>
+    <div class="grid3">
+      <label>Nome do plano<input name="plan_nome" value="<%= pl.nome || '' %>" placeholder="Profissional" /></label>
+      <label>Agendamentos inclusos por mês
+        <input type="number" name="plan_cotaMensal" min="0" value="<%= pl.cotaMensal || 0 %>" />
+        <small>0 = sem cota (plano sob consulta).</small>
+      </label>
+      <label>Preço do excedente (por agendamento)
+        <input name="plan_excedente" value="<%= pl.excedenteCentavos ? (pl.excedenteCentavos/100).toFixed(2).replace('.', ',') : '' %>" placeholder="1,50" />
+      </label>
+    </div>
+  <% } else { %>
+    <%# Usuário da clínica não edita o próprio plano — mas os campos precisam
+        voltar no POST, senão salvar esta página apagaria o plano contratado. %>
+    <input type="hidden" name="plan_nome" value="<%= (cfg.plan && cfg.plan.nome) || '' %>" />
+    <input type="hidden" name="plan_cotaMensal" value="<%= (cfg.plan && cfg.plan.cotaMensal) || 0 %>" />
+    <input type="hidden" name="plan_excedente" value="<%= cfg.plan && cfg.plan.excedenteCentavos ? (cfg.plan.excedenteCentavos/100).toFixed(2) : '' %>" />
+  <% } %>
 
   <div style="margin-top:14px"><button class="btn">Salvar templates</button></div>
 </form>

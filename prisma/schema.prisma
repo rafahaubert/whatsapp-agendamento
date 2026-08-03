@@ -36,6 +36,11 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Último resumo diário enviado ao responsável. É o que garante UM por dia:
+  // o job roda a cada 10 minutos e sem isto mandaria um a cada ciclo dentro da
+  // hora configurada.
+  lastDigestAt DateTime?
+
   units         Unit[]
   specialties   Specialty[]
   doctors       Doctor[]

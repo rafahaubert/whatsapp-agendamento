@@ -5,6 +5,8 @@ import {
   diagnosticarCache,
   calcularFaturamento,
   calcularOcupacao,
+  calcularUsoDoPlano,
+  inicioDoMes,
   type ConsultaFaturavel,
 } from "../../src/admin/metrics.js";
 
@@ -218,5 +220,71 @@ describe("calcularOcupacao", () => {
   // Sem agenda gerada, 0% e 100% seriam igualmente falsos.
   it("sem agenda nenhuma, não arrisca um número", () => {
     expect(calcularOcupacao(0, 0)).toBe(null);
+  });
+});
+
+describe("calcularUsoDoPlano", () => {
+  const plano = { nome: "Profissional", cotaMensal: 600, excedenteCentavos: 150 };
+
+  it("sem plano configurado, não há o que cobrar nem avisar", () => {
+    expect(calcularUsoDoPlano(500, undefined)).toBe(null);
+  });
+
+  it("dentro da cota, sem excedente", () => {
+    const r = calcularUsoDoPlano(300, plano)!;
+    expect(r.percentual).toBe(50);
+    expect(r.excedentes).toBe(0);
+    expect(r.excedenteCentavos).toBe(0);
+    expect(r.perto).toBe(false);
+    expect(r.estourou).toBe(false);
+  });
+
+  // A proposta comercial PROMETE avisar antes de virar fatura. Descobrir o
+  // excedente no boleto é a pior hora possível — e era o que acontecia, porque
+  // nada contava.
+  it("avisa a partir de 80% da cota", () => {
+    expect(calcularUsoDoPlano(479, plano)!.perto).toBe(false);
+    expect(calcularUsoDoPlano(480, plano)!.perto).toBe(true);
+    expect(calcularUsoDoPlano(600, plano)!.perto).toBe(true);
+  });
+
+  it("passando da cota, calcula o excedente em dinheiro", () => {
+    const r = calcularUsoDoPlano(610, plano)!;
+    expect(r.excedentes).toBe(10);
+    expect(r.excedenteCentavos).toBe(1500); // 10 × R$ 1,50
+    expect(r.estourou).toBe(true);
+    // Já estourou: não é mais "perto", é passado.
+    expect(r.perto).toBe(false);
+  });
+
+  it("exatamente na cota ainda não é excedente", () => {
+    const r = calcularUsoDoPlano(600, plano)!;
+    expect(r.excedentes).toBe(0);
+    expect(r.estourou).toBe(false);
+  });
+
+  // Plano sob consulta: o consumo do mês continua valendo para a conversa
+  // comercial, mas percentual e excedente não fazem sentido.
+  it("cota zero = sem limite", () => {
+    const r = calcularUsoDoPlano(5000, { ...plano, cotaMensal: 0 })!;
+    expect(r.percentual).toBe(null);
+    expect(r.excedentes).toBe(0);
+    expect(r.estourou).toBe(false);
+    expect(r.usados).toBe(5000);
+  });
+});
+
+describe("inicioDoMes", () => {
+  // A cota é do MÊS CIVIL, que é o ciclo que a fatura cobra — não da janela de
+  // dias que o resto do relatório usa.
+  it("volta ao primeiro instante do mês no fuso da clínica", () => {
+    const r = inicioDoMes(new Date("2026-08-15T12:00:00Z"), TZ);
+    // São Paulo é UTC-3: 01/08 00:00 local = 31/07 03:00 UTC.
+    expect(r.toISOString()).toBe("2026-08-01T03:00:00.000Z");
+  });
+
+  it("no primeiro dia do mês, não volta para o mês anterior", () => {
+    const r = inicioDoMes(new Date("2026-08-01T15:00:00Z"), TZ);
+    expect(r.toISOString()).toBe("2026-08-01T03:00:00.000Z");
   });
 });

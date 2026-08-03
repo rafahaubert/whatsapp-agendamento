@@ -78,6 +78,41 @@
   </p>
 <% } %>
 
+<% if (m.usoDoPlano) { %>
+  <div class="card">
+    <div class="card-head">
+      <h2>Plano <%= m.usoDoPlano.plano %></h2>
+      <span class="muted">consumo do mês corrente</span>
+    </div>
+    <% if (m.usoDoPlano.cota === 0) { %>
+      <p class="muted" style="margin:0"><strong><%= num(m.usoDoPlano.usados) %></strong> agendamento(s) neste mês. Plano sem cota definida.</p>
+    <% } else { %>
+      <div class="kpis">
+        <div class="kpi">
+          <span class="rot">Agendamentos no mês</span>
+          <span class="val"><%= num(m.usoDoPlano.usados) %> / <%= num(m.usoDoPlano.cota) %></span>
+          <span class="meter <%= m.usoDoPlano.estourou ? 'm-danger' : (m.usoDoPlano.perto ? 'm-warn' : 'm-ok') %>"><i style="width:<%= larg(Math.min(m.usoDoPlano.percentual, 100)) %>%"></i></span>
+          <span class="sub"><%= pct(m.usoDoPlano.percentual) %> da cota</span>
+        </div>
+        <% if (m.usoDoPlano.estourou) { %>
+          <div class="kpi">
+            <span class="rot">Excedente</span>
+            <span class="val"><%= (m.usoDoPlano.excedenteCentavos/100).toLocaleString("pt-BR", {style:"currency", currency:"BRL"}) %></span>
+            <span class="sub"><b><%= num(m.usoDoPlano.excedentes) %></b> agendamento(s) acima da cota</span>
+          </div>
+        <% } %>
+      </div>
+      <%# A proposta comercial PROMETE avisar antes de virar fatura. Descobrir o
+          excedente no boleto é a pior hora possível. %>
+      <% if (m.usoDoPlano.estourou) { %>
+        <p class="erro" style="margin:10px 0 0">A cota do mês foi ultrapassada. Os agendamentos excedentes entram na próxima fatura.</p>
+      <% } else if (m.usoDoPlano.perto) { %>
+        <p class="muted" style="margin:10px 0 0"><strong>Atenção:</strong> a cota do mês está perto do limite. Passando dela, cada agendamento a mais entra na fatura.</p>
+      <% } %>
+    <% } %>
+  </div>
+<% } %>
+
 <!-- ===================== Dinheiro e agenda cheia ===================== -->
 <div class="card">
   <div class="card-head">

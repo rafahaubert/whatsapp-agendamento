@@ -181,6 +181,31 @@ Regras embutidas, para não virar perseguição:
 Ative em **Follow-up de conversa parada** na página de automações, ajustando os minutos de
 silêncio (padrão: 30) e, se quiser, o texto.
 
+## `resumo_diario` — resumo para o responsável
+
+Uma mensagem por dia no WhatsApp do dono da clínica, com a agenda de hoje e as faltas de
+ontem. Existe porque o dono raramente entra no painel: o produto some da vista dele e, na
+renovação, ele avalia algo de que não lembra.
+
+**Corpo:**
+
+```
+Bom dia! Resumo da clínica em {{1}}:
+
+📅 {{2}} consulta(s) hoje ({{3}} já confirmada(s))
+🕑 {{4}} horário(s) ainda livre(s) hoje
+⚠️ {{5}} falta(s) ontem
+```
+
+**Sem botões.**
+
+> Este é o único dos quatro templates que vai para a **equipe**, e não para o paciente.
+> Precisa de template porque a janela de 24h nunca está aberta com o dono — ele não escreve
+> para o bot.
+
+Ative em **Resumo diário para o responsável**, informando o WhatsApp e a hora do envio
+(no fuso da clínica). Sai uma vez por dia, mesmo com o job rodando a cada 10 minutos.
+
 ## A outra automação sem template: desfecho da consulta
 
 A **taxa de falta** é o número que a clínica olha na hora de renovar o contrato — e ela só
@@ -202,6 +227,24 @@ apresentá-la como número apurado seria enganar a clínica. Quem prefere um nú
 firme põe **Dias até presumir comparecimento** em `0` — aí só conta o que for confirmado.
 
 Ative em **Desfecho da consulta** na página de automações.
+
+## O sinal por Pix: sem template e sem gateway
+
+O sinal é o que realmente derruba a falta — quem paga, aparece. Depois de agendar, o agente
+manda o **Pix copia-e-cola** já com o valor e o beneficiário preenchidos; o paciente cola no
+aplicativo do banco e pronto. Não precisa de template (é mensagem dentro da conversa) nem de
+integração com gateway: o código é gerado localmente.
+
+**A baixa é manual.** O sistema gera a cobrança; ele **não** confirma o pagamento. A recepção
+confere o comprovante como já faz hoje. Uma integração com Mercado Pago ou Asaas
+automatizaria a confirmação — é uma decisão de fornecedor, não um ajuste de configuração.
+
+Configure em **Sinal por Pix**: tipo da chave, chave, valor do sinal (vazio = o paciente
+digita), beneficiário e cidade. O beneficiário e a cidade aparecem no comprovante e têm
+limite de 25 e 15 caracteres, sem acento — o gerador corta e normaliza sozinho.
+
+> Confira o código gerado uma vez, colando no seu próprio banco, antes de liberar para os
+> pacientes. Uma chave cadastrada errada só aparece na hora em que alguém tenta pagar.
 
 ---
 

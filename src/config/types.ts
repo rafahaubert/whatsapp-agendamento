@@ -119,6 +119,44 @@ export interface TenantConfig {
   };
 
   /**
+   * Resumo diário no WhatsApp de quem assina o cheque.
+   *
+   * O dono da clínica raramente entra no painel; o produto some da vista dele e,
+   * na renovação, ele avalia algo de que não lembra. Uma mensagem por dia com a
+   * agenda, as faltas e os horários vagos mantém o valor visível — e é a mesma
+   * informação que ele pediria à recepção.
+   *
+   * EXIGE TEMPLATE APROVADO. Ao contrário do follow-up e do desfecho, aqui a
+   * janela de 24h da Meta nunca está aberta: o dono não escreve para o bot.
+   */
+  dailyDigest?: {
+    enabled: boolean;
+    /** Telefone do responsável, em E.164 (+5551999998888). */
+    phone: string;
+    /** Hora do envio no fuso da clínica (0–23). Padrão: 8. */
+    hora?: number;
+    templateName: string;
+    templateLang: string;
+  };
+
+  /**
+   * Plano contratado — a cota de agendamentos e o preço do excedente.
+   *
+   * A proposta comercial vende 200/600 agendamentos por mês com excedente de
+   * R$ 1,50, e nada no sistema contava, limitava ou avisava. A clínica descobria
+   * o excedente na fatura, que é a pior hora possível — e a própria proposta
+   * promete avisar antes.
+   */
+  plan?: {
+    /** Nome do plano, como aparece no painel ("Essencial", "Profissional"). */
+    nome: string;
+    /** Agendamentos inclusos por mês. 0 = ilimitado. */
+    cotaMensal: number;
+    /** Preço de cada agendamento acima da cota, em centavos (R$ 1,50 = 150). */
+    excedenteCentavos: number;
+  };
+
+  /**
    * Sinal por Pix — o único remédio de verdade contra falta: quem pagou aparece.
    *
    * O agente manda o copia-e-cola pronto (gerado localmente, sem gateway), o

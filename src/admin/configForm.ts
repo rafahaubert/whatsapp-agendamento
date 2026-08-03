@@ -29,6 +29,8 @@ export const BLOCOS = [
   "followup", // follow-up de conversa abandonada
   "desfecho", // apuração de comparecimento (base da taxa de falta)
   "pagamento", // sinal por Pix
+  "plano", // cota contratada e preço do excedente
+  "resumo", // resumo diário para o responsável
 ] as const;
 export type Bloco = (typeof BLOCOS)[number];
 
@@ -218,6 +220,26 @@ export function parseConfig(
       enabled: bool(body.followUp_enabled),
       minutesAfter: num(body.followUp_minutesAfter, 30),
       message: (body.followUp_message ?? "").trim() || undefined,
+    };
+  }
+
+  if (tem("resumo")) {
+    const hora = num(body.dailyDigest_hora, 8);
+    cfg.dailyDigest = {
+      enabled: bool(body.dailyDigest_enabled),
+      phone: (body.dailyDigest_phone ?? "").trim(),
+      // Hora fora de 0–23 nunca casaria com a hora local e o resumo jamais sairia.
+      hora: hora >= 0 && hora <= 23 ? hora : 8,
+      templateName: (body.dailyDigest_templateName ?? "").trim(),
+      templateLang: (body.dailyDigest_templateLang ?? "pt_BR").trim() || "pt_BR",
+    };
+  }
+
+  if (tem("plano")) {
+    cfg.plan = {
+      nome: (body.plan_nome ?? "").trim() || "Sob consulta",
+      cotaMensal: num(body.plan_cotaMensal, 0),
+      excedenteCentavos: reaisParaCentavosForm(body.plan_excedente) ?? 0,
     };
   }
 

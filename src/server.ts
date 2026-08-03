@@ -13,6 +13,7 @@ import { enviarReativacoes } from "./jobs/recall.js";
 import { enviarFollowUps } from "./jobs/followUp.js";
 import { reofertarFilaEspera } from "./jobs/filaEspera.js";
 import { apurarDesfechos } from "./jobs/desfecho.js";
+import { enviarResumosDiarios } from "./jobs/resumoDiario.js";
 import { logger } from "./shared/logger.js";
 import { safeEqual } from "./shared/comparacao.js";
 import { limiteJobs } from "./shared/rateLimit.js";
@@ -160,7 +161,17 @@ app.post(["/jobs/run", "/jobs/reminders"], limiteJobs, async (req, res) => {
     const followUps = unificada ? await enviarFollowUps() : null;
     const filaEspera = unificada ? await reofertarFilaEspera() : null;
     const desfechos = unificada ? await apurarDesfechos() : null;
-    res.json({ ok: true, lembretes, agenda, reativacoes, followUps, filaEspera, desfechos });
+    const resumos = unificada ? await enviarResumosDiarios() : null;
+    res.json({
+      ok: true,
+      lembretes,
+      agenda,
+      reativacoes,
+      followUps,
+      filaEspera,
+      desfechos,
+      resumos,
+    });
   } catch (err) {
     logger.error({ err }, "falha ao executar os jobs");
     res.status(500).json({ ok: false });
@@ -195,6 +206,9 @@ app.listen(env.PORT, () => {
       // o próximo da fila ser chamado logo depois de o convite vencer.
       reofertarFilaEspera().catch((err) => logger.error({ err }, "falha no ciclo da fila de espera"));
       apurarDesfechos().catch((err) => logger.error({ err }, "falha no ciclo de desfechos"));
+      // O resumo diário só sai na hora configurada, e uma vez por dia — o
+      // ciclo de 10 minutos é só a granularidade com que ele confere a hora.
+      enviarResumosDiarios().catch((err) => logger.error({ err }, "falha no ciclo de resumos"));
     },
     10 * 60 * 1000,
   ).unref();

@@ -155,6 +155,12 @@ export interface Metricas {
   horariosLivresAdiante: number;
   /** Dias da janela à frente considerados na ocupação. */
   diasAdiante: number;
+
+  /**
+   * Consumo do plano no mês corrente. `null` quando a clínica não tem plano
+   * configurado (não há o que cobrar nem o que avisar).
+   */
+  usoDoPlano: UsoDoPlano | null;
 }
 
 /**
@@ -255,6 +261,74 @@ export function calcularOcupacao(ocupados: number, livres: number): number | nul
   return total > 0 ? (ocupados / total) * 100 : null;
 }
 
+export interface UsoDoPlano {
+  /** Nome do plano contratado. */
+  plano: string;
+  /** Agendamentos criados no MÊS CORRENTE (o ciclo que a fatura cobra). */
+  usados: number;
+  /** Cota do plano. 0 = ilimitado. */
+  cota: number;
+  /** Quanto da cota já foi consumido (%). `null` quando é ilimitado. */
+  percentual: number | null;
+  /** Agendamentos acima da cota. */
+  excedentes: number;
+  /** Quanto o excedente vai custar (centavos). */
+  excedenteCentavos: number;
+  /** Perto do limite (≥ 80%) e ainda dentro dele — a hora de avisar. */
+  perto: boolean;
+  /** Já passou da cota: a próxima fatura vem com excedente. */
+  estourou: boolean;
+}
+
+/**
+ * Regra pura (testável): quanto do plano a clínica já consumiu neste mês.
+ *
+ * O aviso em 80% existe porque a proposta comercial PROMETE avisar antes de
+ * virar fatura. Descobrir o excedente no boleto é a pior hora possível — e é
+ * exatamente o que acontecia, porque nada contava.
+ */
+export function calcularUsoDoPlano(
+  usados: number,
+  plano: { nome: string; cotaMensal: number; excedenteCentavos: number } | undefined,
+): UsoDoPlano | null {
+  if (!plano) return null;
+
+  const cota = plano.cotaMensal;
+  // Cota zero = plano sob consulta, sem limite: percentual e excedente não fazem
+  // sentido, mas o consumo do mês continua valendo para a conversa comercial.
+  if (cota <= 0) {
+    return {
+      plano: plano.nome,
+      usados,
+      cota: 0,
+      percentual: null,
+      excedentes: 0,
+      excedenteCentavos: 0,
+      perto: false,
+      estourou: false,
+    };
+  }
+
+  const excedentes = Math.max(0, usados - cota);
+  const percentual = (usados / cota) * 100;
+
+  return {
+    plano: plano.nome,
+    usados,
+    cota,
+    percentual,
+    excedentes,
+    excedenteCentavos: excedentes * plano.excedenteCentavos,
+    perto: percentual >= 80 && excedentes === 0,
+    estourou: excedentes > 0,
+  };
+}
+
+/** Primeiro instante do mês corrente no fuso da clínica — o ciclo da fatura. */
+export function inicioDoMes(agora: Date, timezone: string): Date {
+  return DateTime.fromJSDate(agora).setZone(timezone).startOf("month").toJSDate();
+}
+
 export async function calcularMetricas(
   tenantId: string,
   config: TenantConfig,
@@ -277,6 +351,7 @@ export async function calcularMetricas(
     presumidos,
     paraFaturar,
     slotsAdiante,
+    criadosNoMes,
   ] = await Promise.all([
     // Desfecho das consultas do período (pela data da consulta).
     prisma.appointment.groupBy({
@@ -325,6 +400,11 @@ export async function calcularMetricas(
       by: ["status"],
       where: { tenantId, startsAt: { gte: new Date(), lte: ateAdiante } },
       _count: { _all: true },
+    }),
+    // Cota do plano: conta pelo MÊS CIVIL, que é o ciclo que a fatura cobra —
+    // e não pela janela de `dias` que o resto do relatório usa.
+    prisma.appointment.count({
+      where: { tenantId, createdAt: { gte: inicioDoMes(new Date(), timezone) } },
     }),
   ]);
 
@@ -402,5 +482,6 @@ export async function calcularMetricas(
     ocupacaoAdiante: calcularOcupacao(ocupados, livres),
     horariosLivresAdiante: livres,
     diasAdiante,
+    usoDoPlano: calcularUsoDoPlano(criadosNoMes, config.plan),
   };
 }

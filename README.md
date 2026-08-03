@@ -193,3 +193,7 @@ antes de `agendar` rodar.
 - [x] **Fase 7 — Fechar o ciclo:** fila de espera com reserva do horário e reoferta ao próximo,
       desfecho da consulta apurado com o paciente (fecha a taxa de falta), carência no lembrete,
       prazo e repetição nas chamadas externas e diagnóstico de *prompt caching* no painel.
+- [x] **Fase 8 — Agenda de verdade e dinheiro:** duração por procedimento e intervalo entre
+      consultas, feriados nacionais automáticos, sinal por Pix (copia-e-cola gerado localmente),
+      relatório de faturamento e ocupação, cota do plano com aviso antes da fatura e resumo
+      diário para o responsável.
