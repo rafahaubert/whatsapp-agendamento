@@ -1,4 +1,45 @@
 import { env } from "../../config/env.js";
+import { logger } from "../../shared/logger.js";
+
+/**
+ * Quanto esperar a Graph API antes de desistir de UMA tentativa.
+ *
+ * Sem isto o `fetch` não tem prazo: um POST pendurado na Meta trava a conversa
+ * inteira, porque src/core/inbox.ts executa uma conversa de cada vez. O
+ * paciente ficava sem resposta e sem erro no log.
+ */
+const TIMEOUT_MS = 15_000;
+
+/** Tentativas totais (a primeira mais duas repetições). */
+const MAX_TENTATIVAS = 3;
+
+/** Espera base do backoff exponencial: 500ms, 1s, 2s… */
+const BACKOFF_BASE_MS = 500;
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Vale repetir este status?
+ *
+ * Só o que é transitório: 429 (limite) e 5xx (falha do lado da Meta). Um 400
+ * ("template rejeitado", "número inválido") repetido três vezes é o mesmo erro
+ * três vezes, gastando quota e atrasando a fila.
+ */
+export function valeRepetir(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Quanto esperar antes da próxima tentativa.
+ * `retry-after` da Meta manda; sem ele, backoff exponencial.
+ */
+export function esperaAntesDeRepetir(tentativa: number, retryAfter: string | null): number {
+  const segundos = Number(retryAfter);
+  if (retryAfter && Number.isFinite(segundos) && segundos >= 0) {
+    return Math.min(segundos * 1000, 30_000);
+  }
+  return BACKOFF_BASE_MS * 2 ** tentativa;
+}
 
 /** Opção oferecida ao paciente (vira botão ou item de lista). */
 export interface OpcaoWhatsApp {
@@ -14,21 +55,69 @@ function urlMensagens(phoneNumberId: string): string {
   return `https://graph.facebook.com/${env.WHATSAPP_API_VERSION}/${phoneNumberId}/messages`;
 }
 
+/**
+ * Envia à Graph API com prazo e repetição do que é transitório.
+ *
+ * A falha que isto resolve não é rara: um 500 momentâneo da Meta significava o
+ * paciente simplesmente não receber resposta, sem nada a fazer a respeito.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function enviar(phoneNumberId: string, corpo: Record<string, any>): Promise<void> {
-  const res = await fetch(urlMensagens(phoneNumberId), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ messaging_product: "whatsapp", recipient_type: "individual", ...corpo }),
+  const payload = JSON.stringify({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    ...corpo,
   });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Falha ao enviar WhatsApp (${res.status}): ${body}`);
+  let ultimoErro: unknown;
+
+  for (let tentativa = 0; tentativa < MAX_TENTATIVAS; tentativa++) {
+    const ultima = tentativa === MAX_TENTATIVAS - 1;
+    let res: Response;
+
+    try {
+      res = await fetch(urlMensagens(phoneNumberId), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: payload,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (err) {
+      // Timeout ou queda de rede: transitório por natureza.
+      ultimoErro = err;
+      if (ultima) break;
+      const espera = esperaAntesDeRepetir(tentativa, null);
+      logger.warn({ err, tentativa: tentativa + 1, espera }, "rede falhou ao enviar WhatsApp — repetindo");
+      await dormir(espera);
+      continue;
+    }
+
+    if (res.ok) return;
+
+    const body = await res.text().catch(() => "");
+    const erro = new Error(`Falha ao enviar WhatsApp (${res.status}): ${body}`);
+
+    // Erro definitivo (template rejeitado, número inválido, token vencido):
+    // sobe na hora. Repetir três vezes é o mesmo erro três vezes, gastando
+    // quota e atrasando a fila.
+    if (!valeRepetir(res.status)) throw erro;
+
+    ultimoErro = erro;
+    if (ultima) break;
+    const espera = esperaAntesDeRepetir(tentativa, res.headers.get("retry-after"));
+    logger.warn(
+      { status: res.status, tentativa: tentativa + 1, espera },
+      "envio ao WhatsApp falhou — repetindo",
+    );
+    await dormir(espera);
   }
+
+  throw ultimoErro instanceof Error
+    ? ultimoErro
+    : new Error(`Falha ao enviar WhatsApp após ${MAX_TENTATIVAS} tentativas`);
 }
 
 const corta = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + "…" : s);

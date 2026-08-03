@@ -6,13 +6,7 @@ import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { AppointmentStatus } from "../shared/enums.js";
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
-
-/** Preço por milhão de tokens (US$). Estimativa — confira os valores atuais. */
-const PRECO_POR_MTOK: Record<string, { entrada: number; saida: number }> = {
-  "claude-haiku-4-5": { entrada: 1, saida: 5 },
-  "claude-sonnet-5": { entrada: 3, saida: 15 },
-  "claude-opus-4-8": { entrada: 5, saida: 25 },
-};
+import { perfilDoModelo, precoDoModelo } from "../ai/modelos.js";
 
 /**
  * Multiplicadores do prompt caching sobre o preço de ENTRADA.
@@ -41,8 +35,9 @@ export interface ConsumoTokens {
 export function calcularCustoUSD(
   consumo: ConsumoTokens,
   modelo: string,
+  quando: Date = new Date(),
 ): { custoUSD: number; economiaCacheUSD: number } {
-  const preco = PRECO_POR_MTOK[modelo] ?? PRECO_POR_MTOK["claude-haiku-4-5"];
+  const preco = precoDoModelo(modelo, quando);
   const porMtok = (tokens: number, precoMtok: number) => (tokens / 1_000_000) * precoMtok;
 
   const custoUSD =
@@ -106,6 +101,33 @@ export interface Metricas {
   custoEstimadoUSD: number;
   /** Quanto o prompt caching poupou no período (US$). 0 = cache não pegou. */
   economiaCacheUSD: number;
+  /**
+   * O prompt caching está pegando? `null` = ainda sem volume para dizer.
+   *
+   * É o sinal que faltava: sem ele, cache desligado e cache que não compensou
+   * ficam idênticos no painel (economia zero nos dois casos). Ver
+   * `minPrefixoCacheModelo` para o motivo mais comum de `false`.
+   */
+  cacheAtivo: boolean | null;
+  /** Prefixo mínimo que o modelo configurado exige para cachear (tokens). */
+  minPrefixoCacheModelo: number;
+}
+
+/**
+ * Regra pura (testável): o cache está pegando?
+ *
+ * Só responde quando há consumo suficiente para a pergunta fazer sentido — com
+ * duas ou três mensagens no período, leitura zero não significa nada (a primeira
+ * chamada sempre grava, nunca lê).
+ */
+export function diagnosticarCache(
+  consumo: ConsumoTokens,
+  minRespostas = 10,
+  respostas = minRespostas,
+): boolean | null {
+  const totalEntrada = consumo.entrada + consumo.cacheEscrita + consumo.cacheLeitura;
+  if (respostas < minRespostas || totalEntrada === 0) return null;
+  return consumo.cacheLeitura > 0;
 }
 
 export async function calcularMetricas(
@@ -164,15 +186,14 @@ export async function calcularMetricas(
   const tokensCacheEscrita = consumo._sum.cacheCreationTokens ?? 0;
   const tokensCacheLeitura = consumo._sum.cacheReadTokens ?? 0;
 
-  const { custoUSD, economiaCacheUSD } = calcularCustoUSD(
-    {
-      entrada: tokensEntrada,
-      saida: tokensSaida,
-      cacheEscrita: tokensCacheEscrita,
-      cacheLeitura: tokensCacheLeitura,
-    },
-    config.ai.model,
-  );
+  const consumoTokens: ConsumoTokens = {
+    entrada: tokensEntrada,
+    saida: tokensSaida,
+    cacheEscrita: tokensCacheEscrita,
+    cacheLeitura: tokensCacheLeitura,
+  };
+
+  const { custoUSD, economiaCacheUSD } = calcularCustoUSD(consumoTokens, config.ai.model);
 
   return {
     dias,
@@ -196,5 +217,7 @@ export async function calcularMetricas(
     tokensCacheLeitura,
     custoEstimadoUSD: custoUSD,
     economiaCacheUSD,
+    cacheAtivo: diagnosticarCache(consumoTokens, 10, mensagens.length - recebidas.length),
+    minPrefixoCacheModelo: perfilDoModelo(config.ai.model).minPrefixoCache,
   };
 }

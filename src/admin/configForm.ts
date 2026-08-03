@@ -13,6 +13,7 @@
  * abaixo só reescreve os blocos declarados. O resto vem da config atual.
  */
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
+import { MODELO_PADRAO, PERFIS } from "../ai/modelos.js";
 
 /** Blocos editáveis. O nome vai no `_blocos` do formulário que os contém. */
 export const BLOCOS = [
@@ -148,8 +149,12 @@ export function parseConfig(
   }
 
   if (tem("ia")) {
+    // Modelo desconhecido cai no padrão em vez de ser gravado: um id inválido
+    // (dedo pesado no formulário, modelo aposentado numa config antiga) só
+    // apareceria como 404 da Anthropic em cima da conversa do paciente.
+    const pedido = body.ai_model ?? atual.ai.model;
     cfg.ai = {
-      model: body.ai_model ?? atual.ai.model ?? "claude-haiku-4-5",
+      model: pedido && PERFIS[pedido] ? pedido : MODELO_PADRAO,
       persona: body.ai_persona ?? "",
     };
   }

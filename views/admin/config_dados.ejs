@@ -88,11 +88,11 @@
     <div class="grid2">
       <label>Modelo
         <select name="ai_model">
-          <% ["claude-haiku-4-5","claude-sonnet-5","claude-opus-4-8"].forEach(function(m){ %>
-            <option value="<%= m %>" <%= cfg.ai.model === m ? "selected" : "" %>><%= m %></option>
+          <% modelos.forEach(function(m){ %>
+            <option value="<%= m.id %>" <%= cfg.ai.model === m.id ? "selected" : "" %>><%= m.rotulo %></option>
           <% }) %>
         </select>
-        <small>Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</small>
+        <small>Trocar o modelo troca também custo, latência e o mínimo de cache — veja o diagnóstico em Métricas.</small>
       </label>
     </div>
   <% } else { %>

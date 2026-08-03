@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { foraDoHorario, calcularCustoUSD } from "../../src/admin/metrics.js";
+import { foraDoHorario, calcularCustoUSD, diagnosticarCache } from "../../src/admin/metrics.js";
 
 const TZ = "America/Sao_Paulo";
 const dias = {
@@ -76,12 +76,54 @@ describe("calcularCustoUSD", () => {
   });
 
   it("usa o preço do modelo caro quando é ele que está configurado", () => {
-    const r = calcularCustoUSD({ ...zerado, entrada: 1_000_000 }, "claude-sonnet-5");
-    expect(r.custoUSD).toBeCloseTo(3, 6);
+    // Opus: US$ 5/Mtok de entrada. Sem promoção, o preço de tabela vale sempre.
+    const r = calcularCustoUSD({ ...zerado, entrada: 1_000_000 }, "claude-opus-5");
+    expect(r.custoUSD).toBeCloseTo(5, 6);
   });
 
   it("cai no preço do Haiku quando o modelo é desconhecido", () => {
     const r = calcularCustoUSD({ ...zerado, entrada: 1_000_000 }, "modelo-que-nao-existe");
     expect(r.custoUSD).toBeCloseTo(1, 6);
+  });
+
+  // REGRESSÃO: o Sonnet 5 está em preço promocional até 31/08/2026. A tabela
+  // cobrava os US$ 3 cheios, superestimando o custo da clínica em 50% — e, pior,
+  // um número chumbado continuaria barato depois que a promoção vencesse.
+  it("respeita a promoção enquanto ela vale e volta ao preço cheio depois", () => {
+    const durante = calcularCustoUSD(
+      { ...zerado, entrada: 1_000_000 },
+      "claude-sonnet-5",
+      new Date("2026-08-03T12:00:00Z"),
+    );
+    expect(durante.custoUSD).toBeCloseTo(2, 6);
+
+    const depois = calcularCustoUSD(
+      { ...zerado, entrada: 1_000_000 },
+      "claude-sonnet-5",
+      new Date("2026-09-01T12:00:00Z"),
+    );
+    expect(depois.custoUSD).toBeCloseTo(3, 6);
+  });
+});
+
+describe("diagnosticarCache", () => {
+  const zerado = { entrada: 0, saida: 0, cacheEscrita: 0, cacheLeitura: 0 };
+
+  it("sem volume suficiente não arrisca um veredito", () => {
+    expect(diagnosticarCache({ ...zerado, entrada: 5000 }, 10, 3)).toBe(null);
+  });
+
+  it("sem consumo nenhum também não arrisca", () => {
+    expect(diagnosticarCache(zerado, 10, 50)).toBe(null);
+  });
+
+  // REGRESSÃO: é a diferença entre "o cache não compensou" e "o cache nunca foi
+  // tentado". Os dois apareciam como economia zero no painel.
+  it("com volume e leitura zerada, o cache não está pegando", () => {
+    expect(diagnosticarCache({ ...zerado, entrada: 200_000 }, 10, 50)).toBe(false);
+  });
+
+  it("qualquer leitura de cache já prova que está pegando", () => {
+    expect(diagnosticarCache({ ...zerado, entrada: 200_000, cacheLeitura: 1 }, 10, 50)).toBe(true);
   });
 });

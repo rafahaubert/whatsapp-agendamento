@@ -5,6 +5,7 @@
 import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
+import { MODELO_PADRAO } from "../ai/modelos.js";
 import { AppointmentStatus, SlotStatus, statusUI } from "../shared/enums.js";
 import {
   agendaDoProfissional,
@@ -48,7 +49,7 @@ export function defaultConfig(name: string): TenantConfig {
       acceptParticular: true,
     },
     ai: {
-      model: "claude-haiku-4-5",
+      model: MODELO_PADRAO,
       persona:
         "Você é um atendente cordial, objetivo e acolhedor de uma clínica médica no Brasil. Use português do Brasil, seja breve e evite jargões.",
     },

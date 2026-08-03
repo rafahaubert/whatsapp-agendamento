@@ -17,6 +17,7 @@ import {
 } from "./auth.js";
 import { exposeCsrf, verifyCsrf } from "./csrf.js";
 import { podeGerenciarUsuarioDaClinica } from "./permissoes.js";
+import { MODELOS_OFERECIDOS, PERFIS } from "../ai/modelos.js";
 import {
   listTenants,
   getTenant,
@@ -179,6 +180,11 @@ export function makeAdminRouter(): Router {
     res.locals.usuario = u;
     res.locals.ehSuper = ehSuper(req);
     res.locals.caminhoAtual = req.baseUrl + req.path;
+    // A lista de modelos vem de src/ai/modelos.ts, que também define preço,
+    // mínimo de cache e configuração de pensamento. Chumbá-la no template era
+    // como o Opus 5 ficava de fora do painel enquanto o Opus 4.8, do mesmo
+    // preço e menos capaz, continuava oferecido.
+    res.locals.modelos = MODELOS_OFERECIDOS.map((id) => ({ id, rotulo: PERFIS[id].rotulo }));
 
     // O badge de pendentes vive no menu, então precisa existir em TODAS as telas
     // da clínica — não só na que já contava (GET /clinicas/:id). Aqui o :id ainda
