@@ -169,15 +169,15 @@ model HealthPlan {
 // PACIENTE
 // =========================================================
 model Patient {
-  id        String    @id @default(cuid())
-  tenantId  String
-  name      String
-  cpf       String
-  phone     String // E.164: +5511999999999
-  birthDate DateTime?
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  cpf          String
+  phone        String // E.164: +5511999999999
+  birthDate    DateTime?
   lastRecallAt DateTime? // último contato de reativação (evita repetir)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   insurances   PatientInsurance[]
@@ -222,6 +222,12 @@ model Slot {
   endsAt      DateTime
   status      String   @default("AVAILABLE") // AVAILABLE | BOOKED | BLOCKED (src/shared/enums.ts)
 
+  // Reserva temporária da fila de espera. Sem ela o horário era anunciado ao
+  // primeiro da fila e continuava aberto a todo mundo: quem recebesse a
+  // mensagem chegava atrasado num horário que já tinha sido levado por outro.
+  reservedUntil        DateTime?
+  reservedForPatientId String?
+
   tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit        Unit         @relation(fields: [unitId], references: [id])
   doctor      Doctor       @relation(fields: [doctorId], references: [id])
@@ -232,6 +238,7 @@ model Slot {
   @@index([tenantId, specialtyId, status, startsAt])
   @@index([tenantId, unitId, startsAt])
   @@index([doctorId, startsAt])
+  @@index([reservedUntil]) // usado pelo job que solta as reservas vencidas
   @@map("slots")
 }
 
@@ -239,27 +246,35 @@ model Slot {
 // AGENDAMENTO
 // =========================================================
 model Appointment {
-  id           String   @id @default(cuid())
-  tenantId     String
-  unitId       String
-  patientId    String
-  doctorId     String
-  specialtyId  String
-  slotId       String   @unique // 1 slot = 1 agendamento
-  healthPlanId String? // null = atendimento particular
-  paymentType  String   @default("PARTICULAR") // PARTICULAR | HEALTH_PLAN
-  status         String    @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
-  notes          String?
-  googleEventId  String? // ID do evento no Google Calendar (para atualizar/remover)
-  reminderSentAt DateTime? // quando o lembrete foi enviado (evita reenvio)
-  confirmedAt    DateTime? // quando o paciente confirmou presença
+  id                 String    @id @default(cuid())
+  tenantId           String
+  unitId             String
+  patientId          String
+  doctorId           String
+  specialtyId        String
+  slotId             String    @unique // 1 slot = 1 agendamento
+  healthPlanId       String? // null = atendimento particular
+  paymentType        String    @default("PARTICULAR") // PARTICULAR | HEALTH_PLAN
+  status             String    @default("SCHEDULED") // SCHEDULED | CONFIRMED | CANCELLED | RESCHEDULED | COMPLETED | NO_SHOW
+  notes              String?
+  googleEventId      String? // ID do evento no Google Calendar (para atualizar/remover)
+  reminderSentAt     DateTime? // quando o lembrete foi enviado (evita reenvio)
+  confirmedAt        DateTime? // quando o paciente confirmou presença
   // Falha no envio não grava `reminderSentAt`, então sem um contador o mesmo
   // lembrete voltava a cada ciclo do cron para sempre (template rejeitado pela
   // Meta = chamadas infinitas). Depois de MAX_TENTATIVAS o candidato sai da fila.
-  reminderRetryCount Int     @default(0)
+  reminderRetryCount Int       @default(0)
   reminderLastError  String? // último erro de envio, para diagnóstico no painel
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  // Desfecho da consulta (base da taxa de falta, a métrica que vende o produto).
+  // Antes dependia inteiramente de a recepção clicar no painel: sem o clique, o
+  // agendamento ficava SCHEDULED para sempre e a taxa não fechava.
+  outcomeAskedAt DateTime? // quando perguntamos ao paciente se ele compareceu
+  // Desfecho PRESUMIDO por falta de resposta, não confirmado por ninguém. Fica
+  // separado para o painel não vender como fato o que é estimativa.
+  outcomeAuto    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   unit       Unit        @relation(fields: [unitId], references: [id])
@@ -288,11 +303,20 @@ model Waitlist {
   notifiedAt  DateTime?
   createdAt   DateTime  @default(now())
 
+  // Qual horário foi oferecido nesta notificação — o job de expiração precisa
+  // saber o que soltar quando o paciente não responde.
+  slotId          String?
+  // Ofertas ignoradas. Ordena a fila (quem nunca recebeu vem antes de quem já
+  // deixou passar) e, no limite, encerra a inscrição de quem não responde —
+  // antes o candidato virava NOTIFIED e ficava preso ali para sempre.
+  ofertasPerdidas Int     @default(0)
+
   tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   specialty Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, specialtyId, status])
+  @@index([status, notifiedAt]) // usado pelo job que reoferta ao próximo
   @@map("waitlist")
 }
 
@@ -368,17 +392,17 @@ model ProcessedMessage {
 // CONVERSA — memória do agente entre mensagens (por telefone)
 // =========================================================
 model Conversation {
-  id            String    @id @default(cuid())
-  tenantId      String
-  patientPhone  String // E.164
-  state         String // JSON serializado: etapa (FSM) + dados coletados
-  history       String? // JSON serializado: histórico compactado p/ o LLM
-  humanHandoff  Boolean   @default(false) // true = atendimento humano (bot silencia)
-  handoffAt     DateTime?
-  lastMessageAt DateTime  @default(now())
+  id             String    @id @default(cuid())
+  tenantId       String
+  patientPhone   String // E.164
+  state          String // JSON serializado: etapa (FSM) + dados coletados
+  history        String? // JSON serializado: histórico compactado p/ o LLM
+  humanHandoff   Boolean   @default(false) // true = atendimento humano (bot silencia)
+  handoffAt      DateTime?
+  lastMessageAt  DateTime  @default(now())
   followUpSentAt DateTime? // cutucada enviada em conversa abandonada (só uma, nunca repete)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -393,12 +417,12 @@ model Conversation {
 // (a memória do LLM continua em Conversation.history)
 // =========================================================
 model Message {
-  id        String   @id @default(cuid())
-  tenantId  String
-  phone     String // E.164 do paciente
-  direction String // IN | OUT
-  sentBy    String   @default("BOT") // BOT | HUMAN | PATIENT
-  text      String
+  id                  String   @id @default(cuid())
+  tenantId            String
+  phone               String // E.164 do paciente
+  direction           String // IN | OUT
+  sentBy              String   @default("BOT") // BOT | HUMAN | PATIENT
+  text                String
   // Consumo do turno de IA (só nas respostas do bot) — base de custo por clínica.
   // Com prompt caching ligado a API separa o input em três faixas de PREÇO
   // diferente: `inputTokens` é só o não-cacheado (1x), escrita de cache custa
@@ -408,7 +432,7 @@ model Message {
   outputTokens        Int?
   cacheCreationTokens Int?
   cacheReadTokens     Int?
-  createdAt DateTime @default(now())
+  createdAt           DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

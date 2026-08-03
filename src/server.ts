@@ -11,6 +11,8 @@ import { enviarLembretes } from "./jobs/reminders.js";
 import { renovarAgendas } from "./jobs/agenda.js";
 import { enviarReativacoes } from "./jobs/recall.js";
 import { enviarFollowUps } from "./jobs/followUp.js";
+import { reofertarFilaEspera } from "./jobs/filaEspera.js";
+import { apurarDesfechos } from "./jobs/desfecho.js";
 import { logger } from "./shared/logger.js";
 import { safeEqual } from "./shared/comparacao.js";
 import { limiteJobs } from "./shared/rateLimit.js";
@@ -156,7 +158,9 @@ app.post(["/jobs/run", "/jobs/reminders"], limiteJobs, async (req, res) => {
     const agenda = unificada ? await renovarAgendas() : null;
     const reativacoes = unificada ? await enviarReativacoes() : null;
     const followUps = unificada ? await enviarFollowUps() : null;
-    res.json({ ok: true, lembretes, agenda, reativacoes, followUps });
+    const filaEspera = unificada ? await reofertarFilaEspera() : null;
+    const desfechos = unificada ? await apurarDesfechos() : null;
+    res.json({ ok: true, lembretes, agenda, reativacoes, followUps, filaEspera, desfechos });
   } catch (err) {
     logger.error({ err }, "falha ao executar os jobs");
     res.status(500).json({ ok: false });
@@ -187,6 +191,10 @@ app.listen(env.PORT, () => {
     () => {
       enviarLembretes().catch((err) => logger.error({ err }, "falha no ciclo de lembretes"));
       enviarFollowUps().catch((err) => logger.error({ err }, "falha no ciclo de follow-ups"));
+      // A reserva da fila de espera dura 30 minutos: um ciclo de 10 basta para
+      // o próximo da fila ser chamado logo depois de o convite vencer.
+      reofertarFilaEspera().catch((err) => logger.error({ err }, "falha no ciclo da fila de espera"));
+      apurarDesfechos().catch((err) => logger.error({ err }, "falha no ciclo de desfechos"));
     },
     10 * 60 * 1000,
   ).unref();

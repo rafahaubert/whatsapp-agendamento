@@ -16,7 +16,7 @@
     <button class="btn sm">Salvar templates</button>
   </div>
   <%# Só as automações: salvar aqui não encosta no resto da configuração. %>
-  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup" />
+  <input type="hidden" name="_blocos" value="lembrete fila reativacao followup desfecho" />
   <input type="hidden" name="_voltar" value="/config/templates" />
 
   <h2>Lembrete de consulta (reduz faltas)</h2>
@@ -28,6 +28,10 @@
   </div>
   <div class="grid3">
     <label>Horas de antecedência<input type="number" name="reminders_hoursBefore" value="<%= rem.hoursBefore %>" /></label>
+    <label>Carência após agendar (horas)
+      <input type="number" name="reminders_minHorasAposAgendar" value="<%= rem.minHorasAposAgendar ?? 6 %>" />
+      <small>Não lembrar quem acabou de marcar — o lembrete sairia minutos depois do agendamento.</small>
+    </label>
     <% if (ehSuper) { %>
       <label>Nome do template<input name="reminders_templateName" value="<%= rem.templateName %>" placeholder="lembrete_consulta" /></label>
       <label>Idioma do template<input name="reminders_templateLang" value="<%= rem.templateLang || 'pt_BR' %>" /></label>
@@ -87,6 +91,26 @@
   <label style="display:block;margin-top:8px">Mensagem (vazio = padrão)
     <input name="followUp_message" value="<%= fu.message || '' %>" placeholder="Oi! Vi que nossa conversa parou por aqui 🙂 Quer que eu siga com o seu agendamento?" />
   </label>
+
+  <h2>Desfecho da consulta (fecha a taxa de falta)</h2>
+  <% var oc = cfg.outcome || { enabled: false, horasAposConsulta: 3, diasParaPresumir: 3 }; %>
+  <p class="muted">A <strong>taxa de falta</strong> só fecha quando cada consulta tem um desfecho —
+    e hoje isso depende de alguém clicar "compareceu" no painel. Com isto ligado, o agente
+    <strong>pergunta ao próprio paciente</strong> algumas horas depois (de graça, dentro das 24h da
+    Meta) e, no silêncio, <strong>presume comparecimento</strong> depois de alguns dias. O que for
+    presumido aparece marcado nas métricas — estimativa não vira fato.</p>
+  <div class="checks">
+    <label><input type="checkbox" name="outcome_enabled" <%= oc.enabled ? "checked" : "" %> /> Ativar apuração de desfecho</label>
+  </div>
+  <div class="grid3">
+    <label>Horas após a consulta para perguntar
+      <input type="number" name="outcome_horasAposConsulta" value="<%= oc.horasAposConsulta ?? 3 %>" />
+    </label>
+    <label>Dias até presumir comparecimento
+      <input type="number" name="outcome_diasParaPresumir" value="<%= oc.diasParaPresumir ?? 3 %>" />
+      <small>0 = nunca presume (só conta o que for confirmado).</small>
+    </label>
+  </div>
 
   <div style="margin-top:14px"><button class="btn">Salvar templates</button></div>
 </form>

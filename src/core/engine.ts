@@ -14,6 +14,7 @@ import { transcreverAudio, isTranscricaoConfigurada } from "../integrations/tran
 import {
   confirmAppointment,
   cancelAppointment,
+  marcarComparecimento,
   periodosReaisDaAgenda,
   pacientesDoTelefone,
 } from "../domain/scheduling.js";
@@ -37,7 +38,20 @@ const PEDE_ATENDENTE =
   /^\s*(atendente|humano|recep(c|ç)(a|ã)o)\s*$|falar com (um )?(atendente|humano|pessoa|recep)/i;
 
 /** Ações de payload válidas. */
-const ACOES_VALIDAS = new Set(["CONFIRMAR", "CANCELAR", "REMARCAR", "SLOT", "ESP", "SIM", "NAO"]);
+const ACOES_VALIDAS = new Set([
+  "CONFIRMAR",
+  "CANCELAR",
+  "REMARCAR",
+  "SLOT",
+  "ESP",
+  "SIM",
+  "NAO",
+  // Resposta à pergunta de desfecho (src/jobs/desfecho.ts). É o que transforma
+  // a taxa de falta num número apurado em vez de um clique que a recepção
+  // esquecia de dar.
+  "VEIO",
+  "FALTEI",
+]);
 
 /**
  * O que acompanha um "Posso confirmar?": sim ou não, num toque.
@@ -345,6 +359,20 @@ export const conversationEngine: MessageHandler = {
       if (acao === "CANCELAR") {
         const r = (await cancelAppointment(tenant, id)) as { erro?: string };
         const resposta = r.erro ? r.erro : "Consulta cancelada. 👍 Se quiser remarcar, é só me chamar!";
+        await logMessage(tenant.id, from, "OUT", resposta, "BOT");
+        return { texto: resposta };
+      }
+
+      // Desfecho respondido pelo próprio paciente: vale mais que qualquer
+      // presunção, e é de graça (mensagem livre dentro da janela da Meta).
+      if (acao === "VEIO" || acao === "FALTEI") {
+        const compareceu = acao === "VEIO";
+        const r = (await marcarComparecimento(tenant, id, compareceu)) as { erro?: string };
+        const resposta = r.erro
+          ? r.erro
+          : compareceu
+            ? "Que bom! 😊 Obrigado por confirmar. Qualquer coisa, é só chamar."
+            : "Entendi, obrigado por avisar. Quer que eu remarque para outro dia?";
         await logMessage(tenant.id, from, "OUT", resposta, "BOT");
         return { texto: resposta };
       }

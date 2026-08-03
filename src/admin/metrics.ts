@@ -85,6 +85,14 @@ export interface Metricas {
   compareceram: number;
   faltaram: number;
   taxaFalta: number | null; // null = ainda sem dados
+  /**
+   * Quantos desfechos foram PRESUMIDOS por falta de resposta (src/jobs/desfecho.ts).
+   *
+   * Vai junto da taxa de falta de propósito: sem este número, uma taxa calculada
+   * quase toda em cima de presunção pareceria tão firme quanto uma apurada
+   * paciente a paciente.
+   */
+  desfechosPresumidos: number;
   lembretesEnviados: number;
   lembretesConfirmados: number;
   taxaConfirmacao: number | null;
@@ -138,7 +146,7 @@ export async function calcularMetricas(
 ): Promise<Metricas> {
   const desde = new Date(Date.now() - dias * 86_400_000);
 
-  const [porStatus, criados, lembretes, mensagens, conversas, consumo] = await Promise.all([
+  const [porStatus, criados, lembretes, mensagens, conversas, consumo, presumidos] = await Promise.all([
     // Desfecho das consultas do período (pela data da consulta).
     prisma.appointment.groupBy({
       by: ["status"],
@@ -164,6 +172,10 @@ export async function calcularMetricas(
         cacheCreationTokens: true,
         cacheReadTokens: true,
       },
+    }),
+    // Quanto da taxa de falta é presunção, e não desfecho apurado.
+    prisma.appointment.count({
+      where: { tenantId, outcomeAuto: true, slot: { startsAt: { gte: desde } } },
     }),
   ]);
 
@@ -203,6 +215,7 @@ export async function calcularMetricas(
     compareceram,
     faltaram,
     taxaFalta: realizadas > 0 ? (faltaram / realizadas) * 100 : null,
+    desfechosPresumidos: presumidos,
     lembretesEnviados: lembretes.length,
     lembretesConfirmados,
     taxaConfirmacao: lembretes.length > 0 ? (lembretesConfirmados / lembretes.length) * 100 : null,

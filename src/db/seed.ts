@@ -81,6 +81,23 @@ type SlotRow = {
 };
 
 /**
+ * O que identifica um horário na agenda, independente do id da linha.
+ *
+ * É por esta chave que a renovação diária reconhece o horário que já existe e
+ * o preserva com o mesmo id, em vez de apagar e recriar. Sem isso, todo
+ * `SLOT:<id>` entregue ao paciente (o botão do convite da fila de espera, a
+ * lista de horários que ele ainda não tocou) virava pó da noite para o dia.
+ */
+export function chaveSlot(s: {
+  doctorId: string;
+  unitId: string;
+  specialtyId: string;
+  startsAt: Date;
+}): string {
+  return `${s.doctorId}|${s.unitId}|${s.specialtyId}|${s.startsAt.getTime()}`;
+}
+
+/**
  * (Re)gera os horários LIVRES de uma clínica (preserva os já reservados).
  * Gerador simplificado para demonstração: cobre os próximos `slotDays` dias
  * dentro do horário de funcionamento. Reutilizado pelo seed e pelo painel.
@@ -188,15 +205,44 @@ export async function regenerateSlots(
         where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { isNot: null } },
         data: { status: SlotStatus.BOOKED },
       });
-      await tx.slot.deleteMany({
+
+      // O horário que continua na agenda MANTÉM O MESMO ID.
+      //
+      // Antes, a renovação apagava todos os livres e recriava tudo com cuid
+      // novo. Quem tivesse um `SLOT:<id>` na mão — o botão do convite da fila de
+      // espera, uma lista de horários que o paciente ainda não tocou — recebia
+      // "Horário não encontrado" no dia seguinte, sem ter feito nada de errado.
+      // Também poupa a reserva temporária da fila, que morava na linha apagada.
+      const existentes = await tx.slot.findMany({
         where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { is: null } },
+        select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true },
       });
+
+      const gerados = new Map(rows.map((r) => [chaveSlot(r), r]));
+      const apagar: string[] = [];
+
+      for (const slot of existentes) {
+        const chave = chaveSlot(slot);
+        // Já existe e continua valendo: fica de pé, com o mesmo id.
+        if (gerados.delete(chave)) continue;
+        // O gerador não produz mais este horário (o profissional mudou de
+        // horário, entrou um bloqueio, o dia saiu da janela): sai da agenda.
+        apagar.push(slot.id);
+      }
+
+      // Em lotes, pelo mesmo motivo do createMany abaixo: um `IN (...)` com
+      // milhares de ids estoura o teto de 65535 parâmetros por comando do
+      // Postgres — e derrubaria a renovação inteira de uma clínica grande.
+      for (let i = 0; i < apagar.length; i += LOTE_INSERCAO) {
+        await tx.slot.deleteMany({ where: { id: { in: apagar.slice(i, i + LOTE_INSERCAO) } } });
+      }
 
       // Em lotes: o Postgres aceita no máximo 65535 parâmetros por comando, e um
       // createMany é UM comando só. Uma clínica com poucos milhares de horários
       // já estourava o limite — e derrubava a renovação inteira.
-      for (let i = 0; i < rows.length; i += LOTE_INSERCAO) {
-        await tx.slot.createMany({ data: rows.slice(i, i + LOTE_INSERCAO) });
+      const novos = [...gerados.values()];
+      for (let i = 0; i < novos.length; i += LOTE_INSERCAO) {
+        await tx.slot.createMany({ data: novos.slice(i, i + LOTE_INSERCAO) });
       }
     },
     { timeout: 120_000, maxWait: 30_000 },

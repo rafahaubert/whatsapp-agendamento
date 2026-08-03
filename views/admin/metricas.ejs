@@ -41,7 +41,9 @@
     <span class="meter <%= faixaFalta(m.taxaFalta) %>"><i style="width:<%= larg(m.taxaFalta) %>%"></i></span>
     <span class="sub">
       <% if (m.taxaFalta === null) { %>sem desfecho marcado ainda<% }
-         else { %><b><%= num(m.faltaram) %></b> faltas em <%= num(realizadas) %> consultas<% } %>
+         else { %><b><%= num(m.faltaram) %></b> faltas em <%= num(realizadas) %> consultas<%
+           if (m.desfechosPresumidos) { %> · <%= num(m.desfechosPresumidos) %> presumidas<% }
+         } %>
     </span>
   </div>
 
@@ -62,8 +64,17 @@
 
 <% if (m.taxaFalta === null) { %>
   <p class="muted" style="margin:-4px 0 14px">
-    A taxa de falta aparece quando a recepção começar a marcar <strong>Compareceu / Faltou</strong>
-    nas consultas passadas (aba <a href="/admin/clinicas/<%= t.id %>#agenda">Agenda</a>).
+    A taxa de falta aparece quando cada consulta passada tiver um desfecho. A recepção pode marcar
+    <strong>Compareceu / Faltou</strong> na aba <a href="/admin/clinicas/<%= t.id %>#agenda">Agenda</a>,
+    ou você liga a apuração automática em
+    <a href="/admin/clinicas/<%= t.id %>/config/templates">Templates de mensagens</a> — o agente
+    pergunta ao próprio paciente.
+  </p>
+<% } else if (m.desfechosPresumidos) { %>
+  <p class="muted" style="margin:-4px 0 14px">
+    <strong><%= num(m.desfechosPresumidos) %></strong> desfecho(s) foram <strong>presumidos</strong>
+    por falta de resposta, não confirmados por ninguém. Quanto maior esse número, mais a taxa de
+    falta é estimativa — ela tende a ficar otimista.
   </p>
 <% } %>
 
@@ -198,6 +209,16 @@
         <span class="sub"><%= num(m.tokensCacheLeitura) %> tokens lidos do cache</span>
       </div>
     </div>
+    <%# Economia zero tem duas causas MUITO diferentes: o cache não compensou, ou
+        o prefixo não alcança o mínimo do modelo e a API o ignorou em silêncio. %>
+    <% if (m.cacheAtivo === false) { %>
+      <p class="erro" style="margin:10px 0">
+        <strong>O prompt caching não está pegando.</strong> O modelo
+        <code><%= t.parsedConfig.ai.model %></code> exige um prefixo de pelo menos
+        <%= num(m.minPrefixoCacheModelo) %> tokens para cachear; abaixo disso a API ignora o pedido
+        sem devolver erro. Um modelo com mínimo menor resolve — ou uma base de conhecimento maior.
+      </p>
+    <% } %>
     <p class="muted" style="margin-bottom:0">
       Estimativa com base nos preços por milhão de tokens do modelo configurado —
       confirme os valores atuais antes de usar em proposta comercial.

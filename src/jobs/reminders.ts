@@ -29,33 +29,48 @@ const ELEGIVEIS: string[] = [
  */
 export const MAX_TENTATIVAS = 3;
 
+/**
+ * Carência padrão entre agendar e ser lembrado, quando a clínica não configurou.
+ *
+ * Seis horas cobrem o caso que mais incomodava — marcar de manhã para o dia
+ * seguinte — sem atrasar o lembrete de quem marcou com dias de antecedência.
+ */
+export const MIN_HORAS_APOS_AGENDAR_PADRAO = 6;
+
 export interface AgendamentoLembrete {
   id: string;
   status: string;
   reminderSentAt: Date | null;
   startsAt: Date;
+  /** Quando o agendamento foi criado — base da carência. */
+  createdAt: Date;
   /** Envios que já falharam para este agendamento. */
   reminderRetryCount: number;
 }
 
 /**
  * Regra pura (testável): quais agendamentos devem receber lembrete agora.
- * Elegível = status ativo, ainda sem lembrete, com tentativas de sobra e
- * começando dentro da janela [agora, agora + hoursBefore].
+ *
+ * Elegível = status ativo, ainda sem lembrete, com tentativas de sobra,
+ * começando dentro da janela [agora, agora + hoursBefore] E agendado há tempo
+ * suficiente para o lembrete não ser redundante (`minHorasAposAgendar`).
  */
 export function selecionarParaLembrete<T extends AgendamentoLembrete>(
   agendamentos: T[],
   agora: Date,
   hoursBefore: number,
+  minHorasAposAgendar: number = MIN_HORAS_APOS_AGENDAR_PADRAO,
 ): T[] {
   const limite = new Date(agora.getTime() + hoursBefore * 3_600_000);
+  const criadoAteNoMaximo = new Date(agora.getTime() - minHorasAposAgendar * 3_600_000);
   return agendamentos.filter(
     (a) =>
       a.reminderSentAt == null &&
       a.reminderRetryCount < MAX_TENTATIVAS &&
       ELEGIVEIS.includes(a.status) &&
       a.startsAt > agora &&
-      a.startsAt <= limite,
+      a.startsAt <= limite &&
+      a.createdAt <= criadoAteNoMaximo,
   );
 }
 
@@ -80,6 +95,13 @@ export async function enviarLembretes(agora = new Date()): Promise<{ enviados: n
 
     const limite = new Date(agora.getTime() + cfg.hoursBefore * 3_600_000);
 
+    // Carência: lembrar alguém do que ele acabou de marcar gasta um template na
+    // Meta para dizer o óbvio. O filtro vai na CONSULTA (e não só na regra pura)
+    // para o agendamento recém-criado nem sequer ocupar uma página do cursor.
+    const carencia =
+      cfg.minHorasAposAgendar ?? MIN_HORAS_APOS_AGENDAR_PADRAO;
+    const criadoAteNoMaximo = new Date(agora.getTime() - carencia * 3_600_000);
+
     // Paginação com cursor para não perder lembretes além de 200.
     let cursor: string | undefined;
     const pageSize = 200;
@@ -91,6 +113,7 @@ export async function enviarLembretes(agora = new Date()): Promise<{ enviados: n
           reminderSentAt: null,
           status: { in: ELEGIVEIS },
           slot: { startsAt: { gt: agora, lte: limite } },
+          createdAt: { lte: criadoAteNoMaximo },
           // Quem já esgotou as tentativas sai da fila — sem isto o envio que
           // falha volta a cada ciclo do cron, indefinidamente.
           reminderRetryCount: { lt: MAX_TENTATIVAS },

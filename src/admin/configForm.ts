@@ -27,6 +27,7 @@ export const BLOCOS = [
   "fila", // fila de espera
   "reativacao", // reativação de pacientes
   "followup", // follow-up de conversa abandonada
+  "desfecho", // apuração de comparecimento (base da taxa de falta)
 ] as const;
 export type Bloco = (typeof BLOCOS)[number];
 
@@ -167,6 +168,7 @@ export function parseConfig(
     cfg.reminders = {
       enabled: bool(body.reminders_enabled),
       hoursBefore: num(body.reminders_hoursBefore, 24),
+      minHorasAposAgendar: num(body.reminders_minHorasAposAgendar, 6),
       templateName: (body.reminders_templateName ?? "").trim(),
       templateLang: (body.reminders_templateLang ?? "pt_BR").trim() || "pt_BR",
     };
@@ -194,6 +196,14 @@ export function parseConfig(
       enabled: bool(body.followUp_enabled),
       minutesAfter: num(body.followUp_minutesAfter, 30),
       message: (body.followUp_message ?? "").trim() || undefined,
+    };
+  }
+
+  if (tem("desfecho")) {
+    cfg.outcome = {
+      enabled: bool(body.outcome_enabled),
+      horasAposConsulta: num(body.outcome_horasAposConsulta, 3),
+      diasParaPresumir: num(body.outcome_diasParaPresumir, 3),
     };
   }
 

@@ -78,6 +78,15 @@ export interface TenantConfig {
     enabled: boolean;
     /** Horas de antecedência do envio (ex.: 24). */
     hoursBefore: number;
+    /**
+     * Carência: horas mínimas entre AGENDAR e receber o lembrete (padrão: 6).
+     *
+     * Sem ela, quem marca hoje para amanhã com `hoursBefore: 24` recebe o
+     * lembrete no ciclo seguinte de 10 minutos — paga-se um template à Meta
+     * para lembrar o paciente de algo que ele acabou de fazer, e o "lembrete
+     * anti-falta" vira ruído.
+     */
+    minHorasAposAgendar?: number;
     /** Nome do template aprovado na Meta. */
     templateName: string;
     /** Código do idioma do template (ex.: "pt_BR"). */
@@ -89,6 +98,28 @@ export interface TenantConfig {
     enabled: boolean;
     templateName: string;
     templateLang: string;
+  };
+
+  /**
+   * Desfecho da consulta — a base da TAXA DE FALTA, que é a métrica que sustenta
+   * a renovação do contrato.
+   *
+   * Antes ela dependia de a recepção clicar "compareceu" no painel: sem o
+   * clique, o agendamento ficava SCHEDULED para sempre e a taxa não fechava —
+   * justamente na clínica com menos disciplina, que é a que mais precisa do
+   * produto.
+   *
+   * Duas frentes: perguntar ao paciente (de graça, dentro da janela de 24h da
+   * Meta) e, no silêncio, presumir comparecimento depois de alguns dias. O que
+   * for presumido fica marcado como tal — o painel não vende estimativa como
+   * fato.
+   */
+  outcome?: {
+    enabled: boolean;
+    /** Horas após o fim da consulta para perguntar ao paciente (padrão: 3). */
+    horasAposConsulta?: number;
+    /** Dias sem resposta até presumir comparecimento (padrão: 3). 0 = nunca presume. */
+    diasParaPresumir?: number;
   };
 
   /** Reativação: convida de volta quem não vem há alguns meses. */
