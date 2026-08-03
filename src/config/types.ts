@@ -38,7 +38,19 @@ export interface TenantConfig {
   };
 
   booking: {
+    /**
+     * Duração padrão de uma consulta. Cada especialidade pode ter a sua própria
+     * (`Specialty.durationMinutes`); este valor vale para quem não definiu.
+     */
     slotDurationMinutes: number;
+    /**
+     * Minutos entre uma consulta e a seguinte do mesmo profissional (padrão: 0).
+     *
+     * É o tempo de higienizar a sala, anotar o prontuário, respirar. Sem ele a
+     * agenda encosta um paciente no outro e o atraso da manhã inteira nasce da
+     * primeira consulta que passa cinco minutos do previsto.
+     */
+    bufferMinutes?: number;
     maxOptionsOffered: number; // regra de negócio: ofertar 3 horários
     advanceBookingDays: number; // janela p/ frente
     allowCancellation: boolean;
@@ -47,6 +59,19 @@ export interface TenantConfig {
     askInsurance: boolean;
     /** Se a clínica aceita atendimento particular. */
     acceptParticular: boolean;
+    /**
+     * Fecha a agenda nos feriados NACIONAIS automaticamente.
+     *
+     * Sem isto a clínica precisa lembrar de bloquear o Carnaval na mão todo ano
+     * — e quando esquece, o agente passa a terça-feira oferecendo horários com
+     * a porta fechada. Feriados municipais e estaduais continuam manuais: variam
+     * demais para chutar.
+     */
+    feriadosNacionais?: {
+      enabled: boolean;
+      /** Carnaval e Corpus Christi (não são feriado por lei, mas quase todo mundo fecha). */
+      incluirFacultativos: boolean;
+    };
   };
 
   ai: {

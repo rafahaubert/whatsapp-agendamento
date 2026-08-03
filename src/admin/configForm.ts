@@ -139,12 +139,17 @@ export function parseConfig(
   if (tem("regras")) {
     cfg.booking = {
       slotDurationMinutes: num(body.booking_slotDurationMinutes, 30),
+      bufferMinutes: num(body.booking_bufferMinutes, 0),
       maxOptionsOffered: num(body.booking_maxOptionsOffered, 3),
       advanceBookingDays: num(body.booking_advanceBookingDays, 30),
       allowCancellation: bool(body.booking_allowCancellation),
       allowReschedule: bool(body.booking_allowReschedule),
       askInsurance: bool(body.booking_askInsurance),
       acceptParticular: bool(body.booking_acceptParticular),
+      feriadosNacionais: {
+        enabled: bool(body.booking_feriadosNacionais_enabled),
+        incluirFacultativos: bool(body.booking_feriadosNacionais_facultativos),
+      },
     };
     cfg.debounceSeconds = num(body.debounceSeconds, 8);
   }

@@ -491,6 +491,17 @@ function periodoDaFaixa(faixa: [number, number]): Periodo {
   return faixa[0] >= 18 ? "noite" : "tarde";
 }
 
+/**
+ * Intervalo entre consultas do mesmo profissional, em MILISSEGUNDOS.
+ *
+ * Vive aqui porque é aplicado em dois lugares que precisam concordar: a geração
+ * da agenda (src/db/seed.ts) e as travas de conflito ao agendar e ao remarcar.
+ */
+function folgaEntreConsultas(tenant: ResolvedTenant): number {
+  const min = tenant.config.booking.bufferMinutes;
+  return Number.isFinite(min) && (min ?? 0) > 0 ? Math.round(min as number) * 60_000 : 0;
+}
+
 // ---------- Agendar ----------
 export async function bookAppointment(
   tenant: ResolvedTenant,
@@ -538,14 +549,20 @@ export async function bookAppointment(
 
     // O gerador cria um slot por unidade × especialidade do profissional: sem
     // esta checagem dois pacientes cairiam no mesmo profissional e horário.
+    //
+    // A folga entra aqui também, e não só na geração: como cada especialidade
+    // tem a sua duração, os slots de procedimentos diferentes se cruzam na
+    // agenda do mesmo profissional. Sem isto, uma limpeza de 15 minutos
+    // encaixaria colada no fim de um canal de 90.
+    const folga = folgaEntreConsultas(tenant);
     const conflito = await tx.appointment.findFirst({
       where: {
         tenantId,
         status: { not: AppointmentStatus.CANCELLED },
         slot: {
           doctorId: slot.doctorId,
-          startsAt: { lt: slot.endsAt },
-          endsAt: { gt: slot.startsAt },
+          startsAt: { lt: new Date(slot.endsAt.getTime() + folga) },
+          endsAt: { gt: new Date(slot.startsAt.getTime() - folga) },
         },
       },
       select: { id: true },
@@ -792,6 +809,7 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
     });
     if (jaUsado) throw new ConflitoAgendamento("Esse horário não está mais livre.");
 
+    const folga = folgaEntreConsultas(tenant);
     const conflito = await tx.appointment.findFirst({
       where: {
         id: { not: appt.id },
@@ -799,8 +817,8 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
         status: { not: AppointmentStatus.CANCELLED },
         slot: {
           doctorId: novo.doctorId,
-          startsAt: { lt: novo.endsAt },
-          endsAt: { gt: novo.startsAt },
+          startsAt: { lt: new Date(novo.endsAt.getTime() + folga) },
+          endsAt: { gt: new Date(novo.startsAt.getTime() - folga) },
         },
       },
       select: { id: true },

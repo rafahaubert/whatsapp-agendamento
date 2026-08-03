@@ -639,12 +639,12 @@ export function makeAdminRouter(): Router {
   });
 
   router.post("/clinicas/:id/especialidades", async (req: Request, res: Response) => {
-    await addSpecialty(req.params.id, req.body.name, req.body.preco);
+    await addSpecialty(req.params.id, req.body.name, req.body.preco, req.body.duracao);
     res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 
   router.post("/clinicas/:id/especialidades/:specId/preco", async (req: Request, res: Response) => {
-    await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco);
+    await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco, req.body.duracao);
     res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 

@@ -128,16 +128,61 @@ export async function addUnit(tenantId: string, d: { name: string; address?: str
   });
 }
 
-export async function addSpecialty(tenantId: string, name: string, priceParticular?: string) {
+/**
+ * Valor em reais digitado no painel → centavos.
+ *
+ * Aceita o que o brasileiro escreve de verdade: "150", "150,00", "R$ 1.250,50".
+ * Devolve `null` quando não dá para ler um número — o relatório prefere não ter
+ * o valor a somar um número inventado.
+ */
+export function reaisParaCentavos(v: unknown): number | null {
+  const bruto = String(v ?? "").trim();
+  if (!bruto) return null;
+  // Tira "R$" e espaços; ponto é separador de milhar, vírgula é decimal.
+  const limpo = bruto.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(limpo);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** Minutos digitados no painel; `null` = herda o padrão da clínica. */
+export function lerDuracao(v: unknown): number | null {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export async function addSpecialty(
+  tenantId: string,
+  name: string,
+  priceParticular?: string,
+  duracao?: unknown,
+) {
   await prisma.specialty.create({
-    data: { tenantId, name, priceParticular: priceParticular?.trim() || null },
+    data: {
+      tenantId,
+      name,
+      priceParticular: priceParticular?.trim() || null,
+      priceCents: reaisParaCentavos(priceParticular),
+      durationMinutes: lerDuracao(duracao),
+    },
   });
 }
 
-export async function updateSpecialtyPrice(tenantId: string, id: string, priceParticular?: string) {
+export async function updateSpecialtyPrice(
+  tenantId: string,
+  id: string,
+  priceParticular?: string,
+  duracao?: unknown,
+) {
   await prisma.specialty.updateMany({
     where: { id, tenantId },
-    data: { priceParticular: priceParticular?.trim() || null },
+    data: {
+      priceParticular: priceParticular?.trim() || null,
+      // O texto livre continua sendo o que o paciente lê ("A partir de R$ 120");
+      // os centavos são o que o relatório de faturamento consegue somar.
+      priceCents: reaisParaCentavos(priceParticular),
+      durationMinutes: lerDuracao(duracao),
+    },
   });
 }
 

@@ -10,6 +10,7 @@
  */
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
+import { sincronizarFeriados } from "./feriados.js";
 import { logger } from "../shared/logger.js";
 import type { TenantConfig } from "../config/types.js";
 
@@ -24,6 +25,15 @@ export async function renovarAgendas(): Promise<{ clinicas: number; horarios: nu
       config = JSON.parse(tenant.config) as TenantConfig;
     } catch {
       continue;
+    }
+
+    // Os feriados viram bloqueios ANTES da geração — criados depois, só valeriam
+    // na renovação do dia seguinte, e o agente passaria hoje inteiro oferecendo
+    // horários num dia em que a clínica fecha.
+    try {
+      await sincronizarFeriados(tenant, config);
+    } catch (err) {
+      logger.error({ err, tenant: tenant.slug }, "falha ao sincronizar os feriados");
     }
 
     try {

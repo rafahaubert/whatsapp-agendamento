@@ -88,6 +88,15 @@ model Specialty {
   priceParticular String? // valor particular (texto livre, ex.: "150,00" ou "A partir de R$ 120")
   isActive        Boolean @default(true)
 
+  // Duração deste procedimento em minutos. `null` = usa o padrão da clínica.
+  // Sem isto, uma limpeza de 15 minutos e um canal de 90 ocupavam o mesmo slot:
+  // a clínica ou perdia agenda no primeiro caso ou atrasava o dia no segundo.
+  durationMinutes Int?
+  // Valor particular em CENTAVOS. O `priceParticular` acima é texto livre
+  // ("A partir de R$ 120") e serve para o paciente ler; este é o número que o
+  // relatório de faturamento consegue somar.
+  priceCents      Int?
+
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   doctors      Doctor[] // m-n
   slots        Slot[]

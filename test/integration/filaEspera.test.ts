@@ -245,7 +245,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("renovação da agenda (integra�
   it("preserva o id do horário que continua na agenda", async () => {
     const antes = await prisma.slot.findMany({
       where: { tenantId: tenant.id, status: SlotStatus.AVAILABLE },
-      select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true },
+      select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true, endsAt: true },
     });
     expect(antes.length).toBeGreaterThan(0);
 
@@ -258,7 +258,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("renovação da agenda (integra�
 
     const depois = await prisma.slot.findMany({
       where: { tenantId: tenant.id, status: SlotStatus.AVAILABLE },
-      select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true },
+      select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true, endsAt: true },
     });
     const idPorChave = new Map(depois.map((s) => [chaveSlot(s), s.id]));
 
