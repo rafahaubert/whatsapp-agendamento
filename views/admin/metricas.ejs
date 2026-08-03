@@ -41,7 +41,9 @@
     <span class="meter <%= faixaFalta(m.taxaFalta) %>"><i style="width:<%= larg(m.taxaFalta) %>%"></i></span>
     <span class="sub">
       <% if (m.taxaFalta === null) { %>sem desfecho marcado ainda<% }
-         else { %><b><%= num(m.faltaram) %></b> faltas em <%= num(realizadas) %> consultas<% } %>
+         else { %><b><%= num(m.faltaram) %></b> faltas em <%= num(realizadas) %> consultas<%
+           if (m.desfechosPresumidos) { %> · <%= num(m.desfechosPresumidos) %> presumidas<% }
+         } %>
     </span>
   </div>
 
@@ -62,10 +64,107 @@
 
 <% if (m.taxaFalta === null) { %>
   <p class="muted" style="margin:-4px 0 14px">
-    A taxa de falta aparece quando a recepção começar a marcar <strong>Compareceu / Faltou</strong>
-    nas consultas passadas (aba <a href="/admin/clinicas/<%= t.id %>#agenda">Agenda</a>).
+    A taxa de falta aparece quando cada consulta passada tiver um desfecho. A recepção pode marcar
+    <strong>Compareceu / Faltou</strong> na aba <a href="/admin/clinicas/<%= t.id %>#agenda">Agenda</a>,
+    ou você liga a apuração automática em
+    <a href="/admin/clinicas/<%= t.id %>/config/templates">Templates de mensagens</a> — o agente
+    pergunta ao próprio paciente.
+  </p>
+<% } else if (m.desfechosPresumidos) { %>
+  <p class="muted" style="margin:-4px 0 14px">
+    <strong><%= num(m.desfechosPresumidos) %></strong> desfecho(s) foram <strong>presumidos</strong>
+    por falta de resposta, não confirmados por ninguém. Quanto maior esse número, mais a taxa de
+    falta é estimativa — ela tende a ficar otimista.
   </p>
 <% } %>
+
+<% if (m.usoDoPlano) { %>
+  <div class="card">
+    <div class="card-head">
+      <h2>Plano <%= m.usoDoPlano.plano %></h2>
+      <span class="muted">consumo do mês corrente</span>
+    </div>
+    <% if (m.usoDoPlano.cota === 0) { %>
+      <p class="muted" style="margin:0"><strong><%= num(m.usoDoPlano.usados) %></strong> agendamento(s) neste mês. Plano sem cota definida.</p>
+    <% } else { %>
+      <div class="kpis">
+        <div class="kpi">
+          <span class="rot">Agendamentos no mês</span>
+          <span class="val"><%= num(m.usoDoPlano.usados) %> / <%= num(m.usoDoPlano.cota) %></span>
+          <span class="meter <%= m.usoDoPlano.estourou ? 'm-danger' : (m.usoDoPlano.perto ? 'm-warn' : 'm-ok') %>"><i style="width:<%= larg(Math.min(m.usoDoPlano.percentual, 100)) %>%"></i></span>
+          <span class="sub"><%= pct(m.usoDoPlano.percentual) %> da cota</span>
+        </div>
+        <% if (m.usoDoPlano.estourou) { %>
+          <div class="kpi">
+            <span class="rot">Excedente</span>
+            <span class="val"><%= (m.usoDoPlano.excedenteCentavos/100).toLocaleString("pt-BR", {style:"currency", currency:"BRL"}) %></span>
+            <span class="sub"><b><%= num(m.usoDoPlano.excedentes) %></b> agendamento(s) acima da cota</span>
+          </div>
+        <% } %>
+      </div>
+      <%# A proposta comercial PROMETE avisar antes de virar fatura. Descobrir o
+          excedente no boleto é a pior hora possível. %>
+      <% if (m.usoDoPlano.estourou) { %>
+        <p class="erro" style="margin:10px 0 0">A cota do mês foi ultrapassada. Os agendamentos excedentes entram na próxima fatura.</p>
+      <% } else if (m.usoDoPlano.perto) { %>
+        <p class="muted" style="margin:10px 0 0"><strong>Atenção:</strong> a cota do mês está perto do limite. Passando dela, cada agendamento a mais entra na fatura.</p>
+      <% } %>
+    <% } %>
+  </div>
+<% } %>
+
+<!-- ===================== Dinheiro e agenda cheia ===================== -->
+<div class="card">
+  <div class="card-head">
+    <h2>Faturamento e ocupação</h2>
+    <span class="muted">últimos <%= m.dias %> dias</span>
+  </div>
+  <% var reais = function(c){ return (c/100).toLocaleString("pt-BR", {style:"currency", currency:"BRL"}); }; %>
+  <div class="kpis">
+    <div class="kpi">
+      <span class="rot">Faturado (particular)</span>
+      <span class="val"><%= reais(m.faturamentoCentavos) %></span>
+      <span class="sub">consultas já realizadas</span>
+    </div>
+    <div class="kpi">
+      <span class="rot">Agendado a receber</span>
+      <span class="val"><%= reais(m.faturamentoPrevistoCentavos) %></span>
+      <span class="sub">consultas marcadas e ainda não realizadas</span>
+    </div>
+    <div class="kpi">
+      <span class="rot">Ocupação dos próximos <%= m.diasAdiante %> dias</span>
+      <span class="val"><%= pct(m.ocupacaoAdiante) %></span>
+      <span class="meter m-info"><i style="width:<%= larg(m.ocupacaoAdiante) %>%"></i></span>
+      <span class="sub"><b><%= num(m.horariosLivresAdiante) %></b> horários livres para vender</span>
+    </div>
+  </div>
+
+  <% if (m.consultasSemPreco) { %>
+    <p class="muted" style="margin:8px 0 0">
+      <strong><%= num(m.consultasSemPreco) %></strong> consulta(s) do período ficaram de fora por não terem
+      <strong>valor particular</strong> cadastrado — o total acima é menor que o real. Cadastre os valores em
+      <a href="/admin/clinicas/<%= t.id %>/config/catalogo#especialidades">Catálogo → Especialidades</a>.
+    </p>
+  <% } %>
+  <p class="muted" style="margin:8px 0 0">Atendimentos por <strong>convênio</strong> não entram: o valor depende do plano e do repasse, que o sistema não conhece.</p>
+
+  <% if (m.faturamentoPorEspecialidade.length) { %>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Especialidade</th><th>Consultas</th><th>Faturado</th></tr></thead>
+        <tbody>
+          <% m.faturamentoPorEspecialidade.forEach(function(e){ %>
+            <tr>
+              <td><%= e.especialidade %></td>
+              <td><%= num(e.consultas) %></td>
+              <td><%= reais(e.centavos) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
 
 <!-- ===================== Consultas ===================== -->
 <div class="card">
@@ -198,6 +297,16 @@
         <span class="sub"><%= num(m.tokensCacheLeitura) %> tokens lidos do cache</span>
       </div>
     </div>
+    <%# Economia zero tem duas causas MUITO diferentes: o cache não compensou, ou
+        o prefixo não alcança o mínimo do modelo e a API o ignorou em silêncio. %>
+    <% if (m.cacheAtivo === false) { %>
+      <p class="erro" style="margin:10px 0">
+        <strong>O prompt caching não está pegando.</strong> O modelo
+        <code><%= t.parsedConfig.ai.model %></code> exige um prefixo de pelo menos
+        <%= num(m.minPrefixoCacheModelo) %> tokens para cachear; abaixo disso a API ignora o pedido
+        sem devolver erro. Um modelo com mínimo menor resolve — ou uma base de conhecimento maior.
+      </p>
+    <% } %>
     <p class="muted" style="margin-bottom:0">
       Estimativa com base nos preços por milhão de tokens do modelo configurado —
       confirme os valores atuais antes de usar em proposta comercial.

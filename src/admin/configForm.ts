@@ -13,6 +13,7 @@
  * abaixo só reescreve os blocos declarados. O resto vem da config atual.
  */
 import type { TenantConfig, DiaAtendimento } from "../config/types.js";
+import { MODELO_PADRAO, PERFIS } from "../ai/modelos.js";
 
 /** Blocos editáveis. O nome vai no `_blocos` do formulário que os contém. */
 export const BLOCOS = [
@@ -26,6 +27,10 @@ export const BLOCOS = [
   "fila", // fila de espera
   "reativacao", // reativação de pacientes
   "followup", // follow-up de conversa abandonada
+  "desfecho", // apuração de comparecimento (base da taxa de falta)
+  "pagamento", // sinal por Pix
+  "plano", // cota contratada e preço do excedente
+  "resumo", // resumo diário para o responsável
 ] as const;
 export type Bloco = (typeof BLOCOS)[number];
 
@@ -39,6 +44,22 @@ function bool(v: unknown): boolean {
 function num(v: unknown, padrao: number): number {
   const n = Number.parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : padrao;
+}
+
+/**
+ * Valor em reais digitado no painel → centavos. `null` quando não dá para ler.
+ *
+ * Duplica de propósito o helper de tenantAdmin.ts: importar de lá arrastaria o
+ * Prisma para dentro do parser de formulário, que hoje é puro e testável sem
+ * banco nenhum.
+ */
+export function reaisParaCentavosForm(v: unknown): number | null {
+  const bruto = String(v ?? "").trim();
+  if (!bruto) return null;
+  const limpo = bruto.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(limpo);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
 }
 
 /** "08:00" … "23:59". */
@@ -137,19 +158,29 @@ export function parseConfig(
   if (tem("regras")) {
     cfg.booking = {
       slotDurationMinutes: num(body.booking_slotDurationMinutes, 30),
+      bufferMinutes: num(body.booking_bufferMinutes, 0),
       maxOptionsOffered: num(body.booking_maxOptionsOffered, 3),
       advanceBookingDays: num(body.booking_advanceBookingDays, 30),
       allowCancellation: bool(body.booking_allowCancellation),
       allowReschedule: bool(body.booking_allowReschedule),
       askInsurance: bool(body.booking_askInsurance),
       acceptParticular: bool(body.booking_acceptParticular),
+      feriadosNacionais: {
+        enabled: bool(body.booking_feriadosNacionais_enabled),
+        incluirFacultativos: bool(body.booking_feriadosNacionais_facultativos),
+      },
+      googleSync: { enabled: bool(body.booking_googleSync_enabled) },
     };
     cfg.debounceSeconds = num(body.debounceSeconds, 8);
   }
 
   if (tem("ia")) {
+    // Modelo desconhecido cai no padrão em vez de ser gravado: um id inválido
+    // (dedo pesado no formulário, modelo aposentado numa config antiga) só
+    // apareceria como 404 da Anthropic em cima da conversa do paciente.
+    const pedido = body.ai_model ?? atual.ai.model;
     cfg.ai = {
-      model: body.ai_model ?? atual.ai.model ?? "claude-haiku-4-5",
+      model: pedido && PERFIS[pedido] ? pedido : MODELO_PADRAO,
       persona: body.ai_persona ?? "",
     };
   }
@@ -162,6 +193,7 @@ export function parseConfig(
     cfg.reminders = {
       enabled: bool(body.reminders_enabled),
       hoursBefore: num(body.reminders_hoursBefore, 24),
+      minHorasAposAgendar: num(body.reminders_minHorasAposAgendar, 6),
       templateName: (body.reminders_templateName ?? "").trim(),
       templateLang: (body.reminders_templateLang ?? "pt_BR").trim() || "pt_BR",
     };
@@ -189,6 +221,52 @@ export function parseConfig(
       enabled: bool(body.followUp_enabled),
       minutesAfter: num(body.followUp_minutesAfter, 30),
       message: (body.followUp_message ?? "").trim() || undefined,
+    };
+  }
+
+  if (tem("resumo")) {
+    const hora = num(body.dailyDigest_hora, 8);
+    cfg.dailyDigest = {
+      enabled: bool(body.dailyDigest_enabled),
+      phone: (body.dailyDigest_phone ?? "").trim(),
+      // Hora fora de 0–23 nunca casaria com a hora local e o resumo jamais sairia.
+      hora: hora >= 0 && hora <= 23 ? hora : 8,
+      templateName: (body.dailyDigest_templateName ?? "").trim(),
+      templateLang: (body.dailyDigest_templateLang ?? "pt_BR").trim() || "pt_BR",
+    };
+  }
+
+  if (tem("plano")) {
+    cfg.plan = {
+      nome: (body.plan_nome ?? "").trim() || "Sob consulta",
+      cotaMensal: num(body.plan_cotaMensal, 0),
+      excedenteCentavos: reaisParaCentavosForm(body.plan_excedente) ?? 0,
+    };
+  }
+
+  if (tem("pagamento")) {
+    const tipos = ["cpf", "cnpj", "email", "telefone", "aleatoria"] as const;
+    const tipo = String(body.payment_tipoChave ?? "");
+    cfg.payment = {
+      pixEnabled: bool(body.payment_pixEnabled),
+      chave: (body.payment_chave ?? "").trim(),
+      // Tipo desconhecido cairia no gerador e produziria um código que o banco
+      // recusa sem dizer por quê.
+      tipoChave: (tipos as readonly string[]).includes(tipo)
+        ? (tipo as (typeof tipos)[number])
+        : "aleatoria",
+      beneficiario: (body.payment_beneficiario ?? "").trim(),
+      cidade: (body.payment_cidade ?? "").trim(),
+      sinalCentavos: reaisParaCentavosForm(body.payment_sinal) ?? 0,
+      instrucoes: (body.payment_instrucoes ?? "").trim() || undefined,
+    };
+  }
+
+  if (tem("desfecho")) {
+    cfg.outcome = {
+      enabled: bool(body.outcome_enabled),
+      horasAposConsulta: num(body.outcome_horasAposConsulta, 3),
+      diasParaPresumir: num(body.outcome_diasParaPresumir, 3),
     };
   }
 

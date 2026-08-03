@@ -1,0 +1,97 @@
+# Verificação automática a cada push e pull request.
+#
+# Existia uma lacuna cara aqui: sem CI, metade dos arquivos de teste falhava na
+# COLETA por falta de variáveis de ambiente e ninguém via — cerca de cem testes
+# que já existiam nunca chegaram a rodar. E como o tsconfig de build cobre só
+# `src/`, um erro de tipo em `test/` ou `scripts/` compilava para sempre.
+#
+# Os quatro passos abaixo fecham exatamente esses buracos.
+name: CI
+
+on:
+  # `push` só no ramo principal. Ramo de trabalho é coberto pelo `pull_request` —
+  # aceitar os dois em todo ramo rodava o CI DUAS vezes a cada push num PR, e a
+  # chave de concorrência abaixo não junta as duas (o `github.ref` de um é
+  # `refs/heads/...` e o do outro é `refs/pull/N/merge`).
+  push:
+    branches: [main]
+  pull_request:
+
+# Um push novo cancela a execução anterior do mesmo ramo — não adianta gastar
+# minuto testando um commit que já foi substituído.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Tipos, testes e build
+    runs-on: ubuntu-latest
+
+    services:
+      # Os testes de integração exercitam transação SERIALIZABLE e travas de
+      # concorrência: sem um Postgres de verdade eles não provam nada.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: whatsapp
+          POSTGRES_PASSWORD: whatsapp
+          POSTGRES_DB: whatsapp_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U whatsapp -d whatsapp_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://whatsapp:whatsapp@localhost:5432/whatsapp_test?schema=public
+      TEST_DATABASE_URL: postgresql://whatsapp:whatsapp@localhost:5432/whatsapp_test?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # O cliente do Prisma é gerado, não versionado: sem isto o typecheck não
+      # conhece nenhum modelo.
+      - name: Gerar o cliente do Prisma
+        run: npx prisma generate
+
+      # Cobre `src/`, `test/`, `scripts/` e `prisma/` — ver tsconfig.check.json.
+      - name: Verificar tipos (repositório inteiro)
+        run: npm run typecheck
+
+      - name: Testes de unidade
+        run: npm test
+
+      # As migrations são o que roda em produção; `db push` não provaria que
+      # elas aplicam. Isto pega uma migration quebrada antes do deploy.
+      - name: Aplicar as migrations
+        run: npx prisma migrate deploy
+
+      # Migration que não bate com o schema gera um banco diferente do que o
+      # código espera — e o sintoma só aparece em produção.
+      - name: Conferir migrations contra o schema
+        run: |
+          # `?schema=public` é parâmetro do Prisma, não do libpq: com ele o psql
+          # recusa a URI inteira ("invalid URI query parameter") e sai com 2.
+          # Corta a query string — o banco e as credenciais continuam na URI.
+          psql "${DATABASE_URL%%\?*}" -c 'CREATE DATABASE shadow_ci;' >/dev/null
+          npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "postgresql://whatsapp:whatsapp@localhost:5432/shadow_ci?schema=public" \
+            --exit-code
+
+      - name: Testes de integração
+        run: npm run test:integration
+
+      - name: Build
+        run: npm run build

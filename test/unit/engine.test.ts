@@ -49,9 +49,11 @@ vi.mock("../../src/integrations/transcription.js", () => ({
   isTranscricaoConfigurada: () => false,
 }));
 const pacientesDoTelefone = vi.fn();
+const marcarComparecimento = vi.fn();
 vi.mock("../../src/domain/scheduling.js", () => ({
   confirmAppointment: vi.fn(),
   cancelAppointment: vi.fn(),
+  marcarComparecimento: (...a: unknown[]) => marcarComparecimento(...a),
   periodosReaisDaAgenda: vi.fn(async () => []),
   pacientesDoTelefone: (...a: unknown[]) => pacientesDoTelefone(...a),
 }));
@@ -401,5 +403,112 @@ describe("config com fuso inválido", () => {
     expect(reply?.texto).toBe("Oi! Como posso ajudar?");
     const [[params]] = criarMensagem.mock.calls as [[{ messages: { content: string }[] }]];
     expect(params.messages[0].content).toContain("Fuso: UTC");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Forma da requisição por modelo
+// ---------------------------------------------------------------------------
+// Omitir `thinking` significa "sem pensar" num modelo e "pensamento adaptativo"
+// noutro, e `max_tokens` é o teto de pensamento + texto SOMADOS. Trocar o modelo
+// no painel passava a truncar a resposta ao paciente sem nenhum aviso.
+describe("configuração do modelo na requisição", () => {
+  /** A requisição que o motor montou na última chamada. */
+  async function requisicao(modelo: string) {
+    const tenant = fakeTenant();
+    tenant.config.ai.model = modelo;
+    await conversationEngine.handle([msg("oi", tenant)]);
+    const [[params]] = criarMensagem.mock.calls as [
+      [
+        {
+          model: string;
+          max_tokens: number;
+          thinking?: { type: string };
+          output_config?: { effort: string };
+          system: { cache_control?: unknown }[];
+        },
+      ],
+    ];
+    return params;
+  }
+
+  it("nunca depende do default de pensamento", async () => {
+    for (const m of ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-4-8", "claude-opus-5"]) {
+      vi.clearAllMocks();
+      criarMensagem.mockResolvedValue(respostaSimples("ok"));
+      const p = await requisicao(m);
+      expect(p.thinking, m).toBeDefined();
+    }
+  });
+
+  it("desliga o pensamento no Haiku, que não pensa por padrão", async () => {
+    const p = await requisicao("claude-haiku-4-5");
+    expect(p.thinking).toEqual({ type: "disabled" });
+    expect(p.output_config).toBeUndefined(); // o Haiku 4.5 erra se receber `effort`
+    expect(p.max_tokens).toBe(1024);
+  });
+
+  // REGRESSÃO: com max_tokens em 1024 e pensamento ligado, o teto era dividido
+  // entre pensar e responder — e a resposta ao paciente saía cortada.
+  it("dá teto maior a quem pensa", async () => {
+    for (const m of ["claude-sonnet-5", "claude-opus-5"]) {
+      vi.clearAllMocks();
+      criarMensagem.mockResolvedValue(respostaSimples("ok"));
+      const p = await requisicao(m);
+      expect(p.thinking, m).toEqual({ type: "adaptive" });
+      expect(p.output_config, m).toEqual({ effort: "low" });
+      expect(p.max_tokens, m).toBeGreaterThan(1024);
+    }
+  });
+
+  it("modelo desconhecido na config não quebra a conversa", async () => {
+    const p = await requisicao("claude-modelo-aposentado");
+    expect(p.model).toBe("claude-modelo-aposentado"); // vai como está: quem decide é a API
+    expect(p.thinking).toEqual({ type: "disabled" }); // mas o perfil cai no padrão
+  });
+
+  it("o breakpoint de cache continua no system", async () => {
+    const p = await requisicao("claude-haiku-4-5");
+    expect(p.system[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Desfecho respondido pelo paciente
+// ---------------------------------------------------------------------------
+describe("botões de desfecho da consulta", () => {
+  function msgBotao(payload: string, titulo: string): IncomingMessage {
+    return { ...msg(titulo), payload };
+  }
+
+  // A taxa de falta é o número que sustenta a renovação. Antes só fechava se a
+  // recepção clicasse no painel; agora o próprio paciente responde num toque —
+  // e o motor resolve sem gastar uma ida ao modelo.
+  it("VEIO marca comparecimento sem chamar o modelo", async () => {
+    marcarComparecimento.mockResolvedValue({ status: "COMPARECEU" });
+
+    const reply = await conversationEngine.handle([msgBotao("VEIO:appt-1", "Sim, fui")]);
+
+    expect(marcarComparecimento).toHaveBeenCalledWith(expect.anything(), "appt-1", true);
+    expect(criarMensagem).not.toHaveBeenCalled();
+    expect(reply?.texto).toMatch(/obrigado por confirmar/i);
+  });
+
+  it("FALTEI marca falta e oferece remarcar", async () => {
+    marcarComparecimento.mockResolvedValue({ status: "FALTOU" });
+
+    const reply = await conversationEngine.handle([msgBotao("FALTEI:appt-2", "Não consegui")]);
+
+    expect(marcarComparecimento).toHaveBeenCalledWith(expect.anything(), "appt-2", false);
+    expect(criarMensagem).not.toHaveBeenCalled();
+    expect(reply?.texto).toMatch(/remarque|remarcar/i);
+  });
+
+  it("agendamento inexistente devolve o erro, não uma confirmação falsa", async () => {
+    marcarComparecimento.mockResolvedValue({ erro: "Agendamento não encontrado." });
+
+    const reply = await conversationEngine.handle([msgBotao("VEIO:sumiu", "Sim, fui")]);
+
+    expect(reply?.texto).toBe("Agendamento não encontrado.");
   });
 });

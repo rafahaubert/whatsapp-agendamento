@@ -267,6 +267,15 @@ export async function listAvailableSlots(
     specialtyId: specialty.id,
     status: SlotStatus.AVAILABLE,
     startsAt: { gte: now, lte: limite },
+    // Horário prometido a alguém da fila de espera fica fora da vitrine até a
+    // reserva vencer — menos para o próprio convidado, que precisa vê-lo para
+    // aceitar. Sem isto o convite valia nada: outro paciente levava o horário
+    // antes de o convidado abrir o WhatsApp.
+    OR: [
+      { reservedUntil: null },
+      { reservedUntil: { lte: now } },
+      ...(opts.pacienteId ? [{ reservedForPatientId: opts.pacienteId }] : []),
+    ],
   };
 
   if (opts.unidade) {
@@ -482,6 +491,17 @@ function periodoDaFaixa(faixa: [number, number]): Periodo {
   return faixa[0] >= 18 ? "noite" : "tarde";
 }
 
+/**
+ * Intervalo entre consultas do mesmo profissional, em MILISSEGUNDOS.
+ *
+ * Vive aqui porque é aplicado em dois lugares que precisam concordar: a geração
+ * da agenda (src/db/seed.ts) e as travas de conflito ao agendar e ao remarcar.
+ */
+function folgaEntreConsultas(tenant: ResolvedTenant): number {
+  const min = tenant.config.booking.bufferMinutes;
+  return Number.isFinite(min) && (min ?? 0) > 0 ? Math.round(min as number) * 60_000 : 0;
+}
+
 // ---------- Agendar ----------
 export async function bookAppointment(
   tenant: ResolvedTenant,
@@ -502,6 +522,20 @@ export async function bookAppointment(
       throw new ConflitoAgendamento("Esse horário acabou de ser reservado. Escolha outro.");
     }
 
+    // Reserva da fila de espera: dentro da janela, o horário é de quem foi
+    // convidado. A checagem mora DENTRO da transação porque a vitrine
+    // (listAvailableSlots) filtra por leitura e o paciente pode chegar aqui com
+    // um slotId antigo, de antes de a reserva existir.
+    if (
+      slot.reservedUntil &&
+      slot.reservedUntil > new Date() &&
+      slot.reservedForPatientId !== patientId
+    ) {
+      throw new ConflitoAgendamento(
+        "Esse horário está reservado para outro paciente por alguns minutos. Escolha outro.",
+      );
+    }
+
     // Um slot só comporta um agendamento (índice único em slotId). Se sobrou
     // um agendamento cancelado preso a ele (dado antigo), avisa em vez de
     // estourar P2002 no meio da conversa.
@@ -515,14 +549,20 @@ export async function bookAppointment(
 
     // O gerador cria um slot por unidade × especialidade do profissional: sem
     // esta checagem dois pacientes cairiam no mesmo profissional e horário.
+    //
+    // A folga entra aqui também, e não só na geração: como cada especialidade
+    // tem a sua duração, os slots de procedimentos diferentes se cruzam na
+    // agenda do mesmo profissional. Sem isto, uma limpeza de 15 minutos
+    // encaixaria colada no fim de um canal de 90.
+    const folga = folgaEntreConsultas(tenant);
     const conflito = await tx.appointment.findFirst({
       where: {
         tenantId,
         status: { not: AppointmentStatus.CANCELLED },
         slot: {
           doctorId: slot.doctorId,
-          startsAt: { lt: slot.endsAt },
-          endsAt: { gt: slot.startsAt },
+          startsAt: { lt: new Date(slot.endsAt.getTime() + folga) },
+          endsAt: { gt: new Date(slot.startsAt.getTime() - folga) },
         },
       },
       select: { id: true },
@@ -577,7 +617,8 @@ export async function bookAppointment(
     // count = 0.
     const reservado = await tx.slot.updateMany({
       where: { id: slot.id, status: SlotStatus.AVAILABLE },
-      data: { status: SlotStatus.BOOKED },
+      // A reserva da fila de espera some junto: cumpriu o papel dela.
+      data: { status: SlotStatus.BOOKED, reservedUntil: null, reservedForPatientId: null },
     });
     if (reservado.count === 0) {
       throw new ConflitoAgendamento("Esse horário acabou de ser reservado. Escolha outro.");
@@ -587,6 +628,13 @@ export async function bookAppointment(
 
   if ("erro" in outcome) return outcome;
   const { appt, slot } = outcome;
+
+  // Fecha a inscrição na fila de espera: quem conseguiu a consulta não está mais
+  // esperando. O status DONE existia no schema desde o começo e nunca era
+  // atribuído — o paciente atendido continuava na fila para sempre.
+  await encerrarFilaEspera(tenant.id, patientId, slot.specialtyId).catch((err) =>
+    logger.error({ err, patientId }, "falha ao encerrar a inscrição na fila de espera"),
+  );
 
   // Google Calendar (one-way, best-effort, FORA da transação).
   const calendarId = slot.doctor.googleCalendarId;
@@ -741,6 +789,17 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
     if (novo.id === appt.slotId) {
       throw new ConflitoAgendamento("O agendamento já está nesse horário.");
     }
+    // Mesma regra do agendamento: horário prometido à fila de espera é de quem
+    // foi convidado enquanto a reserva durar.
+    if (
+      novo.reservedUntil &&
+      novo.reservedUntil > new Date() &&
+      novo.reservedForPatientId !== appt.patientId
+    ) {
+      throw new ConflitoAgendamento(
+        "Esse horário está reservado para outro paciente por alguns minutos. Escolha outro.",
+      );
+    }
 
     // Mesmas travas de bookAppointment: um slot só comporta um agendamento e o
     // profissional não pode ter duas consultas ao mesmo tempo.
@@ -750,6 +809,7 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
     });
     if (jaUsado) throw new ConflitoAgendamento("Esse horário não está mais livre.");
 
+    const folga = folgaEntreConsultas(tenant);
     const conflito = await tx.appointment.findFirst({
       where: {
         id: { not: appt.id },
@@ -757,8 +817,8 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
         status: { not: AppointmentStatus.CANCELLED },
         slot: {
           doctorId: novo.doctorId,
-          startsAt: { lt: novo.endsAt },
-          endsAt: { gt: novo.startsAt },
+          startsAt: { lt: new Date(novo.endsAt.getTime() + folga) },
+          endsAt: { gt: new Date(novo.startsAt.getTime() - folga) },
         },
       },
       select: { id: true },
@@ -784,11 +844,14 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
     }
 
     // O agendamento sai deste slot, então ele fica solto e pode voltar à agenda.
-    await tx.slot.update({ where: { id: appt.slotId }, data: { status: SlotStatus.AVAILABLE } });
+    await tx.slot.update({
+      where: { id: appt.slotId },
+      data: { status: SlotStatus.AVAILABLE, reservedUntil: null, reservedForPatientId: null },
+    });
     // Mesmo lock otimista do agendamento: só toma o slot novo se ninguém tomou antes.
     const reservado = await tx.slot.updateMany({
       where: { id: novo.id, status: SlotStatus.AVAILABLE },
-      data: { status: SlotStatus.BOOKED },
+      data: { status: SlotStatus.BOOKED, reservedUntil: null, reservedForPatientId: null },
     });
     if (reservado.count === 0) {
       throw new ConflitoAgendamento("Esse horário não está mais livre.");
@@ -808,6 +871,15 @@ async function doReschedule(tenant: ResolvedTenant, appointmentId: string, novoS
 
   if ("erro" in outcome) return outcome;
   const { appt, novo, updated } = outcome;
+
+  // Remarcar libera o horário antigo tanto quanto cancelar — e um horário nobre
+  // que vaga por remarcação vale o mesmo para quem está esperando. A fila só
+  // era avisada no cancelamento, então metade das vagas passava batido.
+  try {
+    await notificarFilaEspera(tenant, appt.slotId);
+  } catch (err) {
+    logger.error({ err, appointmentId: updated.id }, "falha ao avisar a fila de espera");
+  }
 
   // Google Calendar: atualiza o evento (ou move de calendário se o dentista mudou).
   if (isGoogleConfigured()) {
@@ -997,7 +1069,13 @@ export async function marcarComparecimento(
 
   await prisma.appointment.update({
     where: { id: appt.id },
-    data: { status: compareceu ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW },
+    data: {
+      status: compareceu ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW,
+      // Alguém afirmou o desfecho (a recepção pelo painel ou o próprio paciente
+      // pelo botão): deixa de ser presunção. Sem isto, uma consulta presumida e
+      // depois corrigida continuaria contando como estimativa no painel.
+      outcomeAuto: false,
+    },
   });
   return { status: compareceu ? "COMPARECEU" : "FALTOU", appointmentId: appt.id };
 }
@@ -1041,16 +1119,43 @@ export async function entrarFilaEspera(
 }
 
 /**
- * Avisa o primeiro da fila quando um horário é liberado (cancelamento).
- * Best-effort: nunca quebra o cancelamento. Exige o template `waitlistTemplate`
- * configurado na clínica.
+ * Quanto tempo o horário fica segurado para quem foi avisado.
+ *
+ * Sem uma reserva, avisar o primeiro da fila era só um aviso: qualquer outro
+ * paciente podia levar o horário antes de a mensagem ser lida — e o convidado
+ * chegava para descobrir que já era tarde. Trinta minutos dão tempo de ver o
+ * WhatsApp sem congelar a agenda para o resto do mundo.
+ */
+export const RESERVA_FILA_MINUTOS = 30;
+
+/**
+ * Ofertas ignoradas antes de encerrar a inscrição na fila.
+ *
+ * Quem não responde três convites não está esperando de verdade; mantê-lo na
+ * frente da fila atrasaria todo mundo atrás.
+ */
+export const MAX_OFERTAS_PERDIDAS = 3;
+
+/**
+ * Avisa o próximo da fila quando um horário é liberado (cancelamento ou
+ * remarcação) e SEGURA o horário para ele por alguns minutos.
+ *
+ * Best-effort: nunca quebra a operação que a chamou.
  */
 export async function notificarFilaEspera(tenant: ResolvedTenant, slotId: string): Promise<void> {
   const template = tenant.config.waitlist?.templateName;
   if (!tenant.config.waitlist?.enabled || !template) return;
 
+  const agora = new Date();
+
   const slot = await prisma.slot.findFirst({
-    where: { id: slotId, tenantId: tenant.id, status: SlotStatus.AVAILABLE },
+    where: {
+      id: slotId,
+      tenantId: tenant.id,
+      status: SlotStatus.AVAILABLE,
+      // Já prometido a alguém que ainda tem tempo de responder: não oferecer de novo.
+      OR: [{ reservedUntil: null }, { reservedUntil: { lte: agora } }],
+    },
     include: { doctor: true, unit: true, specialty: true },
   });
   if (!slot) return;
@@ -1062,34 +1167,166 @@ export async function notificarFilaEspera(tenant: ResolvedTenant, slotId: string
       tenantId: tenant.id,
       specialtyId: slot.specialtyId,
       status: "ACTIVE",
+      ofertasPerdidas: { lt: MAX_OFERTAS_PERDIDAS },
       OR: [{ periodo: null }, { periodo }],
     },
-    orderBy: { createdAt: "asc" }, // quem esperou mais tempo primeiro
+    // Quem nunca deixou passar uma oferta vem primeiro; entre iguais, quem
+    // esperou mais tempo. Sem o primeiro critério, quem ignora convites ficaria
+    // eternamente na frente de quem nunca recebeu nenhum.
+    orderBy: [{ ofertasPerdidas: "asc" }, { createdAt: "asc" }],
     include: { patient: true },
   });
   if (!candidato) return;
 
-  await sendWhatsAppTemplate(tenant.whatsappPhoneNumberId, candidato.patient.phone, {
-    name: template,
-    lang: tenant.config.waitlist.templateLang || "pt_BR",
-    // {{1}} paciente · {{2}} data/hora · {{3}} profissional · {{4}} unidade
-    bodyParams: [
-      candidato.patient.name,
-      formatDateTime(slot.startsAt, tenant.timezone),
-      slot.doctor.name,
-      slot.unit.name,
-    ],
-    // O botão devolve o slotId — o motor já sabe tratar payloads "SLOT:".
-    buttonPayloads: [`SLOT:${slot.id}`],
+  // A reserva vem ANTES do envio: se o processo cair no meio, o pior caso é um
+  // horário segurado por 30 minutos sem ninguém avisado — nunca o contrário,
+  // que é o paciente correndo para um horário que outro já levou.
+  const reservado = await prisma.slot.updateMany({
+    where: {
+      id: slot.id,
+      status: SlotStatus.AVAILABLE,
+      OR: [{ reservedUntil: null }, { reservedUntil: { lte: agora } }],
+    },
+    data: {
+      reservedUntil: new Date(agora.getTime() + RESERVA_FILA_MINUTOS * 60_000),
+      reservedForPatientId: candidato.patientId,
+    },
   });
+  // Outro ciclo do job (ou outro cancelamento) chegou primeiro nesta linha.
+  if (reservado.count === 0) return;
 
   await prisma.waitlist.update({
     where: { id: candidato.id },
-    data: { status: "NOTIFIED", notifiedAt: new Date() },
+    data: { status: "NOTIFIED", notifiedAt: agora, slotId: slot.id },
   });
+
+  try {
+    await sendWhatsAppTemplate(tenant.whatsappPhoneNumberId, candidato.patient.phone, {
+      name: template,
+      lang: tenant.config.waitlist.templateLang || "pt_BR",
+      // {{1}} paciente · {{2}} data/hora · {{3}} profissional · {{4}} unidade
+      bodyParams: [
+        candidato.patient.name,
+        formatDateTime(slot.startsAt, tenant.timezone),
+        slot.doctor.name,
+        slot.unit.name,
+      ],
+      // O botão devolve o slotId — o motor já sabe tratar payloads "SLOT:".
+      buttonPayloads: [`SLOT:${slot.id}`],
+    });
+  } catch (err) {
+    // Envio falhou: desfaz a reserva na hora em vez de deixar o horário preso
+    // meia hora por causa de um template rejeitado.
+    await liberarReserva(slot.id).catch(() => undefined);
+    await prisma.waitlist
+      .update({ where: { id: candidato.id }, data: { status: "ACTIVE", slotId: null } })
+      .catch(() => undefined);
+    logger.error(
+      { err, tenant: tenant.slug, slotId },
+      "falha ao avisar a fila de espera — reserva desfeita",
+    );
+    return;
+  }
 
   logger.info(
     { tenant: tenant.slug, pacienteId: candidato.patient.id, slotId },
     "fila de espera avisada sobre horário liberado",
   );
+}
+
+/** Solta a reserva temporária de um horário. */
+async function liberarReserva(slotId: string): Promise<void> {
+  await prisma.slot.updateMany({
+    where: { id: slotId },
+    data: { reservedUntil: null, reservedForPatientId: null },
+  });
+}
+
+/**
+ * Encerra a inscrição do paciente na fila daquela especialidade — ele conseguiu
+ * a consulta e não está mais esperando.
+ */
+export async function encerrarFilaEspera(
+  tenantId: string,
+  patientId: string,
+  specialtyId: string,
+): Promise<void> {
+  await prisma.waitlist.updateMany({
+    where: { tenantId, patientId, specialtyId, status: { in: ["ACTIVE", "NOTIFIED"] } },
+    data: { status: "DONE", slotId: null },
+  });
+}
+
+/**
+ * Encerra as ofertas vencidas e passa a vez ao próximo da fila.
+ *
+ * É o que faltava para a fila não morrer no primeiro convidado: antes, quem não
+ * respondia virava NOTIFIED e ficava lá para sempre — ninguém mais era avisado
+ * e o horário voltava ao balcão sem que a fila soubesse.
+ */
+export async function expirarOfertasFilaEspera(
+  tenant: ResolvedTenant,
+  agora = new Date(),
+): Promise<{ reofertados: number; encerrados: number }> {
+  if (!tenant.config.waitlist?.enabled) return { reofertados: 0, encerrados: 0 };
+
+  const limite = new Date(agora.getTime() - RESERVA_FILA_MINUTOS * 60_000);
+
+  const vencidas = await prisma.waitlist.findMany({
+    where: { tenantId: tenant.id, status: "NOTIFIED", notifiedAt: { lte: limite } },
+    take: 200,
+  });
+
+  let reofertados = 0;
+  let encerrados = 0;
+
+  for (const oferta of vencidas) {
+    // O horário virou consulta? Então a oferta deu certo: encerra a inscrição.
+    const virouConsulta = oferta.slotId
+      ? await prisma.appointment.findFirst({
+          where: {
+            slotId: oferta.slotId,
+            patientId: oferta.patientId,
+            status: { not: AppointmentStatus.CANCELLED },
+          },
+          select: { id: true },
+        })
+      : null;
+
+    if (virouConsulta) {
+      await prisma.waitlist.update({
+        where: { id: oferta.id },
+        data: { status: "DONE", slotId: null },
+      });
+      encerrados++;
+      continue;
+    }
+
+    const perdidas = oferta.ofertasPerdidas + 1;
+    const desiste = perdidas >= MAX_OFERTAS_PERDIDAS;
+
+    await prisma.waitlist.update({
+      where: { id: oferta.id },
+      data: {
+        status: desiste ? "DONE" : "ACTIVE",
+        ofertasPerdidas: perdidas,
+        slotId: null,
+      },
+    });
+    if (desiste) encerrados++;
+
+    // Solta o horário e oferece ao próximo — este é o ponto todo do job.
+    if (oferta.slotId) {
+      await liberarReserva(oferta.slotId);
+      await notificarFilaEspera(tenant, oferta.slotId).catch((err) =>
+        logger.error({ err, slotId: oferta.slotId }, "falha ao reofertar horário da fila"),
+      );
+      reofertados++;
+    }
+  }
+
+  if (reofertados || encerrados) {
+    logger.info({ tenant: tenant.slug, reofertados, encerrados }, "fila de espera reprocessada");
+  }
+  return { reofertados, encerrados };
 }

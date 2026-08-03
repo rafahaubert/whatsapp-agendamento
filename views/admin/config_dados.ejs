@@ -68,7 +68,14 @@
 
   <h2>Regras de agendamento</h2>
   <div class="grid3">
-    <label>Duração do slot (min)<input type="number" name="booking_slotDurationMinutes" value="<%= cfg.booking.slotDurationMinutes %>" /></label>
+    <label>Duração padrão da consulta (min)
+      <input type="number" name="booking_slotDurationMinutes" value="<%= cfg.booking.slotDurationMinutes %>" />
+      <small>Cada especialidade pode ter a sua, em <a href="/admin/clinicas/<%= t.id %>/config/catalogo#especialidades">Catálogo</a>.</small>
+    </label>
+    <label>Intervalo entre consultas (min)
+      <input type="number" name="booking_bufferMinutes" min="0" max="120" value="<%= cfg.booking.bufferMinutes ?? 0 %>" />
+      <small>Folga para higienizar a sala e anotar o prontuário. 0 = consultas coladas.</small>
+    </label>
     <label>Opções ofertadas<input type="number" name="booking_maxOptionsOffered" value="<%= cfg.booking.maxOptionsOffered %>" /></label>
     <label>Janela de agendamento (dias)<input type="number" name="booking_advanceBookingDays" value="<%= cfg.booking.advanceBookingDays %>" /></label>
     <label>Espera antes de responder (s)
@@ -83,16 +90,32 @@
     <label><input type="checkbox" name="booking_acceptParticular" <%= cfg.booking.acceptParticular ? "checked" : "" %> /> Aceitar particular</label>
   </div>
 
+  <% var fer = cfg.booking.feriadosNacionais || { enabled: false, incluirFacultativos: true }; %>
+  <div class="checks">
+    <label><input type="checkbox" name="booking_feriadosNacionais_enabled" <%= fer.enabled ? "checked" : "" %> /> Fechar a agenda nos feriados nacionais</label>
+    <label><input type="checkbox" name="booking_feriadosNacionais_facultativos" <%= fer.incluirFacultativos ? "checked" : "" %> /> Incluir Carnaval e Corpus Christi</label>
+  </div>
+  <p class="muted" style="margin-top:-4px">Só feriados <strong>nacionais</strong> — a data do Carnaval e do Corpus Christi é calculada a cada ano.
+    Feriados municipais e estaduais continuam em <a href="/admin/clinicas/<%= t.id %>/bloqueios">Bloqueios</a>.</p>
+
+  <% var gs = cfg.booking.googleSync || { enabled: false }; %>
+  <div class="checks">
+    <label><input type="checkbox" name="booking_googleSync_enabled" <%= gs.enabled ? "checked" : "" %> /> Respeitar a agenda do Google dos profissionais</label>
+  </div>
+  <p class="muted" style="margin-top:-4px">Fecha os horários que já estão ocupados na agenda pessoal do profissional.
+    Sem isto, um compromisso marcado direto no Google não é visto — e o agente continua oferecendo aquele horário.
+    Exige o Calendar ID configurado em <a href="/admin/clinicas/<%= t.id %>/config/equipe">Equipe</a>.</p>
+
   <h2>Inteligência artificial</h2>
   <% if (ehSuper) { %>
     <div class="grid2">
       <label>Modelo
         <select name="ai_model">
-          <% ["claude-haiku-4-5","claude-sonnet-5","claude-opus-4-8"].forEach(function(m){ %>
-            <option value="<%= m %>" <%= cfg.ai.model === m ? "selected" : "" %>><%= m %></option>
+          <% modelos.forEach(function(m){ %>
+            <option value="<%= m.id %>" <%= cfg.ai.model === m.id ? "selected" : "" %>><%= m.rotulo %></option>
           <% }) %>
         </select>
-        <small>Haiku = custo · Sonnet = equilíbrio · Opus = mais capaz</small>
+        <small>Trocar o modelo troca também custo, latência e o mínimo de cache — veja o diagnóstico em Métricas.</small>
       </label>
     </div>
   <% } else { %>

@@ -21,7 +21,7 @@ describe("carregarProposta", () => {
   it("lê o arquivo real da proposta", async () => {
     const html = await carregarProposta();
     expect(html).toContain("HAUBERT AGENTS");
-    expect(html).toContain("Sua recepção fecha às 18h.");
+    expect(html).toContain("Sua recepção foi para casa.");
     // o lockup vem de <symbol> embutidos: sem eles a marca some
     expect(html).toContain('id="m-haubert"');
   });

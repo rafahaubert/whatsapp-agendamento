@@ -73,19 +73,21 @@ do CLI `prisma`, que é devDependency — mover para `dependencies` antes.
   força bruta e rate limits vivem na memória do processo. Com 2+ instâncias os
   tetos multiplicam e o lock por conversa deixa de valer.
 - **Webhook é at-most-once.** O wamid é marcado como processado antes do
-  processamento e o ACK 200 sai antes também, então uma mensagem em voo se perde
-  se o processo morrer na janela de agrupamento (8s) — e a Meta não reenvia. Não
-  há graceful shutdown.
+  processamento e o ACK 200 sai antes também, então uma mensagem em voo pode se
+  perder se o processo morrer — e a Meta não reenvia. O encerramento gracioso
+  (SIGTERM/SIGINT) drena a janela de agrupamento antes de sair, o que cobre o
+  caso do deploy; um `kill -9` ou uma queda de máquina continuam perdendo o que
+  estava na janela.
 - **`processed_messages` cresce sem limite.** Falta rotina de poda.
 - **`ADMIN_PASSWORD` em texto plano** no ambiente. A comparação é em tempo
   constante, então não há timing attack; o risco residual é a senha aparecer no
   dashboard do provedor e em dumps de ambiente. Um `ADMIN_PASSWORD_HASH` seria
   melhor.
-- **Google Calendar é one-way.** O sistema só escreve. Bloqueio feito direto no
-  Google não é visto pelo agente, que continua oferecendo aquele horário.
-- **Sem CI.** Nada roda `npm test` nem `npm run build` automaticamente, e o
-  `tsconfig` só cobre `src/`, então `test/` e `scripts/` podem quebrar o
-  type-check sem ninguém notar.
+- **Google Calendar: a leitura é por varredura, não em tempo real.** O caminho
+  de volta existe — o job traduz os compromissos da agenda do profissional em
+  bloqueios —, mas não há canais de notificação (`watch`): um compromisso criado
+  direto no Google leva até um ciclo do cron para fechar a agenda aqui. Exige
+  `booking.googleSync.enabled` e o Calendar ID do profissional configurado.
 - **Ordem dos botões de template.** O envio amarra payload à posição
   (`index: String(i)` em `src/channels/whatsapp/client.ts`). Reordenar os botões
   no painel da Meta troca as ações — "Cancelar" passaria a confirmar. A recepção

@@ -1,0 +1,15 @@
+{
+  // Verificação de tipos de TUDO — inclusive `test/` e `scripts/`, que o
+  // tsconfig.json de build não alcança (ele tem `rootDir: "src"` porque só o
+  // `src/` deve virar `dist/`).
+  //
+  // Sem isto, um teste ou um script com erro de tipo compilava para sempre sem
+  // ninguém ver: `npm run build` passava, e o vitest transpila sem checar tipos.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -58,15 +58,48 @@ export interface Ocupacao {
   endsAt: Date;
 }
 
-/** O profissional já tem consulta ATIVA nesse horário? */
+/**
+ * Duração de um procedimento, em minutos.
+ *
+ * A especialidade manda; o padrão da clínica é a rede de baixo. Um valor
+ * inválido (zero, negativo, texto que virou NaN numa config antiga) cairia num
+ * laço infinito no gerador — o cursor nunca avançaria.
+ */
+export function duracaoDoProcedimento(
+  duracaoEspecialidade: number | null | undefined,
+  padraoDaClinica: number,
+): number {
+  const escolhida = duracaoEspecialidade ?? padraoDaClinica;
+  return Number.isFinite(escolhida) && escolhida > 0 ? Math.round(escolhida) : 30;
+}
+
+/** Intervalo entre consultas, saneado (nunca negativo). */
+export function intervaloEntreConsultas(bufferMinutes: number | undefined): number {
+  return Number.isFinite(bufferMinutes) && (bufferMinutes ?? 0) > 0
+    ? Math.round(bufferMinutes as number)
+    : 0;
+}
+
+/**
+ * O profissional já tem consulta ATIVA nesse horário?
+ *
+ * `buffer` estende a ocupação nas DUAS pontas: uma consulta das 14h às 15h com
+ * 15 minutos de intervalo ocupa, na prática, das 13h45 às 15h15 — nem a
+ * anterior pode encostar nela, nem a seguinte.
+ */
 export function estaOcupado(
   inicio: Date,
   fim: Date,
   doctorId: string,
   ocupacoes: Ocupacao[],
+  buffer = 0,
 ): boolean {
+  const folga = buffer * 60_000;
   return ocupacoes.some(
-    (o) => o.doctorId === doctorId && inicio < o.endsAt && fim > o.startsAt,
+    (o) =>
+      o.doctorId === doctorId &&
+      inicio.getTime() < o.endsAt.getTime() + folga &&
+      fim.getTime() > o.startsAt.getTime() - folga,
   );
 }
 
@@ -79,6 +112,31 @@ type SlotRow = {
   endsAt: Date;
   status: string;
 };
+
+/**
+ * O que identifica um horário na agenda, independente do id da linha.
+ *
+ * É por esta chave que a renovação diária reconhece o horário que já existe e
+ * o preserva com o mesmo id, em vez de apagar e recriar. Sem isso, todo
+ * `SLOT:<id>` entregue ao paciente (o botão do convite da fila de espera, a
+ * lista de horários que ele ainda não tocou) virava pó da noite para o dia.
+ *
+ * O FIM entra na chave junto com o início. Um horário que começa às 08:00 e
+ * dura 15 minutos não é o mesmo que começa às 08:00 e dura 30 — e sem isso, a
+ * clínica que mudasse a duração de um procedimento (ou o intervalo entre
+ * consultas) veria os horários já existentes serem preservados com a duração
+ * ANTIGA, indefinidamente. A mudança só apareceria nos dias que ainda não
+ * tinham sido gerados.
+ */
+export function chaveSlot(s: {
+  doctorId: string;
+  unitId: string;
+  specialtyId: string;
+  startsAt: Date;
+  endsAt: Date;
+}): string {
+  return `${s.doctorId}|${s.unitId}|${s.specialtyId}|${s.startsAt.getTime()}|${s.endsAt.getTime()}`;
+}
 
 /**
  * (Re)gera os horários LIVRES de uma clínica (preserva os já reservados).
@@ -117,6 +175,8 @@ export async function regenerateSlots(
   });
 
   const rows: SlotRow[] = [];
+  const padraoClinica = config.booking.slotDurationMinutes;
+  const buffer = intervaloEntreConsultas(config.booking.bufferMinutes);
 
   for (const doctor of doctors) {
     // Agenda do dentista (se definida) tem prioridade sobre o horário da clínica.
@@ -142,10 +202,20 @@ export async function regenerateSlots(
           const close = base.set({ hour: ch, minute: cm });
           let cursor = base.set({ hour: oh, minute: om });
 
-          const duracao = config.booking.slotDurationMinutes;
+          // A duração é DO PROCEDIMENTO, não da clínica: uma limpeza de 15
+          // minutos e um canal de 90 deixam de ocupar o mesmo slot.
+          const duracao = duracaoDoProcedimento(spec.durationMinutes, padraoClinica);
 
           while (cursor < close) {
             const fim = cursor.plus({ minutes: duracao });
+
+            // A consulta tem de CABER no expediente. Antes o teste era só sobre
+            // o início, então um procedimento de 90 minutos começando às 17h
+            // gerava um horário que terminava às 18h30 — meia hora depois de a
+            // clínica fechar. Com um único slot de 30 minutos isso nunca
+            // aparecia, porque a duração dividia o dia certinho.
+            if (fim > close) break;
+
             const inicioMin = cursor.hour * 60 + cursor.minute;
             const fimMin = inicioMin + duracao;
 
@@ -153,7 +223,7 @@ export async function regenerateSlots(
               cursor > now &&
               !noIntervalo(inicioMin, fimMin, hours) &&
               !estaBloqueado(cursor.toJSDate(), fim.toJSDate(), doctor.id, bloqueios) &&
-              !estaOcupado(cursor.toJSDate(), fim.toJSDate(), doctor.id, ocupacoes);
+              !estaOcupado(cursor.toJSDate(), fim.toJSDate(), doctor.id, ocupacoes, buffer);
 
             if (valido) {
               rows.push({
@@ -166,7 +236,9 @@ export async function regenerateSlots(
                 status: SlotStatus.AVAILABLE,
               });
             }
-            cursor = fim;
+            // O intervalo entra AQUI: o horário seguinte deste profissional só
+            // começa depois da folga para higienizar a sala e anotar o prontuário.
+            cursor = fim.plus({ minutes: buffer });
           }
         }
       }
@@ -188,15 +260,44 @@ export async function regenerateSlots(
         where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { isNot: null } },
         data: { status: SlotStatus.BOOKED },
       });
-      await tx.slot.deleteMany({
+
+      // O horário que continua na agenda MANTÉM O MESMO ID.
+      //
+      // Antes, a renovação apagava todos os livres e recriava tudo com cuid
+      // novo. Quem tivesse um `SLOT:<id>` na mão — o botão do convite da fila de
+      // espera, uma lista de horários que o paciente ainda não tocou — recebia
+      // "Horário não encontrado" no dia seguinte, sem ter feito nada de errado.
+      // Também poupa a reserva temporária da fila, que morava na linha apagada.
+      const existentes = await tx.slot.findMany({
         where: { tenantId, status: SlotStatus.AVAILABLE, appointment: { is: null } },
+        select: { id: true, doctorId: true, unitId: true, specialtyId: true, startsAt: true, endsAt: true },
       });
+
+      const gerados = new Map(rows.map((r) => [chaveSlot(r), r]));
+      const apagar: string[] = [];
+
+      for (const slot of existentes) {
+        const chave = chaveSlot(slot);
+        // Já existe e continua valendo: fica de pé, com o mesmo id.
+        if (gerados.delete(chave)) continue;
+        // O gerador não produz mais este horário (o profissional mudou de
+        // horário, entrou um bloqueio, o dia saiu da janela): sai da agenda.
+        apagar.push(slot.id);
+      }
+
+      // Em lotes, pelo mesmo motivo do createMany abaixo: um `IN (...)` com
+      // milhares de ids estoura o teto de 65535 parâmetros por comando do
+      // Postgres — e derrubaria a renovação inteira de uma clínica grande.
+      for (let i = 0; i < apagar.length; i += LOTE_INSERCAO) {
+        await tx.slot.deleteMany({ where: { id: { in: apagar.slice(i, i + LOTE_INSERCAO) } } });
+      }
 
       // Em lotes: o Postgres aceita no máximo 65535 parâmetros por comando, e um
       // createMany é UM comando só. Uma clínica com poucos milhares de horários
       // já estourava o limite — e derrubava a renovação inteira.
-      for (let i = 0; i < rows.length; i += LOTE_INSERCAO) {
-        await tx.slot.createMany({ data: rows.slice(i, i + LOTE_INSERCAO) });
+      const novos = [...gerados.values()];
+      for (let i = 0; i < novos.length; i += LOTE_INSERCAO) {
+        await tx.slot.createMany({ data: novos.slice(i, i + LOTE_INSERCAO) });
       }
     },
     { timeout: 120_000, maxWait: 30_000 },

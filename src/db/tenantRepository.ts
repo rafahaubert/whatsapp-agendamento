@@ -1,5 +1,23 @@
 import { prisma } from "./client.js";
 import type { TenantConfig } from "../config/types.js";
+import { logger } from "../shared/logger.js";
+
+/**
+ * Desserializa a config sem derrubar quem chamou.
+ *
+ * O `JSON.parse` direto rodava dentro do laço do webhook: uma config corrompida
+ * numa clínica estourava o lote inteiro, levando junto as mensagens das outras.
+ * Devolver `null` transforma isso em "clínica não resolvida" — o webhook ignora
+ * aquela mensagem e segue com o resto.
+ */
+function lerConfig(slug: string, bruto: string): TenantConfig | null {
+  try {
+    return JSON.parse(bruto) as TenantConfig;
+  } catch (err) {
+    logger.error({ err, tenant: slug }, "config da clínica não é um JSON válido");
+    return null;
+  }
+}
 
 /** Tenant já resolvido, com a `config` desserializada de String → objeto. */
 export interface ResolvedTenant {
@@ -15,13 +33,15 @@ export interface ResolvedTenant {
 export async function findTenantById(id: string): Promise<ResolvedTenant | null> {
   const tenant = await prisma.tenant.findUnique({ where: { id } });
   if (!tenant) return null;
+  const config = lerConfig(tenant.slug, tenant.config);
+  if (!config) return null;
   return {
     id: tenant.id,
     slug: tenant.slug,
     name: tenant.name,
     timezone: tenant.timezone,
     whatsappPhoneNumberId: tenant.whatsappPhoneNumberId,
-    config: JSON.parse(tenant.config) as TenantConfig,
+    config,
   };
 }
 
@@ -38,12 +58,15 @@ export async function findTenantByPhoneNumberId(
 
   if (!tenant || !tenant.isActive) return null;
 
+  const config = lerConfig(tenant.slug, tenant.config);
+  if (!config) return null;
+
   return {
     id: tenant.id,
     slug: tenant.slug,
     name: tenant.name,
     timezone: tenant.timezone,
     whatsappPhoneNumberId: tenant.whatsappPhoneNumberId,
-    config: JSON.parse(tenant.config) as TenantConfig,
+    config,
   };
 }

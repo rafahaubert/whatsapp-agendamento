@@ -38,7 +38,19 @@ export interface TenantConfig {
   };
 
   booking: {
+    /**
+     * Duração padrão de uma consulta. Cada especialidade pode ter a sua própria
+     * (`Specialty.durationMinutes`); este valor vale para quem não definiu.
+     */
     slotDurationMinutes: number;
+    /**
+     * Minutos entre uma consulta e a seguinte do mesmo profissional (padrão: 0).
+     *
+     * É o tempo de higienizar a sala, anotar o prontuário, respirar. Sem ele a
+     * agenda encosta um paciente no outro e o atraso da manhã inteira nasce da
+     * primeira consulta que passa cinco minutos do previsto.
+     */
+    bufferMinutes?: number;
     maxOptionsOffered: number; // regra de negócio: ofertar 3 horários
     advanceBookingDays: number; // janela p/ frente
     allowCancellation: boolean;
@@ -47,6 +59,28 @@ export interface TenantConfig {
     askInsurance: boolean;
     /** Se a clínica aceita atendimento particular. */
     acceptParticular: boolean;
+    /**
+     * Fecha a agenda nos feriados NACIONAIS automaticamente.
+     *
+     * Sem isto a clínica precisa lembrar de bloquear o Carnaval na mão todo ano
+     * — e quando esquece, o agente passa a terça-feira oferecendo horários com
+     * a porta fechada. Feriados municipais e estaduais continuam manuais: variam
+     * demais para chutar.
+     */
+    feriadosNacionais?: {
+      enabled: boolean;
+      /** Carnaval e Corpus Christi (não são feriado por lei, mas quase todo mundo fecha). */
+      incluirFacultativos: boolean;
+    };
+    /**
+     * Lê a agenda do Google do profissional e fecha os horários já ocupados lá.
+     *
+     * Até então a integração só ESCREVIA: um compromisso marcado direto no
+     * Google não era visto, e o agente seguia oferecendo aquele horário. Exige
+     * que o profissional tenha o Calendar ID configurado e o calendário
+     * compartilhado com a conta de serviço.
+     */
+    googleSync?: { enabled: boolean };
   };
 
   ai: {
@@ -78,10 +112,81 @@ export interface TenantConfig {
     enabled: boolean;
     /** Horas de antecedência do envio (ex.: 24). */
     hoursBefore: number;
+    /**
+     * Carência: horas mínimas entre AGENDAR e receber o lembrete (padrão: 6).
+     *
+     * Sem ela, quem marca hoje para amanhã com `hoursBefore: 24` recebe o
+     * lembrete no ciclo seguinte de 10 minutos — paga-se um template à Meta
+     * para lembrar o paciente de algo que ele acabou de fazer, e o "lembrete
+     * anti-falta" vira ruído.
+     */
+    minHorasAposAgendar?: number;
     /** Nome do template aprovado na Meta. */
     templateName: string;
     /** Código do idioma do template (ex.: "pt_BR"). */
     templateLang: string;
+  };
+
+  /**
+   * Resumo diário no WhatsApp de quem assina o cheque.
+   *
+   * O dono da clínica raramente entra no painel; o produto some da vista dele e,
+   * na renovação, ele avalia algo de que não lembra. Uma mensagem por dia com a
+   * agenda, as faltas e os horários vagos mantém o valor visível — e é a mesma
+   * informação que ele pediria à recepção.
+   *
+   * EXIGE TEMPLATE APROVADO. Ao contrário do follow-up e do desfecho, aqui a
+   * janela de 24h da Meta nunca está aberta: o dono não escreve para o bot.
+   */
+  dailyDigest?: {
+    enabled: boolean;
+    /** Telefone do responsável, em E.164 (+5551999998888). */
+    phone: string;
+    /** Hora do envio no fuso da clínica (0–23). Padrão: 8. */
+    hora?: number;
+    templateName: string;
+    templateLang: string;
+  };
+
+  /**
+   * Plano contratado — a cota de agendamentos e o preço do excedente.
+   *
+   * A proposta comercial vende 200/600 agendamentos por mês com excedente de
+   * R$ 1,50, e nada no sistema contava, limitava ou avisava. A clínica descobria
+   * o excedente na fatura, que é a pior hora possível — e a própria proposta
+   * promete avisar antes.
+   */
+  plan?: {
+    /** Nome do plano, como aparece no painel ("Essencial", "Profissional"). */
+    nome: string;
+    /** Agendamentos inclusos por mês. 0 = ilimitado. */
+    cotaMensal: number;
+    /** Preço de cada agendamento acima da cota, em centavos (R$ 1,50 = 150). */
+    excedenteCentavos: number;
+  };
+
+  /**
+   * Sinal por Pix — o único remédio de verdade contra falta: quem pagou aparece.
+   *
+   * O agente manda o copia-e-cola pronto (gerado localmente, sem gateway), o
+   * paciente cola no banco e o valor já vem preenchido. A BAIXA É MANUAL: o
+   * sistema não confirma o pagamento, só facilita fazê-lo. Integrar um gateway
+   * (Mercado Pago, Asaas) automatizaria a confirmação — é decisão de fornecedor,
+   * não detalhe de implementação.
+   */
+  payment?: {
+    pixEnabled: boolean;
+    /** A chave, como cadastrada no banco. */
+    chave: string;
+    tipoChave: "cpf" | "cnpj" | "email" | "telefone" | "aleatoria";
+    /** Nome do beneficiário no comprovante (sem acento, até 25 caracteres). */
+    beneficiario: string;
+    /** Cidade do beneficiário (até 15 caracteres). */
+    cidade: string;
+    /** Valor do sinal em CENTAVOS. 0 ou vazio = o paciente digita o valor. */
+    sinalCentavos?: number;
+    /** Texto que acompanha o Pix (prazo, o que fazer com o comprovante…). */
+    instrucoes?: string;
   };
 
   /** Fila de espera: avisa quando um horário é liberado por cancelamento. */
@@ -89,6 +194,28 @@ export interface TenantConfig {
     enabled: boolean;
     templateName: string;
     templateLang: string;
+  };
+
+  /**
+   * Desfecho da consulta — a base da TAXA DE FALTA, que é a métrica que sustenta
+   * a renovação do contrato.
+   *
+   * Antes ela dependia de a recepção clicar "compareceu" no painel: sem o
+   * clique, o agendamento ficava SCHEDULED para sempre e a taxa não fechava —
+   * justamente na clínica com menos disciplina, que é a que mais precisa do
+   * produto.
+   *
+   * Duas frentes: perguntar ao paciente (de graça, dentro da janela de 24h da
+   * Meta) e, no silêncio, presumir comparecimento depois de alguns dias. O que
+   * for presumido fica marcado como tal — o painel não vende estimativa como
+   * fato.
+   */
+  outcome?: {
+    enabled: boolean;
+    /** Horas após o fim da consulta para perguntar ao paciente (padrão: 3). */
+    horasAposConsulta?: number;
+    /** Dias sem resposta até presumir comparecimento (padrão: 3). 0 = nunca presume. */
+    diasParaPresumir?: number;
   };
 
   /** Reativação: convida de volta quem não vem há alguns meses. */

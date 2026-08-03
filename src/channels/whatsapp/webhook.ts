@@ -61,8 +61,10 @@ async function enviarResposta(
 }
 
 /**
- * Router do canal WhatsApp. Recebe o `MessageHandler` por injeção — na Fase 1
- * é um placeholder (saudação); na Fase 2 será o motor de conversa.
+ * Router do canal WhatsApp. Recebe o `MessageHandler` por injeção: é o que
+ * mantém o canal ignorante do motor de conversa — em produção entra o
+ * `conversationEngine`, e nos testes entra um handler falso, sem Claude nem
+ * banco.
  */
 export function makeWhatsAppRouter(handler: MessageHandler): Router {
   const router = express.Router();

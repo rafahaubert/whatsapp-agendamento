@@ -11,6 +11,13 @@
   var cid = (typeof t !== "undefined" && t && t.id) ? t.id : (u && u.tenantId ? u.tenantId : null);
   var base = cid ? "/admin/clinicas/" + cid : null;
 
+  // Lembrete que desistiu costuma ser falha sistêmica (template reprovado,
+  // token vencido) e atinge a clínica inteira. O badge existe para o problema
+  // não ficar esperando alguém abrir o dashboard por acaso.
+  var falhas = typeof falhasNav !== "undefined" && falhasNav ? falhasNav : 0;
+  var falhasCurto = falhas > 99 ? "99+" : String(falhas);
+  var dashTexto = "Dashboard" + (falhas ? " · " + falhas + " lembrete não entregue" + (falhas > 1 ? "s" : "") : "");
+
   var pend = typeof pendentesNav !== "undefined" && pendentesNav ? pendentesNav : 0;
   var pendCurto = pend > 99 ? "99+" : String(pend);
   var pendTexto = "Caixa de entrada" + (pend ? " · " + pend + " pendente" + (pend > 1 ? "s" : "") : "");
@@ -49,9 +56,14 @@
     <% if (base) { %>
       <p class="rail-grp">Operacional</p>
 
-      <a class="rail-i" href="<%= base %>" title="Dashboard"<%- marca("inicio") %>>
-        <span class="rail-ico"><%- include('icone', { nome: "dashboard" }) %></span>
+      <a class="rail-i" href="<%= base %>" title="<%= dashTexto %>"
+         aria-label="<%= dashTexto %>"<%- marca("inicio") %>>
+        <span class="rail-ico">
+          <%- include('icone', { nome: "dashboard" }) %>
+          <% if (falhas) { %><span class="rail-badge" aria-hidden="true"><%= falhasCurto %></span><% } %>
+        </span>
         <span class="rail-lbl">Dashboard</span>
+        <% if (falhas) { %><span class="rail-cnt" aria-hidden="true"><%= falhasCurto %></span><% } %>
       </a>
 
       <a class="rail-i" href="<%= base %>/inbox" title="<%= pendTexto %>"

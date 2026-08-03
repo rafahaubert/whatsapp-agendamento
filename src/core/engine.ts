@@ -14,22 +14,22 @@ import { transcreverAudio, isTranscricaoConfigurada } from "../integrations/tran
 import {
   confirmAppointment,
   cancelAppointment,
+  marcarComparecimento,
   periodosReaisDaAgenda,
   pacientesDoTelefone,
 } from "../domain/scheduling.js";
 import { ehPedidoDeConfirmacao } from "../shared/confirmacao.js";
+import {
+  MODELO_PADRAO,
+  cacheProvavel,
+  estimarTokensPrefixo,
+  perfilDoModelo,
+} from "../ai/modelos.js";
 import type { Periodo } from "../domain/horarios.js";
 import { logger } from "../shared/logger.js";
 import { mascararTelefone } from "../shared/pii.js";
 import type { IncomingMessage, MessageHandler, Reply, ReplyOption } from "../channels/types.js";
 
-/**
- * Fallback de modelo caso a config da clínica não defina um. Igual ao padrão do
- * formulário do painel (src/admin/configForm.ts) — o valor anterior
- * ("claude-3-5-sonnet-20241022") foi aposentado pela Anthropic e devolvia 404
- * em toda mensagem de clínica sem modelo configurado.
- */
-const DEFAULT_MODEL = "claude-haiku-4-5";
 /** Limite de idas ao Claude por mensagem (evita loop de tool use infinito). */
 const MAX_TURNS = 8;
 
@@ -38,7 +38,20 @@ const PEDE_ATENDENTE =
   /^\s*(atendente|humano|recep(c|ç)(a|ã)o)\s*$|falar com (um )?(atendente|humano|pessoa|recep)/i;
 
 /** Ações de payload válidas. */
-const ACOES_VALIDAS = new Set(["CONFIRMAR", "CANCELAR", "REMARCAR", "SLOT", "ESP", "SIM", "NAO"]);
+const ACOES_VALIDAS = new Set([
+  "CONFIRMAR",
+  "CANCELAR",
+  "REMARCAR",
+  "SLOT",
+  "ESP",
+  "SIM",
+  "NAO",
+  // Resposta à pergunta de desfecho (src/jobs/desfecho.ts). É o que transforma
+  // a taxa de falta num número apurado em vez de um clique que a recepção
+  // esquecia de dar.
+  "VEIO",
+  "FALTEI",
+]);
 
 /**
  * O que acompanha um "Posso confirmar?": sim ou não, num toque.
@@ -155,6 +168,40 @@ function fusoDaClinica(timezone: string): string {
 
 // ---------- Timeout de conversa (histórico antigo é descartado) ----------
 const CONVERSA_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+/** Clínicas já avisadas sobre o cache inativo — o aviso sai UMA vez por processo. */
+const cacheJaAvisado = new Set<string>();
+
+/**
+ * Avisa (uma vez) quando o prefixo não alcança o mínimo de cache do modelo.
+ *
+ * Sem isto a falha é muda: a API devolve `cache_creation_input_tokens: 0`, o
+ * painel mostra economia zero e não há como distinguir "o cache não compensou"
+ * de "o cache nunca foi tentado".
+ */
+function avisarCacheInativo(
+  slug: string,
+  modelo: string,
+  system: string,
+  ferramentas: unknown,
+): void {
+  const chave = `${slug}:${modelo}`;
+  if (cacheJaAvisado.has(chave)) return;
+  cacheJaAvisado.add(chave);
+
+  const tokens = estimarTokensPrefixo(system, ferramentas);
+  if (cacheProvavel(modelo, tokens)) return;
+
+  logger.warn(
+    { tenant: slug, modelo, tokensPrefixo: tokens, minimo: perfilDoModelo(modelo).minPrefixoCache },
+    "prompt caching provavelmente inativo: o prefixo não alcança o mínimo do modelo",
+  );
+}
+
+/** Só para testes: permite reexercitar o aviso entre casos. */
+export function limparAvisoDeCache(): void {
+  cacheJaAvisado.clear();
+}
 
 async function resolverConteudo(message: IncomingMessage): Promise<Resolvida> {
   const texto = message.text?.trim() || null;
@@ -315,12 +362,27 @@ export const conversationEngine: MessageHandler = {
         await logMessage(tenant.id, from, "OUT", resposta, "BOT");
         return { texto: resposta };
       }
+
+      // Desfecho respondido pelo próprio paciente: vale mais que qualquer
+      // presunção, e é de graça (mensagem livre dentro da janela da Meta).
+      if (acao === "VEIO" || acao === "FALTEI") {
+        const compareceu = acao === "VEIO";
+        const r = (await marcarComparecimento(tenant, id, compareceu)) as { erro?: string };
+        const resposta = r.erro
+          ? r.erro
+          : compareceu
+            ? "Que bom! 😊 Obrigado por confirmar. Qualquer coisa, é só chamar."
+            : "Entendi, obrigado por avisar. Quer que eu remarque para outro dia?";
+        await logMessage(tenant.id, from, "OUT", resposta, "BOT");
+        return { texto: resposta };
+      }
     }
 
     // ---------- 4. Conversa com o Claude ----------
-    // Data/hora atualizada a cada interação — fora do system prompt para que
-    // ele seja byte a byte igual entre as mensagens (pré-requisito do prompt
-    // caching; o `cache_control` em si ainda não é enviado — ver systemPrompt.ts).
+    // Data/hora atualizada a cada interação — vai na MENSAGEM, e não no system
+    // prompt, para que o prompt seja byte a byte igual entre as mensagens. Um
+    // relógio dentro do prefixo o invalidaria a cada chamada, e o cache nunca
+    // pegaria (o breakpoint é enviado logo abaixo, no `system`).
     const fuso = fusoDaClinica(tenant.config.businessHours.timezone);
     const now = new Intl.DateTimeFormat("pt-BR", {
       timeZone: fuso,
@@ -358,7 +420,8 @@ export const conversationEngine: MessageHandler = {
       logger.error({ err, tenant: tenant.slug }, "falha ao buscar o cadastro do telefone");
     }
 
-    const model = tenant.config.ai.model || DEFAULT_MODEL;
+    const model = tenant.config.ai.model || MODELO_PADRAO;
+    const perfil = perfilDoModelo(model);
 
     // Os períodos que a agenda dos profissionais realmente gera. Sem eles o
     // prompt anuncia o horário de funcionamento da clínica, que pode prometer
@@ -381,6 +444,13 @@ export const conversationEngine: MessageHandler = {
     });
     const tools = buildTools(tenant);
 
+    // O `cache_control` abaixo só vale se o prefixo alcançar o mínimo DESTE
+    // modelo — abaixo dele a API ignora o pedido em silêncio e o painel mostra
+    // economia zero sem explicação. Como a base de conhecimento da clínica entra
+    // no prompt, o mesmo modelo pode cachear numa clínica e não cachear noutra;
+    // por isso o aviso é por clínica, e não uma checagem global no boot.
+    avisarCacheInativo(tenant.slug, model, system, tools);
+
     let replyText = tenant.config.branding.fallbackMessage;
     let ultimosHorarios: HorarioOferecido[] = [];
     let ultimasEspecialidades: { name: string; priceParticular?: string | null }[] = [];
@@ -396,12 +466,21 @@ export const conversationEngine: MessageHandler = {
       for (let turn = 0; turn < MAX_TURNS; turn++) {
         const response = await anthropic.messages.create({
           model,
-          max_tokens: 1024,
+          // Onde o pensamento está ligado, este teto é dividido entre pensar e
+          // responder — por isso ele vem do perfil do modelo, e não fixo em 1024
+          // como antes (que truncava a resposta ao paciente nos modelos que
+          // pensam por padrão). Ver src/ai/modelos.ts.
+          max_tokens: perfil.maxTokens,
+          // Sempre explícito: omitir `thinking` significa "sem pensar" num
+          // modelo e "pensamento adaptativo" noutro.
+          thinking: perfil.pensamento,
+          ...(perfil.esforco ? { output_config: { effort: perfil.esforco } } : {}),
           // O breakpoint de cache no `system` cobre TUDO que vem antes dele na
           // ordem do prefixo (tools → system → messages), ou seja: ferramentas
-          // e prompt juntos, ~3,5k tokens. Como este laço vai ao modelo até
-          // MAX_TURNS vezes com o mesmo prefixo, o cache já se paga DENTRO de
-          // uma única mensagem do paciente — não só entre mensagens.
+          // e prompt juntos. Como este laço vai ao modelo até MAX_TURNS vezes
+          // com o mesmo prefixo, o cache já se paga DENTRO de uma única mensagem
+          // do paciente — não só entre mensagens. (Só pega acima do mínimo do
+          // modelo; `avisarCacheInativo` acima grita quando não alcança.)
           system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
           tools,
           messages,

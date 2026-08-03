@@ -10,10 +10,18 @@
  */
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
+import { sincronizarFeriados } from "./feriados.js";
+import { sincronizarGoogle } from "./googleSync.js";
 import { logger } from "../shared/logger.js";
 import type { TenantConfig } from "../config/types.js";
 
 export async function renovarAgendas(): Promise<{ clinicas: number; horarios: number }> {
+  // A agenda do Google vira bloqueio ANTES da geração, pelo mesmo motivo dos
+  // feriados: criado depois, o bloqueio só valeria na renovação seguinte.
+  await sincronizarGoogle().catch((err) =>
+    logger.error({ err }, "falha ao sincronizar as agendas do Google"),
+  );
+
   const tenants = await prisma.tenant.findMany({ where: { isActive: true } });
   let clinicas = 0;
   let horarios = 0;
@@ -24,6 +32,15 @@ export async function renovarAgendas(): Promise<{ clinicas: number; horarios: nu
       config = JSON.parse(tenant.config) as TenantConfig;
     } catch {
       continue;
+    }
+
+    // Os feriados viram bloqueios ANTES da geração — criados depois, só valeriam
+    // na renovação do dia seguinte, e o agente passaria hoje inteiro oferecendo
+    // horários num dia em que a clínica fecha.
+    try {
+      await sincronizarFeriados(tenant, config);
+    } catch (err) {
+      logger.error({ err, tenant: tenant.slug }, "falha ao sincronizar os feriados");
     }
 
     try {

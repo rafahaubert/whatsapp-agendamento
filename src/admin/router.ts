@@ -17,6 +17,7 @@ import {
 } from "./auth.js";
 import { exposeCsrf, verifyCsrf } from "./csrf.js";
 import { podeGerenciarUsuarioDaClinica } from "./permissoes.js";
+import { MODELOS_OFERECIDOS, PERFIS } from "../ai/modelos.js";
 import {
   listTenants,
   getTenant,
@@ -41,6 +42,8 @@ import {
   listThread,
   countPendentes,
   listPendingAttendance,
+  listFalhasDeLembrete,
+  countFalhasDeLembrete,
   listPatients,
   getPatient,
   type OrdemPacientes,
@@ -179,6 +182,11 @@ export function makeAdminRouter(): Router {
     res.locals.usuario = u;
     res.locals.ehSuper = ehSuper(req);
     res.locals.caminhoAtual = req.baseUrl + req.path;
+    // A lista de modelos vem de src/ai/modelos.ts, que também define preço,
+    // mínimo de cache e configuração de pensamento. Chumbá-la no template era
+    // como o Opus 5 ficava de fora do painel enquanto o Opus 4.8, do mesmo
+    // preço e menos capaz, continuava oferecido.
+    res.locals.modelos = MODELOS_OFERECIDOS.map((id) => ({ id, rotulo: PERFIS[id].rotulo }));
 
     // O badge de pendentes vive no menu, então precisa existir em TODAS as telas
     // da clínica — não só na que já contava (GET /clinicas/:id). Aqui o :id ainda
@@ -187,7 +195,12 @@ export function makeAdminRouter(): Router {
     const clinicaId = naRota ? naRota[1] : u.tenantId;
     if (req.method === "GET" && clinicaId && clinicaId !== "nova") {
       try {
-        res.locals.pendentesNav = await countPendentes(clinicaId);
+        const [pendentes, falhas] = await Promise.all([
+          countPendentes(clinicaId),
+          countFalhasDeLembrete(clinicaId),
+        ]);
+        res.locals.pendentesNav = pendentes;
+        res.locals.falhasNav = falhas;
       } catch {
         // O badge é acessório: se a contagem falhar, a página continua de pé.
       }
@@ -241,10 +254,11 @@ export function makeAdminRouter(): Router {
     if (!t) return res.redirect("/admin");
 
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, pendentes, semDesfecho, metricas] = await Promise.all([
+    const [agendamentos, pendentes, semDesfecho, falhasLembrete, metricas] = await Promise.all([
       listAppointments(t.id, t.timezone),
       countPendentes(t.id),
       listPendingAttendance(t.id, t.timezone),
+      listFalhasDeLembrete(t.id, t.timezone),
       calcularMetricas(t.id, t.parsedConfig, t.timezone, 30),
     ]);
 
@@ -254,6 +268,7 @@ export function makeAdminRouter(): Router {
       agendamentos,
       pendentes,
       semDesfecho,
+      falhasLembrete,
       metricas,
       ...avisos(req),
     });
@@ -633,12 +648,12 @@ export function makeAdminRouter(): Router {
   });
 
   router.post("/clinicas/:id/especialidades", async (req: Request, res: Response) => {
-    await addSpecialty(req.params.id, req.body.name, req.body.preco);
+    await addSpecialty(req.params.id, req.body.name, req.body.preco, req.body.duracao);
     res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 
   router.post("/clinicas/:id/especialidades/:specId/preco", async (req: Request, res: Response) => {
-    await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco);
+    await updateSpecialtyPrice(req.params.id, req.params.specId, req.body.preco, req.body.duracao);
     res.redirect(clinicaUrl(req.params.id, "/config/catalogo", undefined, "especialidades"));
   });
 

@@ -5,6 +5,8 @@
 import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
+import { MODELO_PADRAO } from "../ai/modelos.js";
+import { MAX_TENTATIVAS as MAX_TENTATIVAS_LEMBRETE } from "../jobs/reminders.js";
 import { AppointmentStatus, SlotStatus, statusUI } from "../shared/enums.js";
 import {
   agendaDoProfissional,
@@ -48,7 +50,7 @@ export function defaultConfig(name: string): TenantConfig {
       acceptParticular: true,
     },
     ai: {
-      model: "claude-haiku-4-5",
+      model: MODELO_PADRAO,
       persona:
         "Você é um atendente cordial, objetivo e acolhedor de uma clínica médica no Brasil. Use português do Brasil, seja breve e evite jargões.",
     },
@@ -127,16 +129,61 @@ export async function addUnit(tenantId: string, d: { name: string; address?: str
   });
 }
 
-export async function addSpecialty(tenantId: string, name: string, priceParticular?: string) {
+/**
+ * Valor em reais digitado no painel → centavos.
+ *
+ * Aceita o que o brasileiro escreve de verdade: "150", "150,00", "R$ 1.250,50".
+ * Devolve `null` quando não dá para ler um número — o relatório prefere não ter
+ * o valor a somar um número inventado.
+ */
+export function reaisParaCentavos(v: unknown): number | null {
+  const bruto = String(v ?? "").trim();
+  if (!bruto) return null;
+  // Tira "R$" e espaços; ponto é separador de milhar, vírgula é decimal.
+  const limpo = bruto.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(limpo);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** Minutos digitados no painel; `null` = herda o padrão da clínica. */
+export function lerDuracao(v: unknown): number | null {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export async function addSpecialty(
+  tenantId: string,
+  name: string,
+  priceParticular?: string,
+  duracao?: unknown,
+) {
   await prisma.specialty.create({
-    data: { tenantId, name, priceParticular: priceParticular?.trim() || null },
+    data: {
+      tenantId,
+      name,
+      priceParticular: priceParticular?.trim() || null,
+      priceCents: reaisParaCentavos(priceParticular),
+      durationMinutes: lerDuracao(duracao),
+    },
   });
 }
 
-export async function updateSpecialtyPrice(tenantId: string, id: string, priceParticular?: string) {
+export async function updateSpecialtyPrice(
+  tenantId: string,
+  id: string,
+  priceParticular?: string,
+  duracao?: unknown,
+) {
   await prisma.specialty.updateMany({
     where: { id, tenantId },
-    data: { priceParticular: priceParticular?.trim() || null },
+    data: {
+      priceParticular: priceParticular?.trim() || null,
+      // O texto livre continua sendo o que o paciente lê ("A partir de R$ 120");
+      // os centavos são o que o relatório de faturamento consegue somar.
+      priceCents: reaisParaCentavos(priceParticular),
+      durationMinutes: lerDuracao(duracao),
+    },
   });
 }
 
@@ -417,6 +464,58 @@ export async function listInbox(tenantId: string, timezone: string) {
 
 export async function countPendentes(tenantId: string): Promise<number> {
   return prisma.conversation.count({ where: { tenantId, humanHandoff: true } });
+}
+
+/**
+ * Lembretes que desistiram depois de esgotar as tentativas.
+ *
+ * O erro já era gravado em `reminderLastError` desde sempre — e nunca era
+ * mostrado a ninguém. Um template rejeitado pela Meta ou um token vencido mata
+ * o lembrete da CLÍNICA INTEIRA, silenciosamente: o job escreve um `warn` no
+ * log do servidor, que a recepção nunca vai ler, e a taxa de falta sobe sem
+ * explicação. O comentário no job dizia, com todas as letras, que era para dar
+ * "gancho ao alerta no painel, que ainda não existe".
+ */
+export async function listFalhasDeLembrete(tenantId: string, timezone: string) {
+  const falhas = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      reminderSentAt: null,
+      reminderRetryCount: { gte: MAX_TENTATIVAS_LEMBRETE },
+      // Consulta que já passou não tem mais lembrete a enviar: a falha virou
+      // história, não pendência.
+      slot: { startsAt: { gte: new Date() } },
+    },
+    include: { patient: true, doctor: true, slot: true },
+    orderBy: { slot: { startsAt: "asc" } },
+    take: 100,
+  });
+
+  return falhas.map((a) => ({
+    id: a.id,
+    paciente: a.patient.name,
+    profissional: a.doctor.name,
+    quando: formatDateTime(a.slot.startsAt, timezone),
+    tentativas: a.reminderRetryCount,
+    erro: a.reminderLastError ?? "sem detalhe registrado",
+  }));
+}
+
+/**
+ * Quantos lembretes desistiram — o número do alerta no menu.
+ *
+ * Separado da listagem porque roda em TODA tela da clínica: contar é barato,
+ * carregar cem agendamentos com paciente e profissional não é.
+ */
+export async function countFalhasDeLembrete(tenantId: string): Promise<number> {
+  return prisma.appointment.count({
+    where: {
+      tenantId,
+      reminderSentAt: null,
+      reminderRetryCount: { gte: MAX_TENTATIVAS_LEMBRETE },
+      slot: { startsAt: { gte: new Date() } },
+    },
+  });
 }
 
 /** Histórico legível de uma conversa. */
