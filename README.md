@@ -190,3 +190,6 @@ antes de `agendar` rodar.
 - [x] **Fase 5 — Painel:** login, CRUD de clínicas/catálogo, calendário, agendamento manual, FAQ, horários por médico.
 - [x] **Fase 6 — Recursos de venda:** lembrete + confirmação (anti-falta, [WHATSAPP-TEMPLATES.md](WHATSAPP-TEMPLATES.md)),
       áudio transcrito (Groq), opções clicáveis no WhatsApp, transbordo humano e caixa de entrada.
+- [x] **Fase 7 — Fechar o ciclo:** fila de espera com reserva do horário e reoferta ao próximo,
+      desfecho da consulta apurado com o paciente (fecha a taxa de falta), carência no lembrete,
+      prazo e repetição nas chamadas externas e diagnóstico de *prompt caching* no painel.
