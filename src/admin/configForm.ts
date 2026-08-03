@@ -169,6 +169,7 @@ export function parseConfig(
         enabled: bool(body.booking_feriadosNacionais_enabled),
         incluirFacultativos: bool(body.booking_feriadosNacionais_facultativos),
       },
+      googleSync: { enabled: bool(body.booking_googleSync_enabled) },
     };
     cfg.debounceSeconds = num(body.debounceSeconds, 8);
   }

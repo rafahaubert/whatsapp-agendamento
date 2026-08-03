@@ -90,3 +90,74 @@ export async function deleteEvent(calendarId: string, eventId: string): Promise<
   if (!cal || !calendarId || !eventId) return;
   await cal.events.delete({ calendarId, eventId });
 }
+
+/** Um período ocupado lido da agenda do Google. */
+export interface PeriodoOcupado {
+  /** ID do evento no Google — usado para separar o que fomos NÓS que criamos. */
+  eventId: string;
+  startsAt: Date;
+  endsAt: Date;
+}
+
+/**
+ * Períodos ocupados de um calendário, entre duas datas.
+ *
+ * É a metade que faltava da integração: até aqui o sistema só ESCREVIA no
+ * Google. Um bloqueio feito direto lá — o dentista marcando um congresso pelo
+ * celular — não era visto, e o agente seguia oferecendo aquele horário. O
+ * paciente aparecia; o dentista, não.
+ *
+ * Usa `events.list` em vez de `freebusy.query` por um motivo concreto: o
+ * freebusy não devolve o id do evento, e sem ele não dá para distinguir a
+ * agenda pessoal do dentista das consultas que NÓS mesmos escrevemos ali.
+ * Tratar as nossas como bloqueio fecharia a agenda progressivamente.
+ *
+ * O `fields` é deliberadamente mínimo: título, descrição e convidados dos
+ * eventos pessoais do dentista nunca chegam a trafegar.
+ */
+export async function listBusyIntervals(
+  calendarId: string,
+  de: Date,
+  ate: Date,
+): Promise<PeriodoOcupado[]> {
+  const cal = client();
+  if (!cal || !calendarId) return [];
+
+  const ocupados: PeriodoOcupado[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const res = await cal.events.list({
+      calendarId,
+      timeMin: de.toISOString(),
+      timeMax: ate.toISOString(),
+      // Expande recorrências: um "toda terça de manhã" vira ocorrências reais.
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 2500,
+      pageToken,
+      fields: "nextPageToken,items(id,start,end,status,transparency)",
+    });
+
+    for (const ev of res.data.items ?? []) {
+      if (!ev.id || ev.status === "cancelled") continue;
+      // "Disponível" no Google quer dizer exatamente isso: não ocupa a agenda.
+      if (ev.transparency === "transparent") continue;
+
+      // Evento de dia inteiro vem em `date`; com hora, em `dateTime`.
+      const inicio = ev.start?.dateTime ?? ev.start?.date;
+      const fim = ev.end?.dateTime ?? ev.end?.date;
+      if (!inicio || !fim) continue;
+
+      const startsAt = new Date(inicio);
+      const endsAt = new Date(fim);
+      if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) continue;
+
+      ocupados.push({ eventId: ev.id, startsAt, endsAt });
+    }
+
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return ocupados;
+}

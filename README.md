@@ -197,3 +197,7 @@ antes de `agendar` rodar.
       consultas, feriados nacionais automáticos, sinal por Pix (copia-e-cola gerado localmente),
       relatório de faturamento e ocupação, cota do plano com aviso antes da fatura e resumo
       diário para o responsável.
+- [x] **Fase 9 — Confiabilidade:** CI (tipos, testes, migrations e build a cada push),
+      verificação de tipos do repositório inteiro, encerramento gracioso, alerta de lembrete
+      não entregue no painel, id de correlação nos logs e leitura da agenda do Google —
+      compromisso marcado direto lá agora fecha o horário aqui.

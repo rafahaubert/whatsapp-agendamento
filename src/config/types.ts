@@ -72,6 +72,15 @@ export interface TenantConfig {
       /** Carnaval e Corpus Christi (não são feriado por lei, mas quase todo mundo fecha). */
       incluirFacultativos: boolean;
     };
+    /**
+     * Lê a agenda do Google do profissional e fecha os horários já ocupados lá.
+     *
+     * Até então a integração só ESCREVIA: um compromisso marcado direto no
+     * Google não era visto, e o agente seguia oferecendo aquele horário. Exige
+     * que o profissional tenha o Calendar ID configurado e o calendário
+     * compartilhado com a conta de serviço.
+     */
+    googleSync?: { enabled: boolean };
   };
 
   ai: {

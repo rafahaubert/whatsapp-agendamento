@@ -98,6 +98,14 @@
   <p class="muted" style="margin-top:-4px">Só feriados <strong>nacionais</strong> — a data do Carnaval e do Corpus Christi é calculada a cada ano.
     Feriados municipais e estaduais continuam em <a href="/admin/clinicas/<%= t.id %>/bloqueios">Bloqueios</a>.</p>
 
+  <% var gs = cfg.booking.googleSync || { enabled: false }; %>
+  <div class="checks">
+    <label><input type="checkbox" name="booking_googleSync_enabled" <%= gs.enabled ? "checked" : "" %> /> Respeitar a agenda do Google dos profissionais</label>
+  </div>
+  <p class="muted" style="margin-top:-4px">Fecha os horários que já estão ocupados na agenda pessoal do profissional.
+    Sem isto, um compromisso marcado direto no Google não é visto — e o agente continua oferecendo aquele horário.
+    Exige o Calendar ID configurado em <a href="/admin/clinicas/<%= t.id %>/config/equipe">Equipe</a>.</p>
+
   <h2>Inteligência artificial</h2>
   <% if (ehSuper) { %>
     <div class="grid2">
