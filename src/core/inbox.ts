@@ -19,6 +19,19 @@
  * se perde.
  */
 import type { IncomingMessage } from "../channels/types.js";
+import { comContexto } from "../shared/contexto.js";
+
+/**
+ * Processa o lote dentro de um contexto de rastreio.
+ *
+ * O lote é a unidade de trabalho certa para o id de correlação: é ele que
+ * atravessa motor, ferramentas e domínio produzindo dezenas de linhas de log.
+ * Com várias clínicas atendendo ao mesmo tempo, sem isso não dava para separar
+ * as linhas de uma conversa das de outra.
+ */
+function processarComRastreio(p: Pendente): Promise<void> {
+  return comContexto({ tenant: p.mensagens[0]?.tenant?.slug }, () => p.processar(p.mensagens));
+}
 
 type Processador = (mensagens: IncomingMessage[]) => Promise<void>;
 
@@ -70,8 +83,9 @@ export function agruparMensagem(
   const espera = mensagem.payload ? 0 : Math.max(0, esperaMs);
 
   const timer = setTimeout(() => {
+    const lote = pendentes.get(chave);
     pendentes.delete(chave);
-    void enfileirar(chave, () => processar(mensagens));
+    if (lote) void enfileirar(chave, () => processarComRastreio(lote));
   }, espera);
 
   pendentes.set(chave, { mensagens, timer, processar });
@@ -108,7 +122,7 @@ export async function drenarCaixaDeEntrada(): Promise<number> {
 
   for (const [chave, p] of agora) {
     clearTimeout(p.timer);
-    void enfileirar(chave, () => p.processar(p.mensagens));
+    void enfileirar(chave, () => processarComRastreio(p));
   }
 
   // As filas por conversa são reentrantes: enfileirar acima criou promessas

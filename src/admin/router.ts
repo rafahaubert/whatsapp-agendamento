@@ -42,6 +42,8 @@ import {
   listThread,
   countPendentes,
   listPendingAttendance,
+  listFalhasDeLembrete,
+  countFalhasDeLembrete,
   listPatients,
   getPatient,
   type OrdemPacientes,
@@ -193,7 +195,12 @@ export function makeAdminRouter(): Router {
     const clinicaId = naRota ? naRota[1] : u.tenantId;
     if (req.method === "GET" && clinicaId && clinicaId !== "nova") {
       try {
-        res.locals.pendentesNav = await countPendentes(clinicaId);
+        const [pendentes, falhas] = await Promise.all([
+          countPendentes(clinicaId),
+          countFalhasDeLembrete(clinicaId),
+        ]);
+        res.locals.pendentesNav = pendentes;
+        res.locals.falhasNav = falhas;
       } catch {
         // O badge é acessório: se a contagem falhar, a página continua de pé.
       }
@@ -247,10 +254,11 @@ export function makeAdminRouter(): Router {
     if (!t) return res.redirect("/admin");
 
     // Em paralelo: cada round-trip ao banco custa latência (app e banco em regiões diferentes).
-    const [agendamentos, pendentes, semDesfecho, metricas] = await Promise.all([
+    const [agendamentos, pendentes, semDesfecho, falhasLembrete, metricas] = await Promise.all([
       listAppointments(t.id, t.timezone),
       countPendentes(t.id),
       listPendingAttendance(t.id, t.timezone),
+      listFalhasDeLembrete(t.id, t.timezone),
       calcularMetricas(t.id, t.parsedConfig, t.timezone, 30),
     ]);
 
@@ -260,6 +268,7 @@ export function makeAdminRouter(): Router {
       agendamentos,
       pendentes,
       semDesfecho,
+      falhasLembrete,
       metricas,
       ...avisos(req),
     });

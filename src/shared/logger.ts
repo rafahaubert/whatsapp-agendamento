@@ -1,5 +1,6 @@
 import pino from "pino";
 import { env } from "../config/env.js";
+import { contextoAtual } from "./contexto.js";
 
 const emProducao = env.NODE_ENV === "production";
 
@@ -58,6 +59,19 @@ const paths = [
 export const logger = pino({
   level: emProducao ? "info" : "debug",
   redact: { paths, censor: "[REDACTED]" },
+  /**
+   * Costura as linhas de UMA mensagem do paciente.
+   *
+   * Vem do `AsyncLocalStorage` (src/shared/contexto.ts), então nenhuma chamada
+   * a `logger.info` precisou mudar — nem as camadas de domínio precisam saber
+   * que existe um id de correlação. Sem isto, investigar uma conversa que deu
+   * errado era garimpar por timestamp e torcer para nenhuma outra estar
+   * acontecendo ao mesmo tempo.
+   */
+  mixin() {
+    const ctx = contextoAtual();
+    return ctx ? { correlacao: ctx.correlacao, ...(ctx.tenant ? { tenant: ctx.tenant } : {}) } : {};
+  },
   transport: emProducao
     ? undefined
     : { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:HH:MM:ss" } },

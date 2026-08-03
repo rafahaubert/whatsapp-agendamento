@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 import { prisma } from "../db/client.js";
 import { regenerateSlots } from "../db/seed.js";
 import { MODELO_PADRAO } from "../ai/modelos.js";
+import { MAX_TENTATIVAS as MAX_TENTATIVAS_LEMBRETE } from "../jobs/reminders.js";
 import { AppointmentStatus, SlotStatus, statusUI } from "../shared/enums.js";
 import {
   agendaDoProfissional,
@@ -463,6 +464,58 @@ export async function listInbox(tenantId: string, timezone: string) {
 
 export async function countPendentes(tenantId: string): Promise<number> {
   return prisma.conversation.count({ where: { tenantId, humanHandoff: true } });
+}
+
+/**
+ * Lembretes que desistiram depois de esgotar as tentativas.
+ *
+ * O erro já era gravado em `reminderLastError` desde sempre — e nunca era
+ * mostrado a ninguém. Um template rejeitado pela Meta ou um token vencido mata
+ * o lembrete da CLÍNICA INTEIRA, silenciosamente: o job escreve um `warn` no
+ * log do servidor, que a recepção nunca vai ler, e a taxa de falta sobe sem
+ * explicação. O comentário no job dizia, com todas as letras, que era para dar
+ * "gancho ao alerta no painel, que ainda não existe".
+ */
+export async function listFalhasDeLembrete(tenantId: string, timezone: string) {
+  const falhas = await prisma.appointment.findMany({
+    where: {
+      tenantId,
+      reminderSentAt: null,
+      reminderRetryCount: { gte: MAX_TENTATIVAS_LEMBRETE },
+      // Consulta que já passou não tem mais lembrete a enviar: a falha virou
+      // história, não pendência.
+      slot: { startsAt: { gte: new Date() } },
+    },
+    include: { patient: true, doctor: true, slot: true },
+    orderBy: { slot: { startsAt: "asc" } },
+    take: 100,
+  });
+
+  return falhas.map((a) => ({
+    id: a.id,
+    paciente: a.patient.name,
+    profissional: a.doctor.name,
+    quando: formatDateTime(a.slot.startsAt, timezone),
+    tentativas: a.reminderRetryCount,
+    erro: a.reminderLastError ?? "sem detalhe registrado",
+  }));
+}
+
+/**
+ * Quantos lembretes desistiram — o número do alerta no menu.
+ *
+ * Separado da listagem porque roda em TODA tela da clínica: contar é barato,
+ * carregar cem agendamentos com paciente e profissional não é.
+ */
+export async function countFalhasDeLembrete(tenantId: string): Promise<number> {
+  return prisma.appointment.count({
+    where: {
+      tenantId,
+      reminderSentAt: null,
+      reminderRetryCount: { gte: MAX_TENTATIVAS_LEMBRETE },
+      slot: { startsAt: { gte: new Date() } },
+    },
+  });
 }
 
 /** Histórico legível de uma conversa. */

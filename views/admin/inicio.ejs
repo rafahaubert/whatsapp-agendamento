@@ -19,6 +19,13 @@
     url: base + "/agendamentos#desfecho", rotulo: "consulta passada sem desfecho", plural: "consultas passadas sem desfecho",
     qtd: semDesfecho.length, css: "m-warn",
   });
+  // Lembrete que desistiu é falha SISTÊMICA quase sempre (template rejeitado,
+  // token vencido): atinge a clínica inteira e derruba a taxa de falta sem que
+  // ninguém entenda por quê. Vem primeiro na fila de atenção.
+  if (falhasLembrete.length) atrasos.unshift({
+    url: "#falhas-lembrete", rotulo: "lembrete que não foi entregue", plural: "lembretes que não foram entregues",
+    qtd: falhasLembrete.length, css: "m-danger",
+  });
 
   var hoje = agendamentos.slice(0, 6);
 %>
@@ -52,6 +59,34 @@
         </a>
       <% }) %>
     </div>
+  </div>
+<% } %>
+
+<% if (falhasLembrete.length) { %>
+  <div class="card" id="falhas-lembrete" style="border-color:var(--danger)">
+    <div class="card-head">
+      <h2>Lembretes não entregues</h2>
+      <span class="muted"><%= falhasLembrete.length %> consulta(s)</span>
+    </div>
+    <p class="muted" style="margin-top:0">O envio falhou <%= falhasLembrete[0].tentativas %> vezes e o sistema desistiu — estas consultas
+      <strong>não vão receber lembrete</strong>. Quando o motivo se repete em todas, costuma ser algo que atinge a clínica inteira:
+      template reprovado pela Meta, nome do template diferente do aprovado, ou token de acesso vencido.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Paciente</th><th>Consulta</th><th>Motivo</th></tr></thead>
+        <tbody>
+          <% falhasLembrete.slice(0, 20).forEach(function(f){ %>
+            <tr>
+              <td><%= f.paciente %></td>
+              <td><%= f.quando %><br><span class="muted"><%= f.profissional %></span></td>
+              <td><code style="font-size:11px;word-break:break-all"><%= f.erro.slice(0, 220) %></code></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted" style="margin-bottom:0">Depois de corrigir, os próximos agendamentos voltam a enviar normalmente.
+      Confira o nome e o idioma do template em <a href="<%= base %>/config/templates">Templates de mensagens</a>.</p>
   </div>
 <% } %>
 
