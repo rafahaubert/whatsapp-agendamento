@@ -14,6 +14,7 @@ import { enviarFollowUps } from "./jobs/followUp.js";
 import { reofertarFilaEspera } from "./jobs/filaEspera.js";
 import { apurarDesfechos } from "./jobs/desfecho.js";
 import { enviarResumosDiarios } from "./jobs/resumoDiario.js";
+import { drenarCaixaDeEntrada, pendentesAgora } from "./core/inbox.js";
 import { logger } from "./shared/logger.js";
 import { safeEqual } from "./shared/comparacao.js";
 import { limiteJobs } from "./shared/rateLimit.js";
@@ -189,7 +190,7 @@ if (emProducao && !env.JOBS_TOKEN) {
   );
 }
 
-app.listen(env.PORT, () => {
+const servidor = app.listen(env.PORT, () => {
   logger.info(
     { port: env.PORT, painel: "/admin", webhook: "/webhook/whatsapp", proposta: "/proposta" },
     "servidor no ar",
@@ -226,3 +227,52 @@ app.listen(env.PORT, () => {
     24 * 60 * 60 * 1000,
   ).unref();
 });
+
+/**
+ * Encerramento gracioso.
+ *
+ * O que se perdia sem isto: a caixa de entrada agrupa as mensagens do paciente
+ * numa janela de alguns segundos antes de responder, e essa janela vive em
+ * memória. Todo deploy matava o processo no meio dela — o paciente escrevia, a
+ * Meta respondia 200 (o webhook confirma ANTES de processar, e por isso não
+ * reenvia) e o bot simplesmente não respondia. Uma vez por deploy, em silêncio.
+ *
+ * A ordem importa: primeiro para de aceitar conexões novas, depois drena o que
+ * já está dentro. Inverter deixaria uma mensagem nova entrar durante a drenagem
+ * e cair na mesma janela que se queria salvar.
+ */
+let encerrando = false;
+
+async function encerrar(sinal: string): Promise<void> {
+  // Um segundo Ctrl+C (ou o SIGKILL do orquestrador logo atrás) não deve
+  // reiniciar a drenagem.
+  if (encerrando) return;
+  encerrando = true;
+  logger.info({ sinal, pendentes: pendentesAgora() }, "encerrando: drenando a caixa de entrada");
+
+  servidor.close();
+
+  // Teto de tempo: o orquestrador (Fly, Render, Docker) manda SIGKILL alguns
+  // segundos depois do SIGTERM. Melhor drenar o que der e sair limpo do que ser
+  // morto no meio e perder o controle da saída.
+  const LIMITE_MS = 10_000;
+  try {
+    const drenados = await Promise.race([
+      drenarCaixaDeEntrada(),
+      new Promise<number>((r) => setTimeout(() => r(-1), LIMITE_MS)),
+    ]);
+    if (drenados === -1) {
+      logger.warn("tempo esgotado ao drenar a caixa de entrada — saindo assim mesmo");
+    } else {
+      logger.info({ drenados }, "caixa de entrada drenada");
+    }
+  } catch (err) {
+    logger.error({ err }, "falha ao drenar a caixa de entrada");
+  }
+
+  await prisma.$disconnect().catch(() => undefined);
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => void encerrar("SIGTERM"));
+process.on("SIGINT", () => void encerrar("SIGINT"));

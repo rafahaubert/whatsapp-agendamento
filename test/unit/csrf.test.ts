@@ -5,8 +5,18 @@ import { csrfToken, verifyCsrf, exposeCsrf, CAMPO_CSRF, HEADER_CSRF } from "../.
 /**
  * Requisição falsa com o mínimo que o middleware toca. A sessão é um objeto
  * simples — é assim que o express-session a entrega.
+ *
+ * `session` e `header` saem do `Partial<Request>` porque os tipos reais do
+ * express-session e do express exigem muito mais do que o middleware toca
+ * (`id`, `cookie`, `regenerate`, a sobrecarga de `set-cookie`…). Reconstruí-los
+ * aqui só para satisfazer o compilador não testaria nada a mais.
  */
-function req(over: Partial<Request> & { session?: Record<string, unknown> } = {}): Request {
+type ReqFalsa = Omit<Partial<Request>, "session" | "header"> & {
+  session?: Record<string, unknown>;
+  header?: (nome: string) => string | undefined;
+};
+
+function req(over: ReqFalsa = {}): Request {
   return {
     method: "POST",
     originalUrl: "/admin/usuarios",

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { DiaAtendimento } from "../../src/config/types.js";
 import { minutosDoDia, noIntervalo, estaBloqueado, estaOcupado } from "../../src/db/seed.js";
 
 describe("minutosDoDia", () => {
@@ -29,7 +30,7 @@ describe("noIntervalo (almoço)", () => {
   });
 
   it("sem intervalo configurado, nada é descartado (compatível com o formato antigo)", () => {
-    const semAlmoco = { open: "08:00", close: "18:00" };
+    const semAlmoco: DiaAtendimento = { open: "08:00", close: "18:00" };
     expect(noIntervalo(minutosDoDia("12:00"), minutosDoDia("12:30"), semAlmoco)).toBe(false);
   });
 

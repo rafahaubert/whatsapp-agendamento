@@ -83,3 +83,36 @@ export function limparCaixaDeEntrada(): void {
   pendentes.clear();
   filas.clear();
 }
+
+/** Quantos lotes estão esperando a janela de agrupamento fechar. */
+export function pendentesAgora(): number {
+  return pendentes.size;
+}
+
+/**
+ * Fecha a caixa de entrada: processa AGORA tudo que está esperando e aguarda o
+ * que já está em execução.
+ *
+ * Sem isto, todo deploy jogava fora as mensagens dentro da janela de debounce
+ * (oito segundos, por padrão). O paciente escrevia, o processo morria e a Meta
+ * não reenvia — o webhook responde 200 antes de processar. Para ele, o bot
+ * simplesmente ficou mudo.
+ *
+ * Não é uma garantia absoluta: o que a Meta entregou e ainda não virou lote
+ * continua se perdendo, e o estado é de memória. Mas cobre a janela em que a
+ * perda era CERTA a cada reinício.
+ */
+export async function drenarCaixaDeEntrada(): Promise<number> {
+  const agora = [...pendentes.entries()];
+  pendentes.clear();
+
+  for (const [chave, p] of agora) {
+    clearTimeout(p.timer);
+    void enfileirar(chave, () => p.processar(p.mensagens));
+  }
+
+  // As filas por conversa são reentrantes: enfileirar acima criou promessas
+  // novas, então esperar a leva atual basta para cobrir o que foi drenado.
+  await Promise.allSettled([...filas.values()]);
+  return agora.length;
+}

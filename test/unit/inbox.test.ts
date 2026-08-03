@@ -4,6 +4,8 @@ import {
   chaveConversa,
   enfileirar,
   limparCaixaDeEntrada,
+  drenarCaixaDeEntrada,
+  pendentesAgora,
 } from "../../src/core/inbox.js";
 import type { IncomingMessage } from "../../src/channels/types.js";
 
@@ -130,5 +132,92 @@ describe("enfileirar", () => {
     expect(ordem).toEqual(["x-inicio", "y"]);
     liberar();
     await p1;
+  });
+});
+
+describe("drenarCaixaDeEntrada", () => {
+  // REGRESSÃO: todo deploy matava o processo no meio da janela de agrupamento.
+  // O paciente escrevia, a Meta respondia 200 (o webhook confirma ANTES de
+  // processar, então não reenvia) e o bot simplesmente não respondia. Uma vez
+  // por deploy, em silêncio.
+  it("processa AGORA o lote que ainda estava esperando", async () => {
+    const lotes: string[][] = [];
+    const processar = async (m: IncomingMessage[]) => {
+      lotes.push(m.map((x) => x.text ?? ""));
+    };
+
+    agruparMensagem("c1", msg("quero marcar"), 8000, processar);
+    agruparMensagem("c1", msg("para amanhã"), 8000, processar);
+    expect(lotes).toHaveLength(0); // ainda dentro da janela
+
+    const drenados = await drenarCaixaDeEntrada();
+
+    expect(drenados).toBe(1);
+    expect(lotes).toEqual([["quero marcar", "para amanhã"]]);
+  });
+
+  it("drena conversas diferentes de uma vez", async () => {
+    const vistos: string[] = [];
+    const processar = async (m: IncomingMessage[]) => {
+      vistos.push(m[0].text ?? "");
+    };
+
+    agruparMensagem("a", msg("sou a"), 8000, processar);
+    agruparMensagem("b", msg("sou b"), 8000, processar);
+    agruparMensagem("c", msg("sou c"), 8000, processar);
+
+    expect(await drenarCaixaDeEntrada()).toBe(3);
+    expect(vistos.sort()).toEqual(["sou a", "sou b", "sou c"]);
+  });
+
+  it("sem nada pendente, não faz nada", async () => {
+    expect(await drenarCaixaDeEntrada()).toBe(0);
+  });
+
+  // O timer do lote drenado precisa morrer junto: sobrevivendo, ele dispararia
+  // o MESMO lote de novo e o paciente receberia duas respostas iguais.
+  it("não reprocessa o lote depois de drenado", async () => {
+    vi.useFakeTimers();
+    const lotes: string[][] = [];
+    const processar = async (m: IncomingMessage[]) => {
+      lotes.push(m.map((x) => x.text ?? ""));
+    };
+
+    agruparMensagem("c1", msg("oi"), 8000, processar);
+    await drenarCaixaDeEntrada();
+    expect(lotes).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(lotes).toHaveLength(1);
+  });
+
+  it("uma falha no processamento não impede a drenagem das outras conversas", async () => {
+    const ok: string[] = [];
+    const quebra = async () => {
+      throw new Error("falhou");
+    };
+    const processar = async (m: IncomingMessage[]) => {
+      ok.push(m[0].text ?? "");
+    };
+
+    agruparMensagem("ruim", msg("eu quebro"), 8000, quebra);
+    agruparMensagem("bom", msg("eu passo"), 8000, processar);
+
+    await expect(drenarCaixaDeEntrada()).resolves.toBe(2);
+    expect(ok).toEqual(["eu passo"]);
+  });
+});
+
+describe("pendentesAgora", () => {
+  it("conta os lotes esperando a janela fechar", async () => {
+    expect(pendentesAgora()).toBe(0);
+    agruparMensagem("x", msg("oi"), 8000, async () => {});
+    expect(pendentesAgora()).toBe(1);
+    agruparMensagem("x", msg("de novo"), 8000, async () => {});
+    expect(pendentesAgora()).toBe(1); // mesma conversa = mesmo lote
+    agruparMensagem("y", msg("outro"), 8000, async () => {});
+    expect(pendentesAgora()).toBe(2);
+    await drenarCaixaDeEntrada();
+    expect(pendentesAgora()).toBe(0);
   });
 });
