@@ -1,9 +1,9 @@
 /**
  * "Enums" da aplicação.
  *
- * Como usamos SQLite (que não suporta enum no Prisma) e queremos portabilidade
- * total com PostgreSQL, os campos de status são `String` no banco. A segurança
- * de tipos vive aqui: use estes objetos/uniões em todo o código, nunca strings
+ * Os campos de status são `String` no banco (Postgres), e não `enum` nativo: o
+ * schema fica simples e a migração de um valor novo não exige DDL. A segurança
+ * de tipos vive aqui — use estes objetos/uniões em todo o código, nunca strings
  * cruas. Se um dia migrarmos para enums nativos do Postgres, os valores batem 1:1.
  */
 

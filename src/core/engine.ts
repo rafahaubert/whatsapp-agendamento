@@ -379,9 +379,10 @@ export const conversationEngine: MessageHandler = {
     }
 
     // ---------- 4. Conversa com o Claude ----------
-    // Data/hora atualizada a cada interação — fora do system prompt para que
-    // ele seja byte a byte igual entre as mensagens (pré-requisito do prompt
-    // caching; o `cache_control` em si ainda não é enviado — ver systemPrompt.ts).
+    // Data/hora atualizada a cada interação — vai na MENSAGEM, e não no system
+    // prompt, para que o prompt seja byte a byte igual entre as mensagens. Um
+    // relógio dentro do prefixo o invalidaria a cada chamada, e o cache nunca
+    // pegaria (o breakpoint é enviado logo abaixo, no `system`).
     const fuso = fusoDaClinica(tenant.config.businessHours.timezone);
     const now = new Intl.DateTimeFormat("pt-BR", {
       timeZone: fuso,
